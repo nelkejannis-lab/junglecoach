@@ -170,22 +170,50 @@ def mobile_summary(plan):
         out["consistency"] = {k: plan["consistency"].get(k) for k in ("score", "verdict")}
     if (plan.get("tilt") or {}).get("rule"):
         out["tilt"] = {"rule": plan["tilt"]["rule"]}
+    prog = []
+    for p in plan.get("progress") or []:  # light version for the phone: last 20 values
+        if p.get("enough"):
+            prog.append({"title": p["title"], "better": p.get("better"), "hit": p.get("hit"), "games": p.get("games"),
+                         "target": p.get("target"), "target_txt": p.get("target_txt"),
+                         "v": [round(x["v"], 2) for x in p["points"][-20:]], "w": [x["win"] for x in p["points"][-20:]]})
+    if prog:
+        out["progress"] = prog
     out["at"] = time.time()
     return out
+
+
+def sync_friends(cfg):
+    """Friend list PC <-> phone: the side changed last wins (so a friend removed on the phone stays removed)."""
+    r = cloud(cfg, "GET", "/api/sync/friends")
+    if r is None:
+        return
+    srv_t = r.get("updated_at") or 0
+    if srv_t and srv_t > cfg.get("friends_updated", 0):
+        if [f.lower() for f in r.get("friends") or []] != [f.lower() for f in cfg.get("friends", [])]:
+            cfg["friends"] = list(r.get("friends") or [])[:50]
+        cfg["friends_updated"] = srv_t
+        save_config(cfg)
+    elif cfg.get("friends_updated", 0) > srv_t or not srv_t:
+        res = cloud(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
+        if res is not None:
+            cfg["friends_updated"] = int(time.time())
+            save_config(cfg)
+
+
+def sync_loop(cfg):
+    while True:
+        time.sleep(300)
+        try:
+            sync_friends(cfg)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def sync_on_start(cfg):
     """Merges the friend list with the server (phone additions) and publishes the Riot ID."""
     if not cfg.get("auth_token"):
         return
-    r = cloud(cfg, "GET", "/api/sync/friends")
-    if r is not None:
-        local = cfg.get("friends", [])
-        merged = local + [f for f in (r.get("friends") or []) if f.lower() not in {x.lower() for x in local}]
-        if merged != local:
-            cfg["friends"] = merged[:50]
-            save_config(cfg)
-        cloud(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
+    sync_friends(cfg)
     me = cloud(cfg, "GET", "/api/me")
     if me is not None and not me.get("riot_id") and "#" in (cfg.get("riot_id") or ""):
         cloud(cfg, "PUT", "/api/me", {"riot_id": cfg["riot_id"]})
@@ -798,6 +826,7 @@ def make_handler(gd, cfg, lcu):
                         return self._send(400, {"error": "Riot ID im Format Name#TAG eingeben."})
                 if body.get("remove"):
                     friends.remove(cfg, body["remove"])
+                cfg["friends_updated"] = int(time.time())
                 save_config(cfg)
                 cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
                 return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
@@ -899,6 +928,7 @@ def start(cfg=None):
     threading.Thread(target=cloud_loop, daemon=True).start()
     threading.Thread(target=auto_review_loop, args=(cfg,), daemon=True).start()
     threading.Thread(target=sync_on_start, args=(cfg,), daemon=True).start()
+    threading.Thread(target=sync_loop, args=(cfg,), daemon=True).start()
     port = cfg.get("port", 8765)
     host = "0.0.0.0" if cfg.get("allow_phone", False) else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), make_handler(gd, cfg, lcu))

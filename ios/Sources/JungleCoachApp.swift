@@ -33,6 +33,7 @@ struct WebContainer: UIViewRepresentable {
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.allowsBackForwardNavigationGestures = true
         web.navigationDelegate = context.coordinator
+        web.uiDelegate = context.coordinator        // shows JavaScript alert()/confirm() as native dialogs
         let refresh = UIRefreshControl()
         refresh.addTarget(context.coordinator, action: #selector(Coordinator.reload(_:)), for: .valueChanged)
         web.scrollView.refreshControl = refresh
@@ -44,7 +45,7 @@ struct WebContainer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, ASWebAuthenticationPresentationContextProviding {
+final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
     weak var web: WKWebView?
     private var session: ASWebAuthenticationSession?
 
@@ -74,6 +75,27 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
+    }
+
+    private func top() -> UIViewController? {
+        var vc = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+        while let p = vc?.presentedViewController { vc = p }
+        return vc
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        if let t = top() { t.present(a, animated: true) } else { completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "Abbrechen", style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+        if let t = top() { t.present(a, animated: true) } else { completionHandler(false) }
     }
 
     // Links to other sites (e.g. Riot, Discord) open in Safari, the app stays on Jungle Coach.

@@ -129,3 +129,25 @@ class ExactBuildTests(unittest.TestCase):
         self.assertEqual([c["id"] for c in bp["core"]], [6692, 3071, 6333])
         self.assertEqual(bp["core"][0]["minute"], 11)
         self.assertEqual(bp["boots"]["id"], 3047)
+
+
+class SyncTests(unittest.TestCase):
+    def test_last_writer_wins(self):
+        from jc import app
+        calls = []
+        srv = {"friends": ["Luca#EUW"], "updated_at": 2000}
+
+        def fake(cfg, method, path, body=None):
+            calls.append((method, body))
+            return srv if method == "GET" else {"ok": True}
+        orig_cloud, orig_save = app.cloud, app.save_config
+        app.cloud, app.save_config = fake, lambda c: None
+        try:
+            cfg = {"friends": ["Luca#EUW", "Mia#GER"], "friends_updated": 1000}
+            app.sync_friends(cfg)  # phone removed Mia later -> stays removed
+            self.assertEqual(cfg["friends"], ["Luca#EUW"])
+            cfg = {"friends": ["Luca#EUW", "Tobi#0815"], "friends_updated": 3000}
+            app.sync_friends(cfg)  # PC changed later -> pushed
+            self.assertEqual(calls[-1], ("PUT", {"friends": ["Luca#EUW", "Tobi#0815"]}))
+        finally:
+            app.cloud, app.save_config = orig_cloud, orig_save

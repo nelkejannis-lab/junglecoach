@@ -86,6 +86,18 @@
   .skel { height:70px; border-radius:18px; background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04)); background-size:200% 100%; animation:sh 1.2s linear infinite; margin-bottom:10px; }
   @keyframes sh { to { background-position:-200% 0; } }
   .tierc { font-weight:900; } .GOLD { color:var(--gold); } .PLATINUM { color:#5eead4; } .EMERALD { color:var(--green); } .DIAMOND { color:#93c5fd; } .SILVER { color:#cbd5e1; } .IRON, .BRONZE { color:#c08a5b; } .MASTER, .GRANDMASTER, .CHALLENGER { color:var(--purple); }
+  .card .row > img { width:40px; height:40px; border-radius:12px; flex:none; }
+  .seg { display:flex; gap:4px; background:var(--card2); border-radius:12px; padding:3px; margin-bottom:10px; }
+  .seg button { flex:1; border:0; background:none; color:var(--sec); font:inherit; font-size:12.5px; font-weight:700; padding:7px 0; border-radius:9px; }
+  .seg button.on { background:rgba(255,255,255,.12); color:var(--txt); }
+  .lb { display:flex; gap:10px; align-items:center; padding:9px 4px; border-bottom:1px solid var(--line); }
+  .lb:last-of-type { border:0; } .lb.me { background:rgba(45,212,191,.08); border-radius:12px; }
+  .lb img { width:40px; height:40px; border-radius:12px; flex:none; } .lb .pos { width:24px; text-align:center; font-weight:800; color:var(--sec); flex:none; }
+  .lb .pos.p1 { color:#cbd5e1; } .lb .pos.p2 { color:#c08a5b; } .lbv { text-align:right; font-weight:800; font-size:14px; white-space:nowrap; }
+  .dots.sm { gap:3px; margin-top:4px; } .dots.sm i { width:9px; height:9px; border-radius:3px; }
+  .cmp { margin:8px 0; } .cmph { display:flex; justify-content:space-between; align-items:baseline; font-size:13px; } .cmph span { color:var(--sec); font-size:12px; }
+  .cmpb { display:flex; height:6px; border-radius:9px; background:var(--card2); overflow:hidden; margin-top:3px; } .cmpb i { display:block; height:100%; }
+  .toast { position:fixed; left:50%; bottom:calc(var(--safe-b) + 90px); transform:translateX(-50%); background:#2c2c2e; color:#fff; padding:10px 16px; border-radius:14px; font-size:14px; z-index:60; }
   .focus { padding:12px 14px; border-radius:16px; background:linear-gradient(160deg,rgba(45,212,191,.10),rgba(129,140,248,.05)); border:1px solid rgba(45,212,191,.22); margin-bottom:10px; }
   .focus .k { font-size:10.5px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--acc); } .focus b { display:block; font-size:16px; margin:2px 0 4px; }
 </style>
@@ -123,7 +135,7 @@ const LS = {get: k => { try { return localStorage.getItem(k); } catch (e) { retu
 const PLATFORMS = {euw1: "EUW", eun1: "EUNE", tr1: "TR", ru: "RU", me1: "ME", na1: "NA", br1: "BR", la1: "LAN", la2: "LAS", kr: "KR", jp1: "JP", oc1: "OCE", sg2: "SG", tw2: "TW", vn2: "VN"};
 const REGION = p => ["na1", "br1", "la1", "la2"].includes(p) ? "americas" : ["kr", "jp1"].includes(p) ? "asia" : ["oc1", "sg2", "tw2", "vn2"].includes(p) ? "sea" : "europe";
 const ACC_REGION = p => REGION(p) === "sea" ? "asia" : REGION(p);
-let S = {tab: "home", me: null, ver: "16.23.1", acct: null, league: null, games: null, gamesMore: 10, coach: null, friends: null, fdata: {}, sheet: null, err: "", busy: false};
+let S = {tab: "home", me: null, ver: "16.23.1", acct: null, league: null, games: null, gamesMore: 20, lbm: "rank", coach: null, friends: null, fdata: {}, sheet: null, err: "", busy: false};
 const platform = () => LS.get("jc_platform") || "euw1";
 
 // ---- token (from the login redirect, or injected by the iOS app)
@@ -193,11 +205,11 @@ async function loadFriend(rid) {
     f.acct = f.acct || await account(rid);
     f.league = f.league || await riot(platform(), `/lol/league/v4/entries/by-puuid/${f.acct.puuid}`);
     render();
-    f.games = f.games || await loadGames(f.acct.puuid, 6);
+    f.games = f.games || await loadGames(f.acct.puuid, 10);
   } catch (e) { f.err = e.message; }
   render();
 }
-async function saveFriends(list) {
+async function saveFriends(list) {  // returns after the server confirmed
   S.friends = (await api("/api/sync/friends", {method: "PUT", body: JSON.stringify({friends: list})})).friends; render();
 }
 
@@ -251,6 +263,7 @@ function matchSheet() {
         ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>
       <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
     ${team(mine)}${team(mine === 100 ? 200 : 100)}
+    <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Jungle Coach')">Game teilen</button>
     <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
 }
 function vHome() {
@@ -270,6 +283,7 @@ function vHome() {
       <div class="dots" style="margin-top:12px">${gs.slice().reverse().map(g => `<i class="${g.p.win ? "w" : ""}"></i>`).join("")}</div></div>`;
   if (c && (c.focus || []).length) h += `<div class="card"><h3>Deine Schwerpunkte</h3>${c.focus.slice(0, 3).map((f, i) => `<div class="focus"><div class="k">Schwerpunkt ${i + 1}</div><b>${esc(f.title)}</b><div class="small muted">🎯 ${esc(f.drill)}</div>${f.last10 ? `<div class="small" style="margin-top:4px">Im Ziel: <b style="display:inline">${esc(f.last10)}</b></div>` : ""}</div>`).join("")}
       ${c.confidence ? `<p class="muted small" style="margin:4px 0 0">⚖️ ${esc(c.confidence)}</p>` : ""}</div>`;
+  if (c && (c.progress || []).length) h += `<div class="card"><h3>Fortschritt</h3>${c.progress.slice(0, 2).map(pr => spark(pr)).join("")}</div>`;
   if (!S.me.riot_id) h += setupCard();
   return h;
 }
@@ -280,28 +294,154 @@ function vGames() {
     ${gs ? gs.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") + `<button class="btn sec" onclick="S.gamesMore+=10;S.games=null;render();loadMe()">Mehr laden</button>`
       : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'}`;
 }
+// ---- analytics helpers
+const TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"];
+const DIVS = {IV: 0, III: 100, II: 200, I: 300};
+const rankScore = e => e ? TIERS.indexOf(e.tier) * 400 + (TIERS.indexOf(e.tier) >= 7 ? 0 : DIVS[e.rank] || 0) + e.leaguePoints : -1;
+function agg(games) {
+  const gs = (games || []).filter(g => g.m.info.gameDuration >= 300);
+  if (!gs.length) return null;
+  let k = 0, d = 0, a = 0, kp = 0, cs = 0, gold = 0, vis = 0, dmg = 0, mins = 0, wins = 0;
+  const champs = {};
+  const scored = gs.map(g => {
+    const p = g.p, m = g.m.info, mi = m.gameDuration / 60;
+    const tk = m.participants.filter(x => x.teamId === p.teamId).reduce((s, x) => s + x.kills, 0);
+    const c = p.totalMinionsKilled + p.neutralMinionsKilled;
+    k += p.kills; d += p.deaths; a += p.assists; kp += (p.kills + p.assists) / Math.max(1, tk); cs += c; gold += p.goldEarned || 0;
+    vis += p.visionScore || 0; dmg += p.totalDamageDealtToChampions || 0; mins += mi; wins += p.win ? 1 : 0;
+    const ch = champs[p.championName] = champs[p.championName] || {c: p.championName, n: 0, w: 0, k: 0, d: 0, a: 0};
+    ch.n++; ch.w += p.win ? 1 : 0; ch.k += p.kills; ch.d += p.deaths; ch.a += p.assists;
+    return {g, score: (p.kills + p.assists) / Math.max(1, p.deaths) + (p.win ? 1.5 : 0) + c / mi / 4};
+  });
+  scored.sort((x, y) => y.score - x.score);
+  return {n: gs.length, wins, wr: Math.round(100 * wins / gs.length), kda: +((k + a) / Math.max(1, d)).toFixed(2),
+    kp: Math.round(100 * kp / gs.length), csm: +(cs / mins).toFixed(1), gpm: Math.round(gold / mins), vpm: +(vis / mins).toFixed(2),
+    dpm: Math.round(dmg / mins), deaths: +(d / gs.length).toFixed(1), avgk: +(k / gs.length).toFixed(1), avga: +(a / gs.length).toFixed(1),
+    champs: Object.values(champs).sort((x, y) => y.n - x.n), best: scored[0].g, worst: scored[scored.length - 1].g,
+    form: gs.slice(0, 10).map(g => g.p.win)};
+}
+async function share(text) {
+  const url = location.origin + "/m/";
+  try {
+    if (navigator.share) { await navigator.share({title: "Jungle Coach", text, url}); return; }
+    await navigator.clipboard.writeText(text + "\n" + url); toast("In die Zwischenablage kopiert");
+  } catch (e) {}
+}
+function toast(t) { const el = document.createElement("div"); el.className = "toast"; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 2200); }
+const bar2 = (label, a, b, fmt, higher = true) => {
+  const max = Math.max(a, b) || 1, win = higher ? a >= b : a <= b;
+  return `<div class="cmp"><div class="cmph"><b class="${win ? "green" : ""}">${fmt(a)}</b><span>${label}</span><b class="${!win ? "green" : ""}">${fmt(b)}</b></div>
+    <div class="cmpb"><i style="width:${50 * a / max}%;margin-left:${50 - 50 * a / max}%;background:var(--acc)"></i><i style="width:${50 * b / max}%;background:var(--purple)"></i></div></div>`;
+};
+
+// ---- stats tab
+function vStats() {
+  if (!S.me.riot_id) return `<h1>Stats</h1>${setupCard()}`;
+  const A = agg(S.games);
+  if (!A) return `<h1>Deine <span class="g">Stats</span></h1><div class="skel"></div><div class="skel"></div><div class="skel"></div>`;
+  const tile = (v, l, cls = "") => `<div class="stat"><b class="${cls}">${v}</b><span>${l}</span></div>`;
+  const bestP = A.best.p, worstP = A.worst.p;
+  const c = S.coach;
+  return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>
+    <div class="card"><div class="stats">${tile(A.wr + "%", "Winrate", A.wr >= 50 ? "green" : "red")}${tile(A.kda, "KDA")}${tile(A.kp + "%", "Kill-Beteil.")}
+      ${tile(A.csm, "CS / Min")}${tile(A.gpm, "Gold / Min")}${tile(A.vpm, "Vision / Min")}</div>
+      <div class="dots" style="margin-top:12px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}<span class="muted small" style="margin-left:6px">${A.wins} Siege · Ø ${A.avgk}/${A.deaths}/${A.avga}</span></div></div>
+    <div class="card"><h3>Champions</h3>${A.champs.slice(0, 6).map(ch => `<div class="row">${cImg(ch.c, "")}
+      <div style="flex:1"><b>${esc(ch.c)}</b><div class="muted small">${ch.n} Games · KDA ${((ch.k + ch.a) / Math.max(1, ch.d)).toFixed(1)}</div></div>
+      <b class="${ch.w / ch.n >= .5 ? "green" : "red"}">${Math.round(100 * ch.w / ch.n)}%</b></div>`).join("")}</div>
+    <div class="card"><h3>Bestes & schlechtestes Game</h3>
+      ${gameRow(A.best, `openMatch('${A.best.m.metadata.matchId}','${bestP.puuid}')`)}${A.n > 1 ? gameRow(A.worst, `openMatch('${A.worst.m.metadata.matchId}','${worstP.puuid}')`) : ""}</div>
+    ${c && (c.progress || []).length ? `<div class="card"><h3>Coach-Fortschritt · 30 Tage</h3>${c.progress.map(pr => spark(pr)).join("")}</div>` : ""}
+    <button class="btn sec" onclick="share('Meine letzten ${A.n} Games: ${A.wr}% WR, KDA ${A.kda}, ${A.csm} CS/min – Jungle Coach')">Stats teilen</button>`;
+}
+function spark(pr) {
+  pr = {...pr, v: pr.v || (pr.points || []).map(x => x.v), w: pr.w || (pr.points || []).map(x => x.win)};
+  if (pr.v.length < 2) return "";
+  const W = 300, H = 60, v = pr.v.concat([pr.target]), lo = Math.min(...v), hi = Math.max(...v), sp = (hi - lo) || 1;
+  const X = i => 6 + i / Math.max(1, pr.v.length - 1) * (W - 12), Y = x => H - 6 - (x - lo) / sp * (H - 12);
+  return `<div style="margin-bottom:12px"><div class="row" style="border:0;padding:0"><b>${esc(pr.title)}</b><span class="small ${pr.better == null ? "muted" : pr.better ? "green" : "red"}">${pr.better == null ? "unverändert" : pr.better ? "wird besser" : "wird schlechter"}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%"><line x1="0" x2="${W}" y1="${Y(pr.target)}" y2="${Y(pr.target)}" stroke="var(--acc)" stroke-dasharray="4 4" opacity=".7"/>
+    <polyline points="${pr.v.map((x, i) => X(i) + "," + Y(x)).join(" ")}" fill="none" stroke="#fff" stroke-width="1.6" opacity=".7"/>
+    ${pr.v.map((x, i) => `<circle cx="${X(i)}" cy="${Y(x)}" r="3" fill="${pr.w[i] ? "var(--green)" : "var(--red)"}"/>`).join("")}</svg>
+    <div class="muted small">Ziel ${esc(pr.target_txt || "")} · im Ziel ${esc(pr.hit || "")}</div></div>`;
+}
+
+// ---- friends: leaderboard + list
+const LBM = {rank: ["Rang", e => e.rs, e => e.r ? rankTxt(e.r) : '<span class="muted">Unranked</span>'],
+  form: ["Form", e => e.a ? e.a.wr : -1, e => e.a ? `${e.a.wr}% <span class="muted small">(${e.a.wins}/${e.a.n})</span>` : "…"],
+  kda: ["KDA", e => e.a ? e.a.kda : -1, e => e.a ? e.a.kda : "…"],
+  csm: ["CS/min", e => e.a ? e.a.csm : -1, e => e.a ? e.a.csm : "…"],
+  vpm: ["Vision", e => e.a ? e.a.vpm : -1, e => e.a ? e.a.vpm + "/min" : "…"]};
+function leaderboard() {
+  const me = {rid: S.me.riot_id, me: true, r: solo(S.league), a: agg((S.games || []).slice(0, 10)), g: S.games};
+  const list = [me].concat((S.friends || []).map(rid => { const d = S.fdata[rid] || {}; return {rid, r: solo(d.league), a: agg(d.games), g: d.games, err: d.err}; }));
+  list.forEach(e => e.rs = rankScore(e.r));
+  const [label, key, show] = LBM[S.lbm];
+  list.sort((x, y) => key(y) - key(x));
+  return {list, label, show};
+}
 function vFriends() {
   if (S.view && S.view.friend) return vFriend(S.view.friend);
   const fl = S.friends;
-  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Dieselbe Liste wie in der PC-App</p>
-    <div class="card"><div style="display:flex;gap:8px"><input id="fadd" placeholder="Name#TAG"><button class="btn" style="width:auto;padding:0 18px" onclick="addF()">+</button></div></div>
-    <div class="card">${fl == null ? '<div class="skel" style="height:44px"></div>' : fl.length ? fl.map(rid => { const d = S.fdata[rid] || {}; const r = solo(d.league);
-      if (!d.league && !d.err && !d.loading) { d.loading = true; S.fdata[rid] = d; loadFriend(rid); }
-      return `<div class="fr" onclick='S.view={friend:${JSON.stringify(rid)}};render()'>${d.games && d.games[0] ? cImg(d.games[0].p.championName, "") : `<img src="/icon.png">`}
-        <div><b>${esc(rid.split("#")[0])}</b><span class="small muted">${d.err ? esc(d.err) : d.league ? rankTxt(r) : "lädt …"}</span></div><span class="chev">›</span></div>`; }).join("")
-      : '<p class="muted small" style="margin:0">Noch keine Freunde – füge oben eine Riot ID hinzu.</p>'}</div>`;
+  (fl || []).forEach(rid => { const d = S.fdata[rid] || {}; if (!d.games && !d.err && !d.loading) { d.loading = true; S.fdata[rid] = d; loadFriend(rid); } });
+  const L = leaderboard();
+  const top = L.list.filter(e => e.rid);
+  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Rangliste · letzte 10 Games · dieselbe Liste wie in der PC-App</p>
+    <div class="card"><div class="seg">${Object.entries(LBM).map(([k, [l]]) => `<button class="${S.lbm === k ? "on" : ""}" onclick="S.lbm='${k}';render()">${l}</button>`).join("")}</div>
+      ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
+        return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
+          <span class="pos ${i < 3 ? "p" + i : ""}">${i === 0 ? "👑" : i + 1}</span>${main ? cImg(main, "") : '<img src="/icon.png">'}
+          <div style="flex:1;min-width:0"><b>${esc(e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""}</b>
+            <div class="dots sm">${e.a ? e.a.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("") : '<span class="muted small">' + (e.err ? esc(e.err) : "lädt …") + "</span>"}</div></div>
+          <div class="lbv">${L.show(e)}</div></div>`; }).join("")}
+      ${top.length > 1 ? `<button class="btn sec" style="margin-top:12px" onclick="share(shareBoard())">Rangliste teilen</button>` : ""}</div>
+    <div class="card"><h3>Freund hinzufügen</h3><div style="display:flex;gap:8px"><input id="fadd" placeholder="Name#TAG"><button class="btn" style="width:auto;padding:0 18px" onclick="addF()">+</button></div>
+      ${fl && !fl.length ? '<p class="muted small" style="margin:10px 0 0">Noch keine Freunde – füge eine Riot ID hinzu und vergleicht euch.</p>' : ""}</div>`;
+}
+function shareBoard() {
+  const L = leaderboard();
+  return `Jungle Coach Rangliste (${L.label}):\n` + L.list.filter(e => e.rid).map((e, i) => `${i + 1}. ${e.rid.split("#")[0]} – ${L.show(e).replace(/<[^>]+>/g, "")}`).join("\n");
 }
 function vFriend(rid) {
-  const d = S.fdata[rid] || {}, r = solo(d.league);
+  const d = S.fdata[rid] || {}, r = solo(d.league), A = agg(d.games), M = agg((S.games || []).slice(0, 10));
   if (!d.games && !d.loading) { d.loading = true; S.fdata[rid] = d; loadFriend(rid); }
+  const duo = d.acct ? (S.games || []).filter(g => g.m.info.participants.some(x => x.puuid === d.acct.puuid)) : [];
+  const duoTeam = duo.filter(g => g.m.info.participants.find(x => x.puuid === d.acct.puuid).teamId === g.p.teamId);
+  const dw = duoTeam.filter(g => g.p.win).length;
+  const name = rid.split("#")[0];
   return `<button class="btn sec" style="width:auto;padding:10px 16px;margin-bottom:12px" onclick="S.view=null;render()">‹ Freunde</button>
-    <div class="hero"><div class="art" style="background-image:url('${d.games && d.games[0] ? splash(d.games[0].p.championName) : ""}')"></div><div class="in">
-      <span class="tag">Freund</span><h2>${esc(rid.split("#")[0])}</h2><div>${d.league ? rankTxt(r) : "…"}</div></div></div>
+    <div class="hero"><div class="art" style="background-image:url('${A && A.champs[0] ? splash(A.champs[0].c) : ""}')"></div><div class="in">
+      <span class="tag">Freund</span><h2>${esc(name)}</h2><div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
+      ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
+    ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
+      <div class="cmph" style="margin-bottom:6px"><b style="color:var(--acc)">Du</b><span></span><b style="color:var(--purple)">${esc(name)}</b></div>
+      ${bar2("Winrate", M.wr, A.wr, v => v + "%")}${bar2("KDA", M.kda, A.kda, v => v)}${bar2("Kill-Beteil.", M.kp, A.kp, v => v + "%")}
+      ${bar2("CS/min", M.csm, A.csm, v => v)}${bar2("Gold/min", M.gpm, A.gpm, v => v)}${bar2("Vision/min", M.vpm, A.vpm, v => v)}${bar2("Tode/Game", M.deaths, A.deaths, v => v, false)}</div>` : '<div class="skel"></div>'}
+    ${duoTeam.length ? `<div class="card"><h3>Zusammen gespielt</h3><p class="muted small" style="margin:-4px 0 10px">${duoTeam.length} gemeinsame Games in deinen letzten ${S.games.length} · <b class="${dw / duoTeam.length >= .5 ? "green" : "red"}">${Math.round(100 * dw / duoTeam.length)}% Siege</b></p>
+      ${duoTeam.slice(0, 5).map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("")}</div>` : ""}
+    ${A ? `<div class="card"><h3>${esc(name)}s Champions</h3>${A.champs.slice(0, 4).map(ch => `<div class="row">${cImg(ch.c, "")}<div style="flex:1"><b>${esc(ch.c)}</b><div class="muted small">${ch.n} Games · KDA ${((ch.k + ch.a) / Math.max(1, ch.d)).toFixed(1)}</div></div><b class="${ch.w / ch.n >= .5 ? "green" : "red"}">${Math.round(100 * ch.w / ch.n)}%</b></div>`).join("")}</div>` : ""}
+    <h3 style="margin:18px 0 10px">Letzte Games</h3>
     ${d.games ? d.games.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") : '<div class="skel"></div><div class="skel"></div>'}
-    <button class="btn sec" style="margin-top:6px" onclick='if(confirm("Freund entfernen?")){saveFriends(S.friends.filter(f=>f!==${JSON.stringify(rid)}));S.view=null}'>Entfernen</button>
+    ${A ? `<button class="btn sec" style="margin-top:6px" onclick="share('${esc(name)} vs mich (letzte 10 Games): ${A.wr}% vs ${M ? M.wr : "–"}% WR, KDA ${A.kda} vs ${M ? M.kda : "–"} – Jungle Coach')">Vergleich teilen</button>` : ""}
+    <button class="btn sec" style="margin-top:10px" onclick='removeF(${JSON.stringify(rid)})'>Entfernen</button>
     <p class="muted small">Die ausführliche Coach-Analyse für Freunde startest du in der PC-App unter „Freunde“.</p>`;
 }
-function addF() { const v = $("#fadd").value.trim(); if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return alert("Riot ID im Format Name#TAG"); saveFriends([...(S.friends || []), v]); }
+// own confirm dialog: the iOS app's web view does not show browser confirm()/alert() dialogs
+function ask(text, okLabel, onOk) {
+  const el = document.createElement("div");
+  el.className = "sheet";
+  el.innerHTML = `<div class="in" style="text-align:center"><div class="grip"></div><p style="font-size:16px;font-weight:700;margin:6px 0 16px">${esc(text)}</p>
+    <div style="display:grid;gap:10px"><button class="btn" style="background:var(--red);color:#fff" data-ok>${esc(okLabel)}</button><button class="btn sec" data-no>Abbrechen</button></div></div>`;
+  el.onclick = e => { if (e.target === el || e.target.hasAttribute("data-no")) el.remove(); if (e.target.hasAttribute("data-ok")) { el.remove(); onOk(); } };
+  document.body.appendChild(el);
+}
+async function removeF(rid) {
+  ask(`${rid.split("#")[0]} aus deinen Freunden entfernen?`, "Entfernen", async () => {
+    try { await saveFriends(S.friends.filter(f => f !== rid)); delete S.fdata[rid]; S.view = null; render(); toast("Entfernt"); }
+    catch (e) { toast("Fehler: " + e.message); }
+  });
+}
+function addF() { const v = $("#fadd").value.trim(); if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return toast("Riot ID im Format Name#TAG"); saveFriends([...(S.friends || []), v]); }
 function setupCard() {
   return `<div class="card"><h3>Riot ID verbinden</h3><p class="muted small" style="margin:0">Damit ich deine Games laden kann.</p>
     <label>Riot ID</label><input id="rid" placeholder="Name#TAG" value="${esc(S.me.riot_id || "")}">
@@ -310,7 +450,7 @@ function setupCard() {
 }
 async function saveRid() {
   const v = $("#rid").value.trim(); LS.set("jc_platform", $("#plat").value);
-  if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return alert("Riot ID im Format Name#TAG");
+  if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return toast("Riot ID im Format Name#TAG");
   await api("/api/me", {method: "PUT", body: JSON.stringify({riot_id: v})});
   S.me.riot_id = v; S.games = null; S.league = null; render(); loadMe();
 }
@@ -329,14 +469,15 @@ function vLogin() {
     <p class="muted small" style="margin-top:16px">Gleiches Konto wie in der PC-App.</p></div>`;
 }
 const TAB_IC = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', games: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7.5 11v3M6 12.5h3"/><circle cx="15.5" cy="11.5" r=".9"/><circle cx="17.5" cy="13.7" r=".9"/>',
+  stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   friends: '<circle cx="9" cy="8.5" r="3.4"/><path d="M2.8 19.5c1-3.2 3.5-4.8 6.2-4.8s5.2 1.6 6.2 4.8"/><path d="M15.5 5.6a3.2 3.2 0 0 1 0 6M17.6 14.9c1.8.6 3 2.1 3.6 4.6"/>', more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
 function render() {
   const app = $("#app"), tabs = $("#tabs");
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
-  app.innerHTML = ({home: vHome, games: vGames, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "");
+  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "");
 }
 boot();
 if ("serviceWorker" in navigator && !(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin)) navigator.serviceWorker.register("/m/sw.js").catch(() => {});
