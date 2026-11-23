@@ -128,7 +128,8 @@ async function finishLogin(provider, url, env) {
     body: new URLSearchParams({ client_id: P.id(env), client_secret: P.secret(env), grant_type: "authorization_code",
       code, redirect_uri: `${url.origin}/auth/${provider}/callback` }),
   }).then((r) => r.json());
-  if (!tok.access_token) return page("Anmeldung fehlgeschlagen", "Der Anbieter hat die Anmeldung abgelehnt.");
+  if (!tok.access_token) return page("Anmeldung fehlgeschlagen",
+    `Der Anbieter hat die Anmeldung abgelehnt (${String(tok.error || "unbekannt").replace(/[^\w.-]/g, "")}).`);
   const prof = await fetch(P.profile, { headers: { authorization: `Bearer ${tok.access_token}` } }).then((r) => r.json());
   const u = P.user(prof);
   const now = Math.floor(Date.now() / 1000);
@@ -168,6 +169,9 @@ export default {
     const p = url.pathname;
     try {
       let m;
+      if (p === "/api/health") return json({ ok: true,
+        riot: !!env.RIOT_API_KEY, discord: !!(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET),
+        google: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET), db: !!env.DB });
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
       if (p === "/api/me" || p.startsWith("/riot/")) {
