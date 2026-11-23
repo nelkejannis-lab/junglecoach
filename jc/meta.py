@@ -556,6 +556,86 @@ class MetaStats:
         return {"enough": True, "games": n, "scope": scope, "enemies": enemy_ids,
                 "keystones": keys[:3], "items": items[:5], "boots": boots[:1], "rune_page": page}
 
+    def build_path(self, champ_id, bracket=None, role=None):
+        """Ordered core build from real games (Riot stores only the end inventory, no purchase order).
+
+        Order estimate: games that ended with exactly ONE finished item show the usual first item,
+        games with two finished items (incl. the chosen first) the second, and so on. Per step the
+        popular options (>= 40 % of the most popular) compete on winrate in comparable games
+        (same number of finished items, shrunk toward the champion's winrate) – so the build is a
+        path real players take, not a list of unrelated high-winrate items."""
+        prev = getattr(self, "role", None)
+        self.role = role or prev
+        try:
+            rows, scope = self._rows(champ_id, bracket)
+        finally:
+            self.role = prev
+        if len(rows) < 40:
+            return {"enough": False, "games": len(rows), "scope": scope}
+        completed = self.gd.completed_items()
+        boots = {i for i, it in completed.items() if "Boots" in it.get("tags", [])}
+        legend = {i for i in completed if i not in boots and i not in SNOWBALL_ITEMS}
+        games = [(r[0], [i for i in r[1] if i in legend], [i for i in r[1] if i in boots]) for r in rows]
+        base = sum(g[0] for g in games) / len(games)
+
+        def pick(step, chosen):
+            exact = [g for g in games if len(g[1]) == step and all(c in g[1] for c in chosen)]
+            pool = exact if len(exact) >= 25 else [g for g in games if len(g[1]) >= step and all(c in g[1] for c in chosen)]
+            counts = {}
+            for g in pool:
+                for i in g[1]:
+                    if i not in chosen:
+                        counts[i] = counts.get(i, 0) + (1 if g in exact else 1 / max(1, len(g[1]) - len(chosen)))
+            if not counts:
+                return None, []
+            top = max(counts.values())
+            total = sum(counts.values())
+            opts = []
+            for i, c in counts.items():
+                if c < 0.3 * top:
+                    continue
+                comp = [g for g in games if i in g[1] and all(x in g[1] for x in chosen) and len(g[1]) in (step, step + 1)]
+                w, n = sum(g[0] for g in comp), len(comp)
+                opts.append({"id": i, "name": self.gd.item_name(i), "share": round(100 * c / total, 1), "games": n,
+                             "winrate": round(100 * w / n, 1) if n else None,
+                             "score": _shrunk(w, n, base, k=40)})
+            # consensus first (robust), winrate only decides between almost equally popular options:
+            # games that end with 1-2 items are short/one-sided, their winrates alone are too noisy
+            opts.sort(key=lambda o: -o["share"])
+            best = opts[0] if opts else None
+            for o in opts[1:]:
+                if o["share"] >= 0.75 * best["share"] and o["games"] >= 80 and o["score"] >= best["score"] + 0.02:
+                    best = o
+            return best, [o for o in opts if o is not best][:2]
+
+        core, alts = [], []
+        for step in (1, 2, 3):
+            best, other = pick(step, [c["id"] for c in core])
+            if not best:
+                break
+            core.append(dict(best, step=step))
+            alts.append({"step": step, "options": other})
+        late, _ = pick(4, [c["id"] for c in core]) if len(core) == 3 else (None, [])
+        options = []
+        if len(core) == 3:
+            pool = [g for g in games if len(g[1]) >= 4 and all(c["id"] in g[1] for c in core)]
+            cnt = {}
+            for g in pool:
+                for i in g[1]:
+                    if all(i != c["id"] for c in core):
+                        cnt[i] = cnt.get(i, 0) + 1
+            for i, c in sorted(cnt.items(), key=lambda kv: -kv[1])[:4]:
+                options.append({"id": i, "name": self.gd.item_name(i), "share": round(100 * c / max(len(pool), 1), 1)})
+        bc = {}
+        for g in games:
+            for b in g[2]:
+                bc[b] = bc.get(b, [0, 0]); bc[b][0] += g[0]; bc[b][1] += 1
+        bt = max(bc.items(), key=lambda kv: kv[1][1], default=None)
+        return {"enough": bool(core), "games": len(rows), "scope": scope, "core": core, "alternatives": alts,
+                "late": options, "next": late,
+                "boots": {"id": bt[0], "name": self.gd.item_name(bt[0]), "share": round(100 * bt[1][1] / len(games), 1)}
+                if bt else None}
+
     def champion(self, champ_id, min_games=25, bracket=None):
         """Meta build, keystone, hidden gems, matchups for one champion (Data Dragon id)."""
         rows, scope = self._rows(champ_id, bracket)

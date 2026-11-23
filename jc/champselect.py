@@ -44,45 +44,64 @@ def apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, enemy_ids=None)
     b = out.get("build")
     if b is None:
         return out
-    core, seen = [], set()
+    # Core = the ordered path real players build (coherent, consensus). Team-fit / matchup / gem
+    # items are offered as switches for the 3rd slot or situational – never a random mix.
+    bp = meta_stats.build_path(my_champ["id"], bracket=bracket)
+    core, seen, situ = [], set(), []
+    if bp.get("enough"):
+        for c in bp["core"]:
+            core.append({"id": c["id"], "name": c["name"], "badge": f"{c['step']}. Item",
+                         "why": f"{c['share']}% bauen es als {c['step']}. Item" +
+                                (f" · {c['winrate']}% WR ({c['games']} Games)" if c.get("winrate") is not None else "")})
+            seen.add(c["id"])
+        for o in bp.get("late", [])[:3]:
+            situ.append({"id": o["id"], "name": o["name"], "why": f"häufiges 4./5. Item ({o['share']}%)"}); seen.add(o["id"])
+        if bp.get("boots"):
+            bt = bp["boots"]
+            b["boots"] = {"id": bt["id"], "name": bt["name"], "why": f"meistgebaute Schuhe ({bt['share']}%)"}
+    swap = None
     if tf and tf.get("enough"):
-        for it in tf["items"]:
-            if len(core) >= 2:
-                break
-            if it["score"] > it["overall"] + 0.5 or not core:  # fits this team better than average
+        scores = {it["id"]: it["score"] for it in tf["items"]}
+        ref = scores.get(core[2]["id"]) if len(core) == 3 else None
+        for it in sorted(tf["items"], key=lambda x: -x["score"]):
+            if it["id"] in seen or it.get("games", 0) < 40:
+                continue
+            # only adapt when clearly better vs THIS team than the standard 3rd item (or no path at all)
+            if (ref is None and len(core) < 3 and it["score"] >= it["overall"] + 1.5) or \
+                    (ref is not None and it["score"] >= ref + 1.5 and it["score"] >= it["overall"] + 1.0):
                 vs = ", ".join(f"{c['enemy']} {c['delta']:+}%" for c in it["vs"]) or "solide gegen diese Comp"
-                core.append({"id": it["id"], "name": it["name"], "badge": "Team-Fit",
-                             "why": f"~{it['score']}% erwartete WR gegen dieses Team ({vs})"}); seen.add(it["id"])
+                swap = {"id": it["id"], "name": it["name"], "badge": "Team-Fit",
+                        "why": f"~{it['score']}% erwartete WR gegen dieses Team ({vs})"}
+                break
         if tf.get("boots"):
             bt = tf["boots"][0]
-            b["boots"] = {"id": bt["id"], "name": bt["name"], "why": f"beste Schuhe gegen diese Comp (~{bt['score']}% WR)"}
-    if mu and mu.get("enough"):
+            if bt.get("score", 0) >= bt.get("overall", 0) + 1.5:
+                b["boots"] = {"id": bt["id"], "name": bt["name"], "why": f"beste Schuhe gegen diese Comp (~{bt['score']}% WR)"}
+    if not swap and mu and mu.get("enough"):
         for it in mu["items"]:
-            if it["prob_better"] >= 0.6 and len(core) < 2 and it["id"] not in seen:
-                core.append({"id": it["id"], "name": it["name"], "badge": "Matchup",
-                             "why": f"vs {ename}: {it['adj_winrate']}% WR ({it['games']} Games)"}); seen.add(it["id"])
+            if it["prob_better"] >= 0.9 and it["games"] >= 30 and it["id"] not in seen:
+                swap = {"id": it["id"], "name": it["name"], "badge": "Matchup",
+                        "why": f"vs {ename}: {it['adj_winrate']}% WR ({it['games']} Games)"}
+                break
+    if swap:
+        if len(core) == 3:  # first two items are the champion's backbone, adapt the third
+            situ.insert(0, dict(core[2], why="Standard-3. Item: " + core[2]["why"]))
+            core[2] = swap
+        else:
+            core.append(swap)
+        seen.add(swap["id"])
     if cm.get("enough"):
         for g in cm.get("hidden_items", [])[:1]:
             if g["id"] not in seen:
-                core.append({"id": g["id"], "name": g["name"], "badge": "Geheimtipp", "why": g["verdict"]}); seen.add(g["id"])
-        for m in cm["meta_core"]:
-            if len(core) >= 3:
-                break
-            if m["id"] not in seen:
+                situ.append({"id": g["id"], "name": g["name"], "why": "Geheimtipp: " + g["verdict"]}); seen.add(g["id"])
+        if not core:  # no path data -> old meta list
+            for m in cm["meta_core"][:3]:
                 core.append({"id": m["id"], "name": m["name"], "badge": "Meta",
                              "why": f"{m['pickrate']}% Pickrate, {m['winrate']}% WR"}); seen.add(m["id"])
-        if cm.get("meta_boots"):
-            mb = cm["meta_boots"]
-            if not b.get("boots") or b["boots"]["why"] in ("Ability Haste", "Attack-Speed-Champion", "Magiedurchdringung"):
-                b["boots"] = {"id": mb["id"], "name": mb["name"], "why": f"Meta ({mb['pickrate']}%)"}
     if core:
-        for c in b["core"]:
-            if len(core) >= 3:
-                break
-            if c["id"] not in seen:
-                core.append(c)
         b["core"] = core[:3]
-        b["situational"] = [x for x in b["situational"] if x["id"] not in seen]
+        b["source"] = f"echte Games: {bp.get('games', 0)} ({bp.get('scope', '')})" if bp.get("enough") else "Meta"
+        b["situational"] = situ + [x for x in b.get("situational", []) if x["id"] not in seen]
     return out
 
 

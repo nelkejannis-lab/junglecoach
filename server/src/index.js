@@ -4,6 +4,9 @@
  *  /auth/{discord|google}            start login (from the desktop app, via the system browser)
  *  /auth/{discord|google}/callback   OAuth callback -> account -> session token -> back to the app
  *  /api/me            GET account | PUT {riot_id} | DELETE account (GDPR Art. 17)
+ *  /api/sync/friends  GET | PUT {friends:[Riot IDs]}   – same friend list on PC and phone
+ *  /api/sync/coach    GET | PUT {plan}                  – last coach summary from the PC app, for the phone
+ *  /m/                mobile web app (also loaded by the iOS app)
  *  /riot/{host}/...   authenticated proxy to the Riot API (key stays on the server)
  *  everything else    static website (public/)
  *
@@ -11,7 +14,9 @@
  * and timestamps. No e-mail, no password.
  */
 
-const APP_REDIRECTS = [/^http:\/\/(localhost|127\.0\.0\.1):87\d\d\/auth\/callback$/];
+const APP_REDIRECTS = [/^http:\/\/(localhost|127\.0\.0\.1):87\d\d\/auth\/callback$/, /^junglecoach:\/\/auth$/];
+const allowedRedirect = (r, origin) => APP_REDIRECTS.some((re) => re.test(r)) || r === `${origin}/m/`;
+const MAX_SYNC = 80000; // bytes per stored JSON blob
 const SESSION_DAYS = 30;
 
 const RIOT_HOSTS = new Set(["europe", "americas", "asia", "sea", "euw1", "eun1", "tr1", "ru", "na1", "br1",
@@ -109,7 +114,7 @@ async function authUser(req, env) {
 async function startLogin(provider, url, env) {
   const P = PROVIDERS[provider];
   const redirect = url.searchParams.get("redirect") || "";
-  if (!APP_REDIRECTS.some((r) => r.test(redirect))) return json({ error: "invalid redirect" }, 400);
+  if (!allowedRedirect(redirect, url.origin)) return json({ error: "invalid redirect" }, 400);
   const state = await sign({ r: redirect, n: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + 600 }, await secret(env));
   const q = new URLSearchParams({
     client_id: P.id(env), redirect_uri: `${url.origin}/auth/${provider}/callback`, response_type: "code",
@@ -162,6 +167,37 @@ async function riotProxy(req, url, env, ctx, user) {
   return res;
 }
 
+// ------------------------------------------------------------------ sync (friends + coach summary)
+async function ensureData(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_data (user_id INTEGER PRIMARY KEY, friends TEXT, coach TEXT,
+    updated_at INTEGER)`).run();
+}
+const RIOT_ID = /^[^#]{1,24}#[^#]{1,8}$/;
+async function sync(req, env, user, kind) {
+  await ensureData(env);
+  if (req.method === "GET") {
+    const row = await env.DB.prepare(`SELECT ${kind} AS v, updated_at FROM user_data WHERE user_id = ?`).bind(user.id).first();
+    const v = row && row.v ? JSON.parse(row.v) : (kind === "friends" ? [] : null);
+    return json({ [kind]: v, updated_at: row ? row.updated_at : null });
+  }
+  if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
+  const raw = await req.text();
+  if (raw.length > MAX_SYNC) return json({ error: "zu groß" }, 413);
+  let body;
+  try { body = JSON.parse(raw || "{}"); } catch { return json({ error: "ungültiges JSON" }, 400); }
+  let v;
+  if (kind === "friends") {
+    v = [...new Set((Array.isArray(body.friends) ? body.friends : []).map((f) => String(f).trim()).filter((f) => RIOT_ID.test(f)))].slice(0, 50);
+  } else {
+    v = body.plan && typeof body.plan === "object" ? body.plan : null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(`INSERT INTO user_data (user_id, ${kind}, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET ${kind} = excluded.${kind}, updated_at = excluded.updated_at`)
+    .bind(user.id, JSON.stringify(v), now).run();
+  return json({ ok: true, [kind]: kind === "friends" ? v : undefined });
+}
+
 // ------------------------------------------------------------------ router
 export default {
   async fetch(req, env, ctx) {
@@ -174,10 +210,14 @@ export default {
         google: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET), db: !!env.DB });
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
-      if (p === "/api/me" || p.startsWith("/riot/")) {
+      if (p === "/m") return Response.redirect(`${url.origin}/m/`, 301);
+      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen." }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
+        if (p === "/api/sync/friends") return await sync(req, env, user, "friends");
+        if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
+        if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);
         if (req.method === "PUT") {
           const body = await req.json().catch(() => ({}));
@@ -187,6 +227,8 @@ export default {
         }
         if (req.method === "DELETE") {
           await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
+          await ensureData(env);
+          await env.DB.prepare("DELETE FROM user_data WHERE user_id = ?").bind(user.id).run();
           return json({ ok: true, deleted: true });
         }
         return json({ error: "method not allowed" }, 405);

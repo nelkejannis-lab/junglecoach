@@ -105,7 +105,8 @@ class ChampSelectMetaTests(unittest.TestCase):
         self.assertEqual(out["runes"]["source"], "data")
         self.assertEqual(out["runes"]["selectedPerkIds"][0], 81000)       # vs Elise
         self.assertIn("1/5 Gegner", out["runes"]["why"][0])
-        self.assertEqual(out["build"]["core"][0]["id"], ANTI_ELISE)
+        self.assertEqual(out["build"]["core"][0]["badge"], "1. Item")  # ordered path from real games
+        self.assertEqual(len(out["build"]["core"]), 3)
         # full team with Leona -> Aftershock wins
         session["theirTeam"] = [{"cellId": 5, "championId": 32, "assignedPosition": "jungle"},
                                 {"cellId": 6, "championId": 89}, {"cellId": 7, "championId": 222},

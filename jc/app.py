@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import champselect, deep, live, meta, meta_cloud, profile, ranked, recorder, review
+from . import champselect, deep, friends, live, meta, meta_cloud, profile, ranked, recorder, review
 from .ddragon import GameData
 from .lcu import LCU
 
@@ -19,6 +19,7 @@ from .paths import DATA_DIR as ROOT, STATIC
 STATE = {"phase": "Startet…", "champ_select": None, "live": None, "review": None, "error": None}
 REC = {"obj": None}
 META = {"stats": None, "crawler": None}
+BUILD_CACHE = {}
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
 EDITABLE = ["language", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
@@ -103,14 +104,62 @@ def auto_review_loop(cfg):
         time.sleep(600)
 
 
-def coach_plan(gd, cfg, rev):
+def cloud(cfg, method, path, body=None):
+    """Small JSON call to our server (only when logged in); used to sync friends + coach summary
+    with the mobile app. Never raises – sync is best effort."""
+    if not (cfg.get("auth_token") and cfg.get("server_url")):
+        return None
+    try:
+        req = urllib.request.Request(cfg["server_url"].rstrip("/") + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Authorization": "Bearer " + cfg["auth_token"], "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read() or b"{}")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def cloud_bg(cfg, method, path, body=None):
+    threading.Thread(target=cloud, args=(cfg, method, path, body), daemon=True).start()
+
+
+def mobile_summary(plan):
+    keep = ("score", "player_type", "session_task", "focus", "confidence", "games", "account", "scope", "strengths")
+    out = {k: plan.get(k) for k in keep if plan.get(k) is not None}
+    if plan.get("consistency"):
+        out["consistency"] = {k: plan["consistency"].get(k) for k in ("score", "verdict")}
+    if (plan.get("tilt") or {}).get("rule"):
+        out["tilt"] = {"rule": plan["tilt"]["rule"]}
+    out["at"] = time.time()
+    return out
+
+
+def sync_on_start(cfg):
+    """Merges the friend list with the server (phone additions) and publishes the Riot ID."""
+    if not cfg.get("auth_token"):
+        return
+    r = cloud(cfg, "GET", "/api/sync/friends")
+    if r is not None:
+        local = cfg.get("friends", [])
+        merged = local + [f for f in (r.get("friends") or []) if f.lower() not in {x.lower() for x in local}]
+        if merged != local:
+            cfg["friends"] = merged[:50]
+            save_config(cfg)
+        cloud(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
+    me = cloud(cfg, "GET", "/api/me")
+    if me is not None and not me.get("riot_id") and "#" in (cfg.get("riot_id") or ""):
+        cloud(cfg, "PUT", "/api/me", {"riot_id": cfg["riot_id"]})
+
+
+def coach_plan(gd, cfg, rev, cache=None):
     from . import coach
+    cache = COACH if cache is None else cache
     games = (rev.get("games") or []) + (rev.get("other_games") or [])
     games.sort(key=lambda g: -(g.get("game_start") or 0))
     if not games:
         return {"ready": False, "reason": "Noch keine Games analysiert. Die Analyse läuft automatisch nach jedem "
                                           "Game – oder jetzt im Analyse-Tab starten."}
-    cached = COACH.get("plan")
+    cached = cache.get("plan")
     if cached and cached.get("_n") == len(games) and cached.get("_t") == games[0].get("game_start"):
         return cached
     ms = meta_stats(gd)
@@ -130,7 +179,9 @@ def coach_plan(gd, cfg, rev):
     plan["roles"] = sorted({k[1] for k in counts})
     plan["account"] = rev.get("account")
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
-    COACH["plan"] = plan
+    if cache is COACH and plan.get("ready"):
+        cloud_bg(cfg, "PUT", "/api/sync/coach", {"plan": mobile_summary(plan)})
+    cache["plan"] = plan
     return plan
 
 
@@ -188,6 +239,15 @@ def champion_page(gd, cfg, c, role=None):
         out["keystones"] = [dict(k, icon=gd.rune_icon.get(k["id"])) for k in st.get("keystones", [])]
         out["core"] = st["meta_core"]
         out["boots"] = st.get("meta_boots")
+        ms.role = role
+        bp = ms.build_path(c["id"], bracket=bracket)
+        ms.role = None
+        if bp.get("enough"):
+            out["core"] = [dict(x, pickrate=x["share"]) for x in bp["core"]]
+            out["build_alts"] = bp["alternatives"]
+            out["late"] = bp["late"]
+            if bp.get("boots"):
+                out["boots"] = dict(bp["boots"], pickrate=bp["boots"]["share"])
         out["gems"] = st.get("hidden_items", []) + [dict(g, icon=gd.rune_icon.get(g["id"])) for g in st.get("hidden_keystones", [])]
         for m in st.get("worst_matchups", []) + st.get("best_matchups", []):
             e = gd.champ(m.get("enemy"))
@@ -272,7 +332,21 @@ def poll_loop(gd, cfg, lcu):
                     if cid and cid["id"] not in presets:  # keep data-driven core from champ select in game
                         presets[cid["id"]] = {"core": [gd.items[c["id"]]["name"] for c in last_cs["build"]["core"]
                                                        if c["id"] in gd.items]}
-                live_state = live.analyze(gd, data, cfg.get("timers"), presets.get)
+                def preset_for(cid, _p=presets):
+                    if cid in _p:
+                        return _p[cid]
+                    ms = meta_stats(gd)
+                    if not ms:
+                        return None
+                    if cid not in BUILD_CACHE:
+                        try:
+                            bp = ms.build_path(cid, bracket=current_bracket(cfg))
+                            BUILD_CACHE[cid] = {"core": [gd.items[x["id"]]["name"] for x in bp.get("core", [])
+                                                         if x["id"] in gd.items]} if bp.get("enough") else None
+                        except Exception:  # noqa: BLE001
+                            BUILD_CACHE[cid] = None
+                    return BUILD_CACHE[cid]
+                live_state = live.analyze(gd, data, cfg.get("timers"), preset_for)
                 if live_state:
                     try:
                         from . import hud
@@ -388,6 +462,23 @@ def make_handler(gd, cfg, lcu):
             if self.path == "/api/review-data":
                 with LOCK:
                     return self._send(200, STATE.get("review") or {})
+            if self.path.startswith("/icon/item/"):  # item icon for the overlay (cached once per patch)
+                iid = self.path.rsplit("/", 1)[-1].split("?")[0]
+                if not iid.isdigit():
+                    return self._send(404, {"error": "bad id"})
+                d = os.path.join(ROOT, "cache", "icons")
+                fp = os.path.join(d, f"{gd.version}_{iid}.png")
+                if not os.path.exists(fp):
+                    try:
+                        os.makedirs(d, exist_ok=True)
+                        with urllib.request.urlopen(f"https://ddragon.leagueoflegends.com/cdn/{gd.version}/img/item/{iid}.png",
+                                                    timeout=5) as r:
+                            data = r.read()
+                        with open(fp, "wb") as f:
+                            f.write(data)
+                    except Exception:  # noqa: BLE001
+                        return self._send(404, {"error": "icon not available"})
+                return self._send_file(fp, "image/png")
             if self.path == "/api/overlay":  # tiny payload, polled every second by the in-game overlay
                 from . import i18n
                 with LOCK:
@@ -439,6 +530,7 @@ def make_handler(gd, cfg, lcu):
                     cfg["auth_token"] = tok
                     save_config(cfg)
                     profile._mem.clear()
+                    threading.Thread(target=sync_on_start, args=(cfg,), daemon=True).start()
                     body = "<h1>Angemeldet ✓</h1><p>Du kannst dieses Fenster schließen und zu Jungle Coach zurückkehren.</p>"
                 else:
                     body = "<h1>Anmeldung fehlgeschlagen</h1><p>Bitte in der App erneut versuchen.</p>"
@@ -575,6 +667,17 @@ def make_handler(gd, cfg, lcu):
                     return self._send(200, run_review(cfg))
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
+            if self.path == "/api/friends":
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
+            if self.path.startswith("/api/friend-coach"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                rid = (q.get("riot_id") or [""])[0]
+                st = friends.coach_state(rid)
+                if q.get("start") and riot_cred(cfg) and friends.valid(rid):
+                    st = friends.start_coach(cfg, gd, riot_cred(cfg), rid,
+                                             lambda rev: coach_plan(gd, cfg, rev, cache={}))
+                    st = {k: v for k, v in st.items() if not k.startswith("_")}
+                return self._send(200, st)
             if self.path.startswith("/api/coach"):
                 with LOCK:
                     rev = STATE.get("review") or {}
@@ -624,6 +727,16 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 profile._mem.clear()
                 return self._send(200, {"ok": True})
+            if self.path == "/api/friends":
+                body = self._body()
+                if body.get("add"):
+                    if not friends.add(cfg, body["add"]):
+                        return self._send(400, {"error": "Riot ID im Format Name#TAG eingeben."})
+                if body.get("remove"):
+                    friends.remove(cfg, body["remove"])
+                save_config(cfg)
+                cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
             if self.path == "/api/clip-feedback":
                 b = self._body()
                 ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))
@@ -690,6 +803,7 @@ def start(cfg=None):
             time.sleep(1800)
     threading.Thread(target=cloud_loop, daemon=True).start()
     threading.Thread(target=auto_review_loop, args=(cfg,), daemon=True).start()
+    threading.Thread(target=sync_on_start, args=(cfg,), daemon=True).start()
     port = cfg.get("port", 8765)
     host = "0.0.0.0" if cfg.get("allow_phone", False) else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), make_handler(gd, cfg, lcu))

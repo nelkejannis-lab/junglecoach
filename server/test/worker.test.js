@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import worker, { sign, verify } from "../src/index.js";
 
 function mockDB() {
-  const users = [];
+  const users = [], data = new Map();
   return {
     users,
     prepare(sql) {
@@ -20,6 +20,11 @@ function mockDB() {
             if (ex) { ex.name = name; ex.last_login = l; } else users.push({ id: users.length + 1, provider, provider_id: pid, name, riot_id: null, created_at: c, last_login: l });
           } else if (sql.startsWith("UPDATE users SET riot_id")) {
             users.find((u) => u.id === args[1]).riot_id = args[0];
+          } else if (sql.startsWith("INSERT INTO user_data")) {
+            const col = sql.match(/user_id, (\w+),/)[1];
+            data.set(args[0], { ...(data.get(args[0]) || {}), [col]: args[1], updated_at: args[2] });
+          } else if (sql.startsWith("DELETE FROM user_data")) {
+            data.delete(args[0]);
           } else if (sql.startsWith("DELETE FROM users")) {
             users.splice(users.findIndex((u) => u.id === args[0]), 1);
           }
@@ -27,6 +32,10 @@ function mockDB() {
         },
         async first() {
           if (sql.includes("FROM config")) return this.cfg ?? (globalThis.__cfg ? { value: globalThis.__cfg } : null);
+          if (sql.includes("FROM user_data")) {
+            const d = data.get(args[0]); const col = sql.match(/SELECT (\w+) AS v/)[1];
+            return d ? { v: d[col] ?? null, updated_at: d.updated_at } : null;
+          }
           if (sql.includes("WHERE id = ?")) return users.find((u) => u.id === args[0]) || null;
           return users.find((u) => u.provider === args[0] && u.provider_id === args[1]) || null;
         },
@@ -89,5 +98,31 @@ test("login flow: discord -> account -> token back to app", async () => {
   assert.equal((await r.json()).deleted, true);
   assert.equal(env.DB.users.length, 0);
   r = await worker.fetch(new Request("https://jc.dev/api/me", { headers: { authorization: "Bearer " + token } }), env, ctx);
+  assert.equal(r.status, 401);
+});
+
+test("mobile redirects and sync", async () => {
+  let r = await worker.fetch(new Request("https://jc.dev/auth/google?redirect=" + encodeURIComponent("junglecoach://auth")), env, ctx);
+  assert.equal(r.status, 302);
+  r = await worker.fetch(new Request("https://jc.dev/auth/google?redirect=" + encodeURIComponent("https://jc.dev/m/")), env, ctx);
+  assert.equal(r.status, 302);
+  r = await worker.fetch(new Request("https://jc.dev/auth/google?redirect=" + encodeURIComponent("https://other.dev/m/")), env, ctx);
+  assert.equal(r.status, 400);
+  env.DB.users.push({ id: 99, provider: "google", provider_id: "s", name: "S", riot_id: null, created_at: 1, last_login: 1 });
+  const { sign } = await import("../src/index.js");
+  const cfgRow = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  const tok = await sign({ uid: 99, exp: Date.now() / 1000 + 600 }, cfgRow.value);
+  const H = { authorization: "Bearer " + tok };
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/friends", { method: "PUT", headers: H,
+    body: JSON.stringify({ friends: ["Luca#EUW", "bad", "Luca#EUW", "Mia#GER"] }) }), env, ctx);
+  assert.deepEqual((await r.json()).friends, ["Luca#EUW", "Mia#GER"]);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/friends", { headers: H }), env, ctx);
+  assert.deepEqual((await r.json()).friends, ["Luca#EUW", "Mia#GER"]);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/coach", { method: "PUT", headers: H, body: JSON.stringify({ plan: { score: 61 } }) }), env, ctx);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/coach", { headers: H }), env, ctx);
+  assert.equal((await r.json()).coach.score, 61);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/coach", { method: "PUT", headers: H, body: "x".repeat(90000) }), env, ctx);
+  assert.equal(r.status, 413);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/friends"), env, ctx);
   assert.equal(r.status, 401);
 });

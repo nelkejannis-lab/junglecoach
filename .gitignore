@@ -8,3 +8,6 @@ build/
 meta.sqlite
 lp_history.json
 review_cache.json
+ios/build/
+ios/Payload/
+ios/*.xcodeproj/

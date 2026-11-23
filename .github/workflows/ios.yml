@@ -1,0 +1,37 @@
+# Baut die iPhone-App (JungleCoach-unsigned.ipa) – ohne Signatur, zum Installieren per Sideloadly/AltStore.
+name: iOS app
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release-Tag, an das die IPA gehängt wird (z. B. v1.5.0) – leer = nur bauen"
+        required: false
+        default: ""
+permissions:
+  contents: write
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Generate Xcode project
+        run: cd ios && xcodegen generate
+      - name: Build (unsigned)
+        run: |
+          cd ios
+          xcodebuild -project JungleCoach.xcodeproj -target JungleCoach -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+          test -d build/Release-iphoneos/JungleCoach.app
+      - name: Package IPA
+        run: |
+          cd ios && mkdir -p Payload && cp -R build/Release-iphoneos/JungleCoach.app Payload/
+          zip -qry ../JungleCoach-unsigned.ipa Payload && ls -la ../JungleCoach-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with: { name: JungleCoach-iOS, path: JungleCoach-unsigned.ipa }
+      - name: Release
+        if: inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: JungleCoach-unsigned.ipa
