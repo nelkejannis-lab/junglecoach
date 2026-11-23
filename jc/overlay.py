@@ -9,34 +9,63 @@ import json
 import sys
 import urllib.request
 
-ORANGE, GREEN, RED, TXT, MUTED, BG = "#ffb547", "#3ddc97", "#ff5d5d", "#e6e9ef", "#8b93a1", "#0e1116"
+BG, CARD, TXT, MUTED = "#0b0f1a", "#121829", "#eef2ff", "#8b93a7"
+CYAN, GREEN, ORANGE, RED, GOLD, VIOLET = "#22d3ee", "#34d399", "#fbbf24", "#fb7185", "#f5c451", "#a78bfa"
+TONE = {"warn": ORANGE, "bad": RED, "good": GREEN, "info": CYAN, "calm": VIOLET}
+KEY = "#010203"  # transparent key colour for the rounded corners
+
+L = {"de": {"now": "JETZT", "item": "NÄCHSTES ITEM", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
+            "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
+            "missing": "fehlen", "buy": "kaufbar!", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
+     "en": {"now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
+            "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
+            "missing": "missing", "buy": "affordable!", "move": "Move overlay – Ctrl+Shift+K to lock"}}
+
+
+def layout(state):
+    """Pure function: dashboard state -> overlay blocks. Empty list = hide overlay.
+    Block: (kind, text, colour) with kind in head | now | more | sep | label | row."""
+    live = (state or {}).get("live")
+    if not live:
+        return []
+    h = live.get("hud") or {}
+    lang = "en" if (state or {}).get("lang") == "en" else "de"
+    t = L[lang]
+    gold = h.get("gold")
+    head = f"{h.get('time') or live.get('game_time')}   ·   {h.get('cs', live.get('cs_per_min'))} CS/min"
+    if gold is not None:
+        head += f"   ·   {gold:,} g".replace(",", ".")
+    out = [("head", head, GREEN if h.get("cs_ok", True) else ORANGE)]
+    now = h.get("now")
+    if now:
+        out += [("label", t["now"], TONE.get(now.get("tone"), CYAN)), ("now", now["text"], TONE.get(now.get("tone"), TXT))]
+        for m in h.get("more") or []:
+            out.append(("more", "• " + m["text"], MUTED))
+    out.append(("sep", "", ""))
+    it = h.get("item")
+    if it:
+        extra = ""
+        if it.get("missing") is not None:
+            extra = f"   {t['buy']}" if it["missing"] == 0 else f"   {it['missing']} g {t['missing']}"
+        out.append(("row", f"{t['item']}|{it['name']}{extra}", GREEN if it.get("missing") == 0 else TXT))
+    timers = h.get("timers") or []
+    if timers:
+        out.append(("row", f"{t['timer']}|" + "   ".join(f"{o['label']} {o['in']}" for o in timers),
+                    ORANGE if any(o.get("soon") for o in timers) else TXT))
+    ej = h.get("enemy_jg")
+    if ej and ej.get("champion"):
+        seen = f"{t['seen']} {ej['seen']}" if ej.get("seen") else t["unseen"]
+        out.append(("row", f"{t['ejg']}|{ej['champion']} Lvl {ej.get('level')} · {seen}", TXT))
+    if h.get("fed"):
+        out.append(("row", f"{t['fed']}|" + ", ".join(h["fed"]), RED))
+    if h.get("focus"):
+        out.append(("row", f"{t['focus']}|{h['focus']['title']} · {t['target']} {h['focus']['target']}", VIOLET))
+    return out
 
 
 def format_lines(state):
-    """Pure function: dashboard state -> list of (text, color). Empty list = hide overlay."""
-    l = (state or {}).get("live")
-    if not l:
-        return []
-    out = [(f"⏱ {l['game_time']}   CS/min {l['cs_per_min']}", GREEN if l["cs_per_min"] >= 6 else ORANGE)]
-    ej = l.get("enemy_jungler") or {}
-    if ej.get("champion"):
-        seen = ej.get("last_seen") or []
-        where = f" · zuletzt {seen[0]['where']} {seen[0]['time']}" if seen else " · noch nicht gesehen"
-        out.append((f"Gegner-JG {ej['champion']} Lvl {ej['level']}{where}", TXT))
-        for w in (ej.get("warnings") or [])[:2]:
-            out.append(("⚠ " + w, ORANGE))
-    b = l.get("build") or {}
-    nxt = (b.get("situational") or []) + (b.get("core") or [])
-    if nxt:
-        out.append((f"Nächstes Item: {nxt[0]['name']} – {nxt[0]['why']}", TXT))
-    if b.get("boots"):
-        out.append((f"Schuhe: {b['boots']['name']}", MUTED))
-    for f in (l.get("enemy", {}).get("fed") or [])[:2]:
-        out.append((f"Fed: {f['name']} {f['kda']}", RED))
-    objs = l.get("objectives") or []
-    if objs:
-        out.append(("  ·  ".join(f"{o['name']} {o['respawn_in']}" for o in objs), MUTED))
-    return out
+    """Backwards compatible plain list of (text, colour)."""
+    return [(txt.replace("|", ": "), col) for kind, txt, col in layout(state) if kind != "sep"]
 
 
 # ---------------------------------------------------------------- Win32 helpers
@@ -60,20 +89,32 @@ class MSG(ctypes.Structure):
 
 def run(url, cfg):
     import tkinter as tk
+    import tkinter.font as tkfont
 
-    ocfg = {"x": -470, "y": 60, "alpha": 0.85, "width": 450, "font_size": 11, **cfg.get("overlay", {})}
+    ocfg = {"x": -420, "y": 70, "alpha": 0.93, "width": 390, "font_size": 10, **cfg.get("overlay", {})}
+    W = ocfg["width"]
     root = tk.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.attributes("-alpha", ocfg["alpha"])
-    root.configure(bg=BG)
+    root.configure(bg=KEY)
+    try:
+        root.attributes("-transparentcolor", KEY)  # rounded corners (Windows)
+    except tk.TclError:
+        pass
     sw = root.winfo_screenwidth()
     x = ocfg["x"] if ocfg["x"] >= 0 else sw + ocfg["x"]
-    root.geometry(f"{ocfg['width']}x40+{x}+{ocfg['y']}")
-    frame = tk.Frame(root, bg=BG, padx=10, pady=6)
-    frame.pack(fill="both", expand=True)
-    labels = []
-    st = {"visible": True, "move": False, "drag": (0, 0), "shown": False}
+    root.geometry(f"{W}x60+{x}+{ocfg['y']}")
+    cv = tk.Canvas(root, width=W, height=60, bg=KEY, highlightthickness=0, bd=0)
+    cv.pack(fill="both", expand=True)
+    fs = ocfg["font_size"]
+    F = {"head": tkfont.Font(family="Segoe UI Semibold", size=fs + 1),
+         "label": tkfont.Font(family="Segoe UI", size=fs - 2, weight="bold"),
+         "now": tkfont.Font(family="Segoe UI Semibold", size=fs + 3),
+         "more": tkfont.Font(family="Segoe UI", size=fs - 1),
+         "rowk": tkfont.Font(family="Segoe UI", size=fs - 2, weight="bold"),
+         "row": tkfont.Font(family="Segoe UI", size=fs)}
+    st = {"visible": True, "move": False, "drag": (0, 0), "shown": False, "last": None}
 
     win = sys.platform == "win32"
     hwnd = None
@@ -94,6 +135,47 @@ def run(url, cfg):
     root.bind("<Button-1>", start_drag)
     root.bind("<B1-Motion>", do_drag)
 
+    def rrect(x1, y1, x2, y2, r, **kw):
+        pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r,
+               x1, y1 + r, x1, y1]
+        return cv.create_polygon(pts, smooth=True, **kw)
+
+    def draw(blocks):
+        cv.delete("all")
+        pad, y = 16, 14
+        items = []
+        for kind, text, col in blocks:
+            if kind == "sep":
+                items.append(("sep", y))
+                y += 12
+                continue
+            if kind == "row":
+                k, v = text.split("|", 1)
+                items.append(("rowk", pad, y, k, MUTED))
+                y += F["rowk"].metrics("linespace")
+                tid = cv.create_text(pad, y, text=v, anchor="nw", fill=col, font=F["row"], width=W - 2 * pad)
+                y = cv.bbox(tid)[3] + 7
+                continue
+            font = F[kind]
+            x0 = pad + (10 if kind in ("now", "more") else 0)
+            tid = cv.create_text(x0, y, text=text, anchor="nw", fill=col, font=font, width=W - x0 - pad)
+            bb = cv.bbox(tid)
+            if kind == "now":
+                items.append(("bar", pad, y + 2, bb[3] - 2, col))
+            y = bb[3] + (8 if kind in ("head", "now") else 3)
+        h = y + 8
+        bg = rrect(1, 1, W - 1, h - 1, 16, fill=BG, outline="#22d3ee" if st["move"] else "#263049", width=1)
+        cv.tag_lower(bg)
+        for it in items:
+            if it[0] == "sep":
+                cv.create_line(16, it[1] + 5, W - 16, it[1] + 5, fill="#1e2638")
+            elif it[0] == "rowk":
+                cv.create_text(it[1], it[2], text=it[3], anchor="nw", fill=it[4], font=F["rowk"])
+            elif it[0] == "bar":
+                cv.create_rectangle(it[1], it[2], it[1] + 3, it[3], fill=it[4], outline="")
+        cv.configure(height=h)
+        root.geometry(f"{W}x{h}")
+
     def poll_hotkeys():
         if win:
             msg = MSG()
@@ -103,38 +185,33 @@ def run(url, cfg):
                 elif msg.wParam == 2:
                     st["move"] = not st["move"]
                     _set_clickthrough(hwnd, not st["move"])
-                    frame.configure(highlightthickness=2 if st["move"] else 0, highlightbackground=GREEN)
+                    st["last"] = None
         root.after(50, poll_hotkeys)
 
     def refresh():
         try:
             with urllib.request.urlopen(url + "/api/state", timeout=2) as r:
-                lines = format_lines(json.loads(r.read().decode("utf-8")))
+                state = json.loads(r.read().decode("utf-8"))
+            blocks = layout(state)
+            lang = "en" if state.get("lang") == "en" else "de"
         except Exception:
-            lines = []
-        if st["move"] and not lines:
-            lines = [("Overlay verschieben – Ctrl+Shift+K zum Fixieren", GREEN)]
-        show = bool(lines) and st["visible"]
+            blocks, lang = [], "de"
+        if st["move"] and not blocks:
+            blocks = [("head", L[lang]["move"], CYAN)]
+        show = bool(blocks) and st["visible"]
         if show:
-            while len(labels) < len(lines):
-                lb = tk.Label(frame, bg=BG, anchor="w", justify="left",
-                              font=("Segoe UI", ocfg["font_size"]), wraplength=ocfg["width"] - 20)
-                lb.pack(fill="x")
-                labels.append(lb)
-            for lb, (text, color) in zip(labels, lines):
-                lb.configure(text=text, fg=color)
-            for lb in labels[len(lines):]:
-                lb.pack_forget()
-            del labels[len(lines):]
-            root.update_idletasks()
-            root.geometry(f"{ocfg['width']}x{frame.winfo_reqheight()}")
+            if blocks != st["last"]:
+                draw(blocks)
+                st["last"] = blocks
             if not st["shown"]:
-                root.deiconify(); st["shown"] = True
+                root.deiconify()
+                st["shown"] = True
                 if win:
                     _set_clickthrough(hwnd, not st["move"])
             root.attributes("-topmost", True)  # re-assert above the game
         elif st["shown"]:
-            root.withdraw(); st["shown"] = False
+            root.withdraw()
+            st["shown"] = False
         root.after(1000, refresh)
 
     root.withdraw()

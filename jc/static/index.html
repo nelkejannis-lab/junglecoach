@@ -679,7 +679,7 @@ function renderCoach() {
   if (c.patterns.length) h += card("Was deine Siege ausmacht", "Größte Unterschiede zwischen deinen Siegen und Niederlagen.",
     `<table class="tl"><tr><th>Bereich</th><th>Siege</th><th>Niederlagen</th></tr>${c.patterns.map(p => `<tr><td><b>${esc(p.label)}</b></td><td class="green">${esc(p.wins)}</td><td class="red">${esc(p.losses)}</td></tr>`).join("")}</table>`);
   if (c.strengths.length) h += card("Deine Stärken", "Darauf kannst du bauen.", c.strengths.map(x => `<div class="row"><span>💪 ${esc(x.label)}</span><b class="green">besser als ${x.percentile}%</b></div>`).join(""));
-  return `<h1 class="title">Dein <span class="g">Coach</span></h1><p class="subtitle">Aus deinen letzten Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.</p><div class="grid">${h}</div>`;
+  return `<h1 class="title">Dein <span class="g">Coach</span></h1><p class="subtitle">Aus deinen letzten 10 Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.</p><div class="grid">${h}</div>`;
 }
 
 // ------------------------------------------------------------ META (op.gg style)
@@ -898,7 +898,11 @@ async function tick() {
   const rsNow = JSON.stringify(state.review_status || {});
   if (rsNow !== tick._rs) { const was = tick._rs; tick._rs = rsNow; if (was && !(state.review_status || {}).running) { coachData = null; loadCoach(); } }
   const ph = state.live ? "InGame" : state.phase;          // auto-switch on phase change only
-  if (ph !== lastPhase) { if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live"); lastPhase = ph; }
+  if (ph !== lastPhase) {
+    if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live");
+    else if ((ph === "EndOfGame" || ph === "PreEndOfGame") && lastPhase === "InGame") { go("coach"); }
+    lastPhase = ph;
+  }
   if (view !== "settings") render();
 }
 const getJson = async u => (await fetch(u)).json();

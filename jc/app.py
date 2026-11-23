@@ -275,6 +275,17 @@ def poll_loop(gd, cfg, lcu):
                         presets[cid["id"]] = {"core": [gd.items[c["id"]]["name"] for c in last_cs["build"]["core"]
                                                        if c["id"] in gd.items]}
                 live_state = live.analyze(gd, data, cfg.get("timers"), presets.get)
+                if live_state:
+                    try:
+                        from . import hud
+                        plan = COACH.get("plan") or {}
+                        f = (plan.get("focus") or [None])[0]
+                        focus = {"title": f["title"], "target": f["target"]} if f else None
+                        step = ((last_cs.get("gameplan") or {}).get("steps") or [None])[0]
+                        live_state["hud"] = hud.build(live_state, gd, live_state.get("_gold"), live_state.get("_owned") or [],
+                                                      focus, step)
+                    except Exception as e:  # noqa: BLE001
+                        live_state["hud"] = {"error": str(e)}
             # ---- automatic recording + mistake clips
             rec = REC["obj"] = REC["obj"] or recorder.Recorder(cfg)
             if live_state and not rec.active and rec.cfg["enabled"]:

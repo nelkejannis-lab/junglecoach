@@ -42,8 +42,18 @@ class CoachTest(unittest.TestCase):
         self.assertTrue(any(p["metric"] == "kp" for p in plan["patterns"]))
         self.assertLessEqual(len(plan["focus"]), 3)
         self.assertTrue(plan["focus"][0]["drill"])
-        self.assertEqual(len(plan["trend"]), 16)
+        self.assertEqual(len(plan["trend"]), 10)
         self.assertLess(plan["consistency"]["score"], 75)
+
+    def test_role_specific_values(self):
+        now = time.time()
+        gs = games(now)
+        for g in gs:
+            g["role"] = "JUNGLE"; g["stats"]["cs10"] = 5
+        gs[0]["role"] = "UTILITY"
+        plan = coach.analyze(gs, bench(), now=now)
+        self.assertNotIn("cs10", [p["metric"] for p in plan["profile"]])     # no lane CS for junglers/supports
+        self.assertEqual(plan["games"], 10)                                   # only the last 10 games
 
     def test_not_ready_without_data(self):
         self.assertFalse(coach.analyze([], bench())["ready"])

@@ -36,6 +36,15 @@ DRILLS = {
     "dmg_share": ("Schadensanteil", "Mehr Zeit in Teamfights statt beim Farmen zu verbringen. Ziel: {t}."),
     "cc": ("CC einsetzen", "CC auf den gefährlichsten Gegner, nicht den nächsten. Ziel: {t} s CC."),
 }
+# values that make no sense for a role (junglers and supports don't farm lane minions, laners no jungle camps)
+NOT_FOR_ROLE = {
+    "JUNGLE": {"cs10"},
+    "UTILITY": {"cs10", "jcs10", "scuttles", "enemy_jungle", "early_kills", "gpm"},
+    "TOP": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
+    "MIDDLE": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
+    "BOTTOM": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
+}
+LAST_GAMES = 10
 CORE = ["jcs10", "cs10", "kp", "vpm", "deaths", "gpm", "dpm", "early_kills", "drag", "cw", "scuttles", "dead_share"]
 
 
@@ -89,7 +98,10 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     bench: benchmark of the main champion (MetaStats.benchmarks); bench_by_champ: {champion: benchmark}
     so every game is compared with players of the champion actually played."""
     now = now or time.time()
-    games = [g for g in games if g.get("stats")]
+    games = sorted([g for g in games if g.get("stats")], key=lambda g: -(g.get("game_start") or 0))[:LAST_GAMES]
+    for g in games:  # only values that fit the role played
+        skip = NOT_FOR_ROLE.get(g.get("role") or "JUNGLE", set())
+        g["stats"] = {k: v for k, v in g["stats"].items() if k not in skip}
     if not games or not bench:
         return {"ready": False, "reason": "Analysiere zuerst ein paar Ranked-Games (Analyse-Tab) – "
                                           "und es braucht Vergleichsdaten aus der Meta-Datenbank."}

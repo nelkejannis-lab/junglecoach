@@ -618,5 +618,6 @@ window.I18N_EN = {
 "Deine Rolle": "Your role",
 "Spieler. Strich in der Mitte = Durchschnitt.": "players. Line in the middle = average.",
 "auf": "to",
-"Tag und Nacht": "Dusk and Dawn"
+"Tag und Nacht": "Dusk and Dawn",
+"Aus deinen letzten 10 Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.": "From your last 10 games – compared with real players of your champion and elo. Updates automatically after every game."
 };

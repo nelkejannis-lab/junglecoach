@@ -15,6 +15,34 @@ def _overlay_cmd():
     return [sys.executable, "-m", "jc.launcher", "--overlay"]
 
 
+def _follow_game(window, url):
+    """Brings the app window to the front when champ select starts and after the game – never during the
+    game (that would minimise League). The page itself switches to Champ Select / Live / Coach."""
+    import json
+    import time
+    import urllib.request
+    last = None
+    while True:
+        try:
+            with urllib.request.urlopen(url + "/api/state", timeout=2) as r:
+                st = json.loads(r.read().decode("utf-8"))
+            phase = "InGame" if st.get("live") else st.get("phase")
+            if phase != last:
+                if phase in ("ChampSelect", "EndOfGame", "PreEndOfGame"):
+                    try:
+                        window.restore()
+                        window.show()
+                        window.on_top = True
+                        time.sleep(0.4)
+                        window.on_top = False
+                    except Exception:  # noqa: BLE001 - older pywebview versions
+                        pass
+                last = phase
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(1.5)
+
+
 def main():
     from jc.app import load_config
     cfg = load_config()
@@ -44,9 +72,9 @@ def main():
 
     try:
         import webview  # pywebview -> native app window
-        webview.create_window("Jungle Coach", url, width=1200, height=820, min_size=(420, 500),
-                              background_color="#0e1116")
-        webview.start()
+        window = webview.create_window("Jungle Coach", url, width=1280, height=860, min_size=(420, 500),
+                                       background_color="#07090f")
+        webview.start(_follow_game, (window, url))
     except ImportError:
         webbrowser.open(url)  # fallback without pywebview
         print("App-Fenster braucht 'pip install pywebview' – Dashboard im Browser geöffnet. Strg+C beendet.")

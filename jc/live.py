@@ -165,5 +165,6 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             "allies": [gd.champ_name(_champ(gd, p)) for p in allies],
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,
+            "_owned": [i for i in owned if i], "_gold": (data.get("activePlayer") or {}).get("currentGold"),
             "_enemy_targets": [(c["id"], gd.champ_name(c), _is_jungler(p))
                                for p in enemies for c in [_champ(gd, p)] if c]}

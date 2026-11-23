@@ -154,10 +154,14 @@ class Tests(unittest.TestCase):
         self.assertNotIn("Black Cleaver", [i["name"] for i in out["build"]["core"]])  # already owned
         self.assertTrue(out["enemy"]["fed"])
         self.assertTrue(any("MR" in i["why"] or "Magie" in i["why"] for i in out["build"]["situational"]))
+        from jc import hud
+        out["hud"] = hud.build(out, GD, 5000, out["_owned"], {"title": "Clear-Tempo", "target": "61"})
         lines = [t for t, _ in overlay.format_lines({"live": out})]
-        self.assertTrue(lines[0].startswith("⏱ 10:00"))
+        self.assertTrue(lines[0].startswith("10:00"))
         self.assertTrue(any("Elise" in t and "BOTTOM" in t for t in lines))
-        self.assertTrue(any(t.startswith("Nächstes Item") for t in lines))
+        self.assertTrue(any(t.startswith("NÄCHSTES ITEM") for t in lines))
+        self.assertTrue(any("Clear-Tempo" in t for t in lines))
+        self.assertTrue(out["hud"]["now"]["text"])
         self.assertEqual(overlay.format_lines({"live": None}), [])
 
     def test_review(self):
