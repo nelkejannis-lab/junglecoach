@@ -51,6 +51,12 @@ class GameData:
         self.item_disp = {int(k): v["name"] for k, v in disp_items.items()}
 
         self.runes = raw["runes"]
+        self.rune_icon = {}
+        for tree in raw["runes"]:
+            self.rune_icon[tree["id"]] = tree.get("icon")
+            for slot in tree["slots"]:
+                for r in slot["runes"]:
+                    self.rune_icon[r["id"]] = r.get("icon")
         self.rune_disp = {}
         for tree in raw.get("runes_disp", raw["runes"]):
             self.rune_disp[tree["id"]] = tree["name"]

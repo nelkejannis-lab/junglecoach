@@ -50,6 +50,129 @@ def current_bracket(cfg):
     return None if b in ("all", "", None) else b
 
 
+COACH = {}
+
+
+def run_review(cfg):
+    """Loads + analyses the recent ranked games of the active account (or the configured Riot ID)."""
+    rid = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
+    res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), rid, cfg.get("review_games", 30))
+    res["account"] = rid
+    attach_clips(res["games"], recorder.list_sessions())
+    with open(REVIEW_CACHE, "w", encoding="utf-8") as f:
+        json.dump(res, f)
+    with LOCK:
+        STATE["review"] = res
+    COACH.clear()
+    return res
+
+
+def coach_plan(gd, cfg, rev):
+    from . import coach
+    games = rev.get("games") or []
+    if not games:
+        return {"ready": False, "reason": "Noch keine Games analysiert. Die Analyse läuft automatisch nach jedem "
+                                          "Game – oder jetzt im Analyse-Tab starten."}
+    cached = COACH.get("plan")
+    if cached and cached.get("_n") == len(games) and cached.get("_t") == games[0].get("game_start"):
+        return cached
+    ms = meta_stats(gd)
+    if not ms:
+        return {"ready": False, "reason": "Die Vergleichsdatenbank wird noch geladen …"}
+    ms = meta.MetaStats(gd, ms.db)
+    bracket = current_bracket(cfg)
+    counts = {}
+    for g in games:
+        counts[g["champion"]] = counts.get(g["champion"], 0) + 1
+    by = {c: ms.benchmarks(c, "JUNGLE", bracket) for c in counts}
+    by = {c: b for c, b in by.items() if b}
+    main = max(counts, key=counts.get)
+    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(main, "JUNGLE", None), bench_by_champ=by)
+    plan["account"] = rev.get("account")
+    plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
+    COACH["plan"] = plan
+    return plan
+
+
+SHARDS = {5008: "Adaptive Kraft", 5005: "Angriffstempo", 5007: "Fähigkeitstempo", 5001: "Leben (skalierend)",
+          5011: "Leben", 5002: "Rüstung", 5003: "Magieresistenz", 5010: "Lauftempo", 5013: "Zähigkeit & Verlangsamungsresistenz"}
+
+
+def rune_tree(gd, page):
+    """op.gg-style rune page: every row of both trees, chosen runes marked, plus stat shards."""
+    if not page:
+        return None
+    chosen = set(page["perks"])
+    trees = {t["id"]: t for t in gd.runes}
+
+    def tree(tid, rows):
+        t = trees.get(tid)
+        if not t:
+            return None
+        return {"id": tid, "name": gd.rune_disp.get(tid, t["name"]), "icon": t.get("icon"),
+                "rows": [[{"id": r["id"], "name": gd.rune_disp.get(r["id"], r["name"]), "icon": r.get("icon"),
+                           "on": r["id"] in chosen} for r in slot["runes"]] for slot in t["slots"][rows]]}
+    return {"primary": tree(page["primary"], slice(0, 4)), "secondary": tree(page["sub"], slice(1, 4)),
+            "shards": [SHARDS.get(x, str(x)) for x in page["perks"][6:9]],
+            "games": page.get("games"), "winrate": page.get("winrate")}
+
+
+def champion_page(gd, cfg, c, role=None):
+    """Everything for one champion like on op.gg / Mobalytics – from our own Riot data + the simulation."""
+    from . import sim
+    ms0 = meta_stats(gd)
+    out = {"id": c["id"], "name": gd.champ_name(c), "title": c.get("title", ""), "version": gd.version,
+           "tags": c.get("tags", []), "role": role}
+    if not ms0:
+        out["error"] = "Meta-Datenbank wird noch geladen …"
+        return out
+    ms = meta.MetaStats(gd, ms0.db)
+    role = role or ms.main_role(c["id"]) or "JUNGLE"
+    out["role"] = role
+    roles = ms.db.execute("SELECT role, COUNT(*) FROM games WHERE champ=? AND role!='' GROUP BY role ORDER BY 2 DESC",
+                          (c["id"],)).fetchall()
+    out["roles"] = [{"role": r, "games": n} for r, n in roles]
+    bracket = current_bracket(cfg)
+    ms.role = role
+    st = ms.champion(c["id"], bracket=bracket)
+    tl = ms.tierlist(min_games=10, bracket=bracket, role=role)
+    me = next((t for t in tl if t["champion"] == c["id"]), None)
+    out["tier"] = me
+    out["role_count"] = len(tl)
+    out["stats"] = st
+
+    def item(i):
+        return {"id": i, "name": gd.item_name(i)}
+    if st.get("enough"):
+        out["runes"] = rune_tree(gd, st.get("rune_page"))
+        out["keystones"] = [dict(k, icon=gd.rune_icon.get(k["id"])) for k in st.get("keystones", [])]
+        out["core"] = st["meta_core"]
+        out["boots"] = st.get("meta_boots")
+        out["gems"] = st.get("hidden_items", []) + [dict(g, icon=gd.rune_icon.get(g["id"])) for g in st.get("hidden_keystones", [])]
+        for m in st.get("worst_matchups", []) + st.get("best_matchups", []):
+            e = gd.champ(m.get("enemy"))
+            if e:
+                m["id"] = e["id"]
+                m["name"] = gd.champ_name(e)
+    ms.role = None
+    try:
+        rec = sim.recommend(c["id"], [], role, meta_stats=ms, bracket=bracket)
+        out["sim"] = rec
+        out["skill_order"] = rec.get("skill_order") if rec.get("available") else None
+    except Exception as e:  # noqa: BLE001
+        out["sim"] = {"available": False, "reason": str(e)}
+    b = ms.benchmarks(c["id"], role, bracket)
+    if b:
+        good = []
+        for k in ("jcs10" if role == "JUNGLE" else "cs10", "kp", "vpm", "deaths", "dpm", "gpm"):
+            if k in b["dist"]:
+                label, higher, unit = meta.METRICS[k]
+                good.append({"metric": k, "label": label, "avg": meta.quantile(b["dist"][k], 0.5),
+                             "top": meta.quantile(b["dist"][k], 0.75 if higher else 0.25), "unit": unit})
+        out["benchmarks"] = {"scope": b["scope"], "games": b["games"], "values": good}
+    return out
+
+
 def meta_stats(gd):
     if META["stats"] is None and os.path.exists(meta.DB_PATH):
         META["stats"] = meta.MetaStats(gd)
@@ -64,12 +187,24 @@ def load_config():
 
 
 def poll_loop(gd, cfg, lcu):
+    last_phase = None
     last_runes_key = None
     last_import = None
     last_rank = 0
     while True:
         try:
             phase = lcu.phase()
+            if last_phase == "InProgress" and phase != "InProgress" and riot_cred(cfg):
+                def _after_game():  # Riot needs a moment until the match is available
+                    for _ in range(6):
+                        time.sleep(90)
+                        try:
+                            run_review(cfg)
+                            return
+                        except Exception:  # noqa: BLE001
+                            continue
+                threading.Thread(target=_after_game, daemon=True).start()
+            last_phase = phase
             cs = live_state = None
             if phase == "ChampSelect":
                 cs = champselect.analyze(gd, lcu.champ_select(), cfg, meta_stats(gd), current_bracket(cfg))
@@ -155,7 +290,7 @@ def make_handler(gd, cfg, lcu):
                     return self._send(200, f.read(), "text/html")
             if self.path == "/api/state":
                 with LOCK:
-                    return self._send(200, STATE)
+                    return self._send(200, dict(STATE, version=gd.version))
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()
@@ -255,6 +390,26 @@ def make_handler(gd, cfg, lcu):
                                         "improvements": ranked.improvements(games),
                                         "own_matchups": ranked.own_matchups(games), "games": len(games),
                                         "pool_worst": pool_worst})
+            if self.path.startswith("/api/tierlist"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                role = (q.get("role") or ["JUNGLE"])[0].upper()
+                ms = meta_stats(gd)
+                if not ms:
+                    return self._send(200, {"role": role, "list": []})
+                ms = meta.MetaStats(gd, ms.db)
+                lst = ms.tierlist(min_games=int((q.get("min") or [20])[0]), bracket=current_bracket(cfg), role=role)
+                for t in lst:
+                    c = gd.champ(t["champion"])
+                    t["name"] = gd.champ_name(c) if c else t["champion"]
+                return self._send(200, {"role": role, "list": lst, "patch": ms.current_patch(),
+                                        "bracket": current_bracket(cfg), "version": gd.version})
+            if self.path.startswith("/api/champion"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                ref = (q.get("id") or [""])[0]
+                c = gd.champ(ref) or gd.champ_by_name.get(ref.lower())
+                if not c:
+                    return self._send(404, {"error": f"Champion „{ref}“ nicht gefunden"})
+                return self._send(200, champion_page(gd, cfg, c, (q.get("role") or [""])[0].upper() or None))
             if self.path.startswith("/api/sim"):
                 from jc import sim
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -309,19 +464,16 @@ def make_handler(gd, cfg, lcu):
             if self.path.startswith("/api/review"):
                 if not riot_cred(cfg):
                     return self._send(400, {"error": NO_CRED})
-                if "#" not in cfg.get("riot_id", ""):
+                if "#" not in (ranked.ACTIVE.get("account") or cfg.get("riot_id", "")):
                     return self._send(400, {"error": "Riot ID fehlt – trag sie in den Einstellungen ein (Name#TAG)."})
                 try:
-                    res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), cfg["riot_id"],
-                                     cfg.get("review_games", 20))
-                    attach_clips(res["games"], recorder.list_sessions())
-                    with open(REVIEW_CACHE, "w", encoding="utf-8") as f:
-                        json.dump(res, f)
-                    with LOCK:
-                        STATE["review"] = res
-                    return self._send(200, res)
+                    return self._send(200, run_review(cfg))
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
+            if self.path.startswith("/api/coach"):
+                with LOCK:
+                    rev = STATE.get("review") or {}
+                return self._send(200, coach_plan(gd, cfg, rev))
             self._send(404, {"error": "not found"})
 
         def _test_key(self, new_key):

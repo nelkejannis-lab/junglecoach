@@ -194,7 +194,7 @@ def review_match(match, timeline, puuid):
     }
 
 
-def run(api_key, platform, riot_id, count=20, queue=420):
+def run(api_key, platform, riot_id, count=30, queue=420):
     api = RiotAPI(api_key, platform)
     name, tag = riot_id.split("#", 1)
     acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
@@ -210,8 +210,11 @@ def run(api_key, platform, riot_id, count=20, queue=420):
         r = review_match(m, tl, puuid)
         if r:
             from .deep import deep_analyze
+            from .meta import metrics_of
             r["deep"] = deep_analyze(m, tl, puuid)
             r["game_start"] = r["deep"]["game_start"]
+            r["duration"] = m["info"].get("gameDuration", 0)
+            r["stats"] = metrics_of(me, r["duration"])
             games.append(r)
     return {"games": games, "summary": summarize(games)}
 

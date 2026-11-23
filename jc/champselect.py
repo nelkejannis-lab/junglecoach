@@ -159,6 +159,28 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
                                              meta_stats=meta_stats, bracket=bracket)
         except Exception as e:  # noqa: BLE001
             out["sim"] = {"available": False, "reason": str(e)}
+    # game plan (start side, gank lane, early duel, objective, spikes) – background, appears on the next poll
+    if my_champ and (role in (None, "JUNGLE")):
+        try:
+            from jc import gameplan
+            pos = {"top": "TOP", "jungle": "JUNGLE", "middle": "MIDDLE", "bottom": "BOTTOM", "utility": "UTILITY"}
+            ally_roles = tuple((gd.champ(_cid(m))["id"], pos.get((m.get("assignedPosition") or "").lower()))
+                               for m in my_team if m.get("cellId") != me_cell and _cid(m) and gd.champ(_cid(m)))
+            enemy_roles = []
+            for m, c in zip([m for m in their if m.get("championId")], enemies):
+                if not c:
+                    continue
+                r = pos.get((m.get("assignedPosition") or "").lower())
+                if not r and meta_stats is not None:
+                    try:
+                        r = meta_stats.main_role(c["id"])
+                    except Exception:  # noqa: BLE001
+                        r = None
+                enemy_roles.append((c["id"], r))
+            out["gameplan"] = gameplan.build_async(my_champ["id"], enemy_jg["id"] if enemy_jg else None, ally_roles,
+                                                   tuple(enemy_roles), meta_stats, bracket)
+        except Exception as e:  # noqa: BLE001
+            out["gameplan"] = {"error": str(e), "steps": []}
     # meta-aware pick suggestions: matchup winrate vs the enemy jungler
     if meta_stats and lane_enemy:
         for p in out["pick_suggestions"]:

@@ -3,7 +3,7 @@
   "platform": "euw1",
   "riot_api_key": "",
   "server_url": "https://junglecoach.nelkejannis.workers.dev",
-  "review_games": 20,
+  "review_games": 30,
   "profile_games": 20,
 
   "champion_pool": ["Gwen", "Graves"],
