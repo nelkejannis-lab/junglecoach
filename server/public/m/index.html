@@ -64,6 +64,9 @@
   .sheet { position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; animation:fade .2s; }
   .sheet .in { width:100%; max-height:88vh; overflow:auto; background:#0c111d; border-radius:26px 26px 0 0; border-top:1px solid var(--line); padding:10px 16px calc(var(--safe-b) + 24px); animation:up .28s cubic-bezier(.2,.8,.2,1); }
   .grip { width:40px; height:5px; border-radius:9px; background:#2b3550; margin:4px auto 12px; }
+  .sheet { cursor:pointer; } .sheet .in { cursor:auto; position:relative; transition:transform .2s; }
+  .xbtn { position:sticky; top:0; float:right; z-index:2; width:34px; height:34px; border-radius:50%; border:0; background:rgba(255,255,255,.12); color:var(--txt);
+    font:700 17px/34px -apple-system, system-ui, sans-serif; text-align:center; padding:0; margin:-2px -4px 0 0; cursor:pointer; }
   @keyframes up { from { transform:translateY(40px); opacity:.4; } } @keyframes fade { from { opacity:0; } }
   .team { margin:8px 0 14px; } .pl { display:flex; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .pl img { width:30px; height:30px; border-radius:9px; } .pl.me { background:rgba(45,212,191,.08); border-radius:10px; padding:7px 6px; }
@@ -197,7 +200,16 @@ function gameRow(g, onclick) {
     <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span><div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
 }
 const QUEUE = {420: "Solo/Duo", 440: "Flex", 400: "Normal", 430: "Normal", 450: "ARAM", 490: "Quickplay", 1700: "Arena", 1900: "URF"};
-function openMatch(id, puuid) { S.sheet = {id, puuid}; render(); }
+function openMatch(id, puuid) { S.sheet = {id, puuid}; render(); history.pushState({sheet: 1}, ""); }
+function closeSheet(fromBack) { if (!S.sheet) return; S.sheet = null; render(); if (!fromBack && history.state && history.state.sheet) history.back(); }
+addEventListener("popstate", () => closeSheet(true));   // iOS back swipe / Android back closes the sheet
+addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+// swipe the sheet down to close it (like iOS sheets)
+let sy0 = null;
+addEventListener("touchstart", e => { const el = document.getElementById("sheet-in"); sy0 = el && el.contains(e.target) && el.scrollTop <= 0 ? e.touches[0].clientY : null; }, {passive: true});
+addEventListener("touchmove", e => { const el = document.getElementById("sheet-in"); if (sy0 == null || !el) return; const dy = e.touches[0].clientY - sy0; if (dy > 0) el.style.transform = `translateY(${dy}px)`; }, {passive: true});
+addEventListener("touchend", e => { const el = document.getElementById("sheet-in"); if (sy0 == null || !el) return; const dy = e.changedTouches[0].clientY - sy0; sy0 = null;
+  if (dy > 90) closeSheet(); else el.style.transform = ""; });
 function matchSheet() {
   const m = MATCH[S.sheet.id]; if (!m || !m.info) return "";
   const info = m.info, max = Math.max(...info.participants.map(p => p.totalDamageDealtToChampions));
@@ -206,7 +218,7 @@ function matchSheet() {
       <div class="bar"><i style="width:${100 * p.totalDamageDealtToChampions / max}%"></i></div></div>
       <div class="items" style="margin:0">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div>`).join("");
   const win = info.teams.find(t => t.win);
-  return `<div class="sheet" onclick="if(event.target===this){S.sheet=null;render()}"><div class="in"><div class="grip"></div>
+  return `<div class="sheet" onclick="if(event.target===this)closeSheet()"><div class="in" id="sheet-in"><button class="xbtn" onclick="closeSheet()" aria-label="Schließen">✕</button><div class="grip" onclick="closeSheet()"></div>
     <h3 style="margin:0 0 2px">${QUEUE[info.queueId] || "Spiel"} · ${Math.round(info.gameDuration / 60)} min</h3>
     <p class="muted small" style="margin:0 0 6px">${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleString("de-DE")} · Balken = Schaden an Champions</p>
     <div class="team"><b class="${win && win.teamId === 100 ? "green" : "red"}">Blaues Team ${win && win.teamId === 100 ? "· Sieg" : ""}</b>${team(100)}</div>
