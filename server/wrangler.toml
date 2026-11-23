@@ -10,7 +10,7 @@ run_worker_first = ["/auth/*", "/api/*", "/riot/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "junglecoach"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "63a5fac8-eb9d-47b6-86ef-1b706ed14715"
 migrations_dir = "migrations"
 
 # Secrets (Cloudflare dashboard -> Worker -> Settings -> Variables and Secrets, type "Secret"):
