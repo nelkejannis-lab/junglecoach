@@ -88,6 +88,7 @@ def model(state):
         "mood": (now or {}).get("tone") or "calm",
         "diff": h.get("gold_diff"),
         "gpm": h.get("gpm"),
+        "choices": h.get("choices") or [],
         "focus_t": (h.get("focus") or {}).get("title"),
         "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
@@ -369,6 +370,62 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
     return out.resize((int(W * scale), int(H / SS)), Image.LANCZOS)
 
 
+def render_picker(choices, current_id, icons, scale=1.0, lang="de", fonts=None):
+    """Tab picker: item icons of your build; click one to make it the 'next item' in the overlay.
+    Returns (RGBA image, [(x0, y0, x1, y1, item_id)] click areas in image pixels)."""
+    from PIL import Image, ImageDraw
+    F = fonts or pil_fonts(scale)
+    k = SS * scale
+    cols = min(4, max(1, len(choices)))
+    tile, gap, pad = 66 * k, 8 * k, 14 * k
+    rows_n = (len(choices) + cols - 1) // cols
+    head = 44 * k
+    name_h = 30 * k
+    Wp = int(2 * pad + cols * tile + (cols - 1) * gap)
+    Hp = int(head + rows_n * (tile + name_h) + (rows_n - 1) * gap + pad)
+    im = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, Wp - 1, Hp - 1], 24 * k, fill=_rgb("#1c1c1e", 235), outline=_rgb("#ffffff", 40), width=max(1, int(k)))
+    t = {"de": ("Nächstes Item wählen", "Tab halten · Item anklicken"), "en": ("Choose next item", "Hold Tab · click an item")}[lang]
+    d.text((pad, 12 * k), t[0], font=F["bodyb"], fill=_rgb("#ffffff"))
+    d.text((Wp - pad, 14 * k), t[1], font=F["cap"], fill=_rgb("#ebebf5", 150), anchor="ra")
+    rects = []
+    for i, c in enumerate(choices):
+        r, col = divmod(i, cols)
+        x0 = pad + col * (tile + gap)
+        y0 = head + r * (tile + name_h + gap)
+        sel = c["id"] == current_id
+        ic = icons(c["id"]) if callable(icons) else None
+        box = [x0, y0, x0 + tile, y0 + tile]
+        if ic is not None:
+            ic = ic.convert("RGBA").resize((int(tile), int(tile)))
+            mask = Image.new("L", ic.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle([0, 0, ic.size[0] - 1, ic.size[1] - 1], 14 * k, fill=255)
+            if not sel:  # others slightly dimmed, the chosen one stands out
+                ic = Image.blend(Image.new("RGBA", ic.size, (28, 28, 30, 255)), ic, 0.82)
+            im.paste(ic, (int(x0), int(y0)), mask)
+        else:
+            d.rounded_rectangle(box, 14 * k, fill=_rgb("#ffffff", 30))
+        if sel:
+            d.rounded_rectangle([x0 - 3 * k, y0 - 3 * k, x0 + tile + 3 * k, y0 + tile + 3 * k], 16 * k,
+                                outline=_rgb(A_BLUE), width=int(3 * k))
+            cx, cy, rr = x0 + tile - 4 * k, y0 + 4 * k, 10 * k
+            d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=_rgb(A_BLUE), outline=_rgb("#1c1c1e"), width=int(2 * k))
+            d.line([(cx - 4.5 * k, cy), (cx - 1.2 * k, cy + 3.5 * k), (cx + 4.8 * k, cy - 3.8 * k)], fill=_rgb("#ffffff"), width=int(2.2 * k))
+        elif c.get("core"):
+            d.rounded_rectangle([x0 + 5 * k, y0 + 5 * k, x0 + 5 * k + d.textlength("Build", font=F["cap"]) + 10 * k, y0 + 5 * k + 16 * k],
+                                8 * k, fill=_rgb("#000000", 150))
+            d.text((x0 + 10 * k, y0 + 6 * k), "Build", font=F["cap"], fill=_rgb("#ffffff"))
+        name = _wrap(d, c["name"], F["cap"], tile + 4 * k)[:2]
+        ny = y0 + tile + 4 * k
+        for ln in name:
+            d.text((x0 + tile / 2, ny), ln, font=F["cap"], fill=_rgb("#ffffff") if sel else _rgb("#ebebf5", 170), anchor="ma")
+            ny += 13 * k
+        rects.append((x0, y0, x0 + tile, y0 + tile + name_h, c["id"]))
+    out = im.resize((int(Wp / SS), int(Hp / SS)), Image.LANCZOS)
+    return out, [(a / SS, b / SS, c / SS, e / SS, iid) for a, b, c, e, iid in rects]
+
+
 def premultiplied_bgra(im):
     """RGBA (PIL) -> premultiplied BGRA bytes for UpdateLayeredWindow."""
     from PIL import ImageChops
@@ -447,7 +504,13 @@ def run(url, cfg):
     if ocfg.get("width") == 390:  # old default -> new compact card
         ocfg["width"], ocfg["x"] = 300, -330
     W = ocfg["width"]
-    fonts_ = pil_fonts(scale)
+    base_scale = scale
+    fcache = {}
+
+    def fonts_for(sz):
+        if sz not in fcache:
+            fcache[sz] = pil_fonts(base_scale * sz)
+        return fcache[sz]
     icons = {}
 
     root = tk.Tk()
@@ -459,11 +522,76 @@ def run(url, cfg):
     else:
         pos = {"x": ocfg["x"] if ocfg["x"] >= 0 else sw + int(ocfg["x"] * scale), "y": int(ocfg["y"] * scale)}
     root.geometry(f"{int(W * scale)}x60+{pos['x']}+{pos['y']}")
+    icons = {}
     label = None if win else tk.Label(root, bd=0, bg=BG)
     if label:
         label.pack()
     st = {"visible": True, "move": False, "drag": (0, 0), "shown": False, "last": None, "img": None,
-          "mode": ocfg.get("mode", "always"), "opacity": ocfg["bg_opacity"], "has": False}
+          "mode": ocfg.get("mode", "always"), "opacity": ocfg["bg_opacity"], "has": False,
+          "size": float(ocfg.get("size", 1.0)), "choices": [], "cur": None, "lang": "de", "pshown": False,
+          "pimg": None, "prects": [], "pkey": None, "tab": False}
+
+    # ---- Tab picker window (item icons of the build, click = next item)
+    pick_win = tk.Toplevel(root)
+    pick_win.overrideredirect(True)
+    pick_win.attributes("-topmost", True)
+    plabel = None if win else tk.Label(pick_win, bd=0, bg=BG)
+    if plabel:
+        plabel.pack()
+    phwnd = None
+    if win:
+        pick_win.update_idletasks()
+        phwnd = ctypes.windll.user32.GetParent(pick_win.winfo_id()) or pick_win.winfo_id()
+        _set_clickthrough(phwnd, False)  # layered + no-activate, but clickable
+    pick_win.withdraw()
+    ppos = {"x": 0, "y": 0}
+
+    def post_settings(body):
+        try:
+            req = urllib.request.Request(url + "/api/overlay-settings", method="POST", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2).read()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def on_pick(e):
+        for x0, y0, x1, y1, iid in st["prects"]:
+            if x0 <= e.x <= x1 and y0 <= e.y <= y1:
+                st["cur"] = iid
+                st["pkey"] = None
+                post_settings({"pick": iid})
+                draw_picker()
+                root.after(150, refresh_now)
+                break
+    pick_win.bind("<Button-1>", on_pick)
+
+    def draw_picker():
+        key = (json.dumps(st["choices"], sort_keys=True), st["cur"], st["size"], st["lang"])
+        if key == st["pkey"] or not st["choices"]:
+            return
+        st["pkey"] = key
+        im, rects = render_picker(st["choices"], st["cur"], icon, base_scale * st["size"], st["lang"], fonts_for(st["size"]))
+        st["pimg"], st["prects"] = im, rects
+        if st["pshown"]:
+            place_picker()
+
+    def place_picker():
+        im = st["pimg"]
+        mw = st["img"].size[0] if st["img"] is not None else int(W * base_scale)
+        sw_ = root.winfo_screenwidth()
+        x = pos["x"] - im.size[0] - int(10 * base_scale)
+        if x < 0:
+            x = pos["x"] + mw + int(10 * base_scale)
+        x = max(0, min(x, sw_ - im.size[0]))
+        ppos["x"], ppos["y"] = x, pos["y"]
+        pick_win.geometry(f"{im.size[0]}x{im.size[1]}+{x}+{pos['y']}")
+        if win:
+            _ulw(phwnd, im, x, pos["y"])
+        else:
+            from PIL import ImageTk
+            ph = ImageTk.PhotoImage(im)
+            plabel.configure(image=ph)
+            plabel.image = ph
 
     def save_pos():
         try:
@@ -486,9 +614,16 @@ def run(url, cfg):
             save_pos()
 
     def apply_visibility():
-        tab = False
-        if win and st["mode"] == "tab":
-            tab = bool(ctypes.windll.user32.GetAsyncKeyState(0x09) & 0x8000)  # Tab held (like the scoreboard)
+        tab = bool(win and ctypes.windll.user32.GetAsyncKeyState(0x09) & 0x8000)  # Tab held (like the scoreboard)
+        pwant = tab and st["has"] and st["visible"] and bool(st["choices"]) and st["pimg"] is not None and not st["move"]
+        if pwant and not st["pshown"]:
+            st["pshown"] = True
+            pick_win.deiconify()
+            place_picker()
+            pick_win.attributes("-topmost", True)
+        elif not pwant and st["pshown"]:
+            pick_win.withdraw()
+            st["pshown"] = False
         want = st["has"] and st["visible"] and (st["mode"] != "tab" or tab or st["move"])
         if want and st["img"] is not None and not st["shown"]:
             root.deiconify()
@@ -554,7 +689,7 @@ def run(url, cfg):
         apply_visibility()
         root.after(40, poll_hotkeys)
 
-    def refresh():
+    def refresh_now():
         try:
             with urllib.request.urlopen(url + "/api/overlay", timeout=2) as r:
                 state = json.loads(r.read().decode("utf-8"))
@@ -562,6 +697,9 @@ def run(url, cfg):
             st["mode"] = ov.get("mode", st["mode"])
             if ov.get("opacity") is not None and ov["opacity"] != st["opacity"]:
                 st["opacity"], st["last"] = ov["opacity"], None
+            if ov.get("size") and float(ov["size"]) != st["size"]:
+                st["size"], st["last"], st["pkey"] = float(ov["size"]), None, None
+            st["cur"] = ov.get("pick") or None
             if "move" in ov and bool(ov["move"]) != st.get("srv_move"):  # only react to changes from the app
                 st["srv_move"] = bool(ov["move"])
                 set_move(st["srv_move"])
@@ -569,15 +707,21 @@ def run(url, cfg):
             lang = "en" if state.get("lang") == "en" else "de"
         except Exception:  # noqa: BLE001
             m, lang = None, "de"
+        st["lang"] = lang
+        st["choices"] = (m or {}).get("choices") or []
+        if m and m.get("item"):
+            st["cur"] = m["item"].get("id")
+        draw_picker()
         if st["move"] and not m:  # preview card so it can be placed outside a game
             m = {"t": L[lang], "time": "", "cs": "–", "cs_ok": True, "gold": None,
                  "now": {"text": L[lang]["move"], "col": CYAN}, "more": [], "item": None, "timers": [], "ej": None,
                  "fed": [], "focus": None, "mood": "info", "diff": None, "gpm": None, "focus_t": None, "focus_v": None}
         st["has"] = bool(m)
         if m:
-            key = (json.dumps(m, sort_keys=True, default=str), st["move"], st["opacity"])
+            key = (json.dumps(m, sort_keys=True, default=str), st["move"], st["opacity"], st["size"])
             if key != st["last"]:
-                im = render_image(m, W, fonts_, icon((m.get("item") or {}).get("id")), st["opacity"], st["move"], scale)
+                im = render_image(m, W, fonts_for(st["size"]), icon((m.get("item") or {}).get("id")), st["opacity"],
+                                  st["move"], base_scale * st["size"])
                 st["img"] = im
                 if st["shown"]:
                     show(im)
@@ -587,9 +731,12 @@ def run(url, cfg):
             if st["shown"]:
                 root.attributes("-topmost", True)  # re-assert above the game
         apply_visibility()
-        root.after(1000, refresh)
+
+    def refresh_loop():
+        refresh_now()
+        root.after(1000, refresh_loop)
 
     root.withdraw()
     poll_hotkeys()
-    refresh()
+    refresh_loop()
     root.mainloop()

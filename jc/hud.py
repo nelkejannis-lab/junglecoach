@@ -46,7 +46,7 @@ def gold_per_min(live, gold, bench=None, role=None):
     return {"value": gpm, "rate": rate, "target": round(p50 * f)}
 
 
-def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None):
+def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
     prompts = []  # (priority, text, color)
@@ -70,15 +70,25 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
             prompts.append((3, T(f"{o['label']} in {o['in']} – jetzt zurück und Items kaufen",
                                   f"{o['label']} in {o['in']} – back and buy now"), "info"))
 
-    # ---- next item and whether you can afford it
+    # ---- next item: your pick (Tab picker) or the next item of the build path, and whether you can afford it
     item = None
-    if not item:
-        b = live.get("build") or {}
-        nxt = (b.get("situational") or []) + (b.get("core") or [])
-        if nxt:
-            iid = nxt[0].get("id")
-            cost = ((gd.items.get(iid) or {}).get("gold") or {}).get("total") if (gd and iid) else None
-            item = {"id": iid, "name": nxt[0]["name"], "cost": cost, "why": nxt[0].get("why", "")}
+    choices = []
+    own = set(owned or [])
+    b = live.get("build") or {}
+    for c in (b.get("core") or []) + (b.get("situational") or []):
+        iid = c.get("id")
+        if iid and iid not in own and all(x["id"] != iid for x in choices):
+            cost = ((gd.items.get(iid) or {}).get("gold") or {}).get("total") if gd else None
+            choices.append({"id": iid, "name": c.get("name"), "cost": cost, "why": c.get("why", ""),
+                            "core": c in (b.get("core") or [])})
+    choices = choices[:8]
+    sel = next((c for c in choices if pick and c["id"] == pick), None)
+    if not sel and pick and gd and pick in gd.items and pick not in own:  # picked earlier, no longer in the list
+        sel = {"id": pick, "name": gd.item_name(pick), "cost": ((gd.items[pick].get("gold") or {}).get("total")), "why": ""}
+    sel = sel or (choices[0] if choices else None)
+    if sel:
+        item = {"id": sel["id"], "name": sel["name"], "cost": sel["cost"], "why": sel.get("why", ""),
+                "picked": bool(pick and sel["id"] == pick)}
     if item and item.get("cost") and gold is not None:
         item["missing"] = max(0, item["cost"] - int(gold))
         if gold >= item["cost"]:
@@ -125,4 +135,5 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
             if ej else None,
             "fed": [f"{f['name']} {f['kda']}" for f in (live.get("enemy", {}).get("fed") or [])[:2]],
             "gold_diff": live.get("gold_diff"),
-            "gpm": gold_per_min(live, gold, gpm_bench, role)}
+            "gpm": gold_per_min(live, gold, gpm_bench, role),
+            "choices": choices}

@@ -21,7 +21,7 @@ REC = {"obj": None}
 META = {"stats": None, "crawler": None}
 BUILD_CACHE = {}
 GPM_BENCH = {}
-OVERLAY = {"move": False}  # move mode requested from the app (settings button)
+OVERLAY = {"move": False, "pick": None}  # move mode requested from the app (settings button)
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
 EDITABLE = ["language", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
@@ -369,7 +369,7 @@ def poll_loop(gd, cfg, lcu):
                             except Exception:  # noqa: BLE001
                                 pass
                         live_state["hud"] = hud.build(live_state, gd, live_state.get("_gold"), live_state.get("_owned") or [],
-                                                      focus, step, GPM_BENCH.get(key), role)
+                                                      focus, step, GPM_BENCH.get(key), role, OVERLAY.get("pick"))
                     except Exception as e:  # noqa: BLE001
                         live_state["hud"] = {"error": str(e)}
             # ---- automatic recording + mistake clips
@@ -380,6 +380,8 @@ def poll_loop(gd, cfg, lcu):
                 rec.note(live_state["mistakes"], {"champion": live_state["me"]})
             if not live_state and rec.active:
                 threading.Thread(target=rec.stop, daemon=True).start()  # cutting clips takes a moment
+            if not live_state:
+                OVERLAY["pick"] = None  # next game starts with the build path again
             with LOCK:
                 STATE["phase"] = "InGame" if live_state else (phase or "Client nicht gefunden")
                 if cs:
@@ -501,7 +503,8 @@ def make_handler(gd, cfg, lcu):
                 oc = cfg.get("overlay", {})
                 return self._send(200, {"live": small, "lang": i18n.LANG["code"],
                                         "ov": {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
-                                               "move": OVERLAY["move"]}})
+                                               "size": oc.get("size", 1.0), "move": OVERLAY["move"],
+                                               "pick": OVERLAY["pick"]}})
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()
@@ -759,15 +762,19 @@ def make_handler(gd, cfg, lcu):
                 oc = cfg.setdefault("overlay", {})
                 if b.get("mode") in ("always", "tab"):
                     oc["mode"] = b["mode"]
+                if isinstance(b.get("size"), (int, float)):
+                    oc["size"] = max(0.7, min(1.6, float(b["size"])))
                 if isinstance(b.get("opacity"), (int, float)):
                     oc["bg_opacity"] = max(0.2, min(1.0, float(b["opacity"])))
                 if isinstance(b.get("x"), int) and isinstance(b.get("y"), int):
                     oc["x"], oc["y"], oc["abs"] = b["x"], b["y"], True
                 if "move" in b:
                     OVERLAY["move"] = bool(b["move"])
+                if "pick" in b:  # item chosen in the Tab picker (None = back to the build path)
+                    OVERLAY["pick"] = int(b["pick"]) if str(b.get("pick") or "").isdigit() else None
                 save_config(cfg)
                 return self._send(200, {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
-                                        "move": OVERLAY["move"]})
+                                        "size": oc.get("size", 1.0), "move": OVERLAY["move"]})
             if self.path == "/api/clip-feedback":
                 b = self._body()
                 ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))

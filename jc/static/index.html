@@ -1101,8 +1101,10 @@ async function ovSet(patch) {
 }
 function overlayCard() {
   const o = ovData, seg = (v, l) => `<button class="chip ${o.mode === v ? "on" : ""}" onclick="ovSet({mode:'${v}'})">${l}</button>`;
-  return card("In-Game-Overlay", "Wann es erscheint, wo es steht und wie durchsichtig es ist. Strg+Shift+J blendet es im Spiel ein/aus.", `
+  return card("In-Game-Overlay", "Wann es erscheint, wo es steht, wie groß und durchsichtig es ist. Tab halten zeigt die Item-Auswahl: Item anklicken = wird als nächstes Item angezeigt. Strg+Shift+J blendet alles ein/aus.", `
     <div class="switch" style="border:0"><span>Anzeigen</span><div class="chips">${seg("always", "Immer sichtbar")}${seg("tab", "Nur solange Tab gedrückt")}</div></div>
+    <div class="switch"><span>Größe <b>${Math.round((o.size || 1) * 100)}%</b></span>
+      <input type="range" min="0.8" max="1.4" step="0.05" value="${o.size || 1}" onchange="ovSet({size:+this.value})"></div>
     <div class="switch"><span>Hintergrund-Deckkraft <b>${Math.round(o.opacity * 100)}%</b></span>
       <input type="range" min="0.3" max="1" step="0.02" value="${o.opacity}" onchange="ovSet({opacity:+this.value})"></div>
     <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
