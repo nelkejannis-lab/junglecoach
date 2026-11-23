@@ -115,7 +115,9 @@ def analyze(gd, data, timers=None, preset_lookup=None):
         if lvl >= 6:
             warnings.append("Gegner-Jungler hat Ult (Lvl 6+).")
         if seen and t - seen[-1]["t"] < 45 and seen[-1]["where"] not in ("gestorben", "?"):
-            warnings.append(f"Gerade {seen[-1]['where']} gesehen → gegenüberliegende Seite ist sicher für dich.")
+            # kill participation only – the Live Client API has no positions, so no "safe side" promise
+            warnings.append(f"An Kill gegen {seen[-1]['where']} beteiligt (vor {int(t - seen[-1]['t'])} s) – "
+                            "genaue Position unbekannt.")
         ec = _champ(gd, ej)
         jungle = {"champion": gd.champ_name(ec) if ec else ej.get("championName"), "level": lvl,
                   "kda": "{kills}/{deaths}/{assists}".format(**{k: ej.get("scores", {}).get(k, 0)

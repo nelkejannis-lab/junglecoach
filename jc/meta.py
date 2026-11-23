@@ -9,11 +9,13 @@
    recommended. That is a statistical simulation on real games – not a fight simulator.
 """
 import json
+import math
 import os
 import random
 import sqlite3
 import threading
 import time
+import zlib
 
 from .paths import DATA_DIR
 from .review import RiotAPI
@@ -352,6 +354,35 @@ def _beta_prob_better(w1, n1, w2, n2, draws=4000, seed=7):
     return better / draws, up / draws
 
 
+# bought BECAUSE you are ahead (stacking items) – their winrate says nothing about the item itself
+SNOWBALL_ITEMS = {3041}  # Mejai's Soulstealer
+
+
+def _stratified_effect(rows, has, stratum):
+    """Item winrate corrected for 'winners simply buy more items': holders are compared with
+    non-holders WITHIN the same stratum (number of completed items at game end), like a
+    Mantel-Haenszel comparison. Returns (prob_better, uplift, n_holders) with a normal approximation."""
+    strata = {}
+    for r in rows:
+        s = strata.setdefault(stratum(r), [0, 0, 0, 0])  # holder wins, holders, other wins, others
+        if has(r):
+            s[0] += r[0]; s[1] += 1
+        else:
+            s[2] += r[0]; s[3] += 1
+    obs = exp = var = 0.0
+    n1 = 0
+    for w1, a, w2, b in strata.values():
+        if not a or b < 3:  # no comparable non-holders in this stratum -> no evidence from it
+            continue
+        p = (w2 + 1) / (b + 2)
+        obs += w1; exp += a * p; n1 += a
+        var += a * p * (1 - p) + a * a * p * (1 - p) / (b + 2)  # holder noise + uncertainty of the baseline
+    if not n1 or var <= 0:
+        return 0.5, 0.0, n1
+    z = (obs - exp) / math.sqrt(var)
+    return 0.5 * (1 + math.erf(z / math.sqrt(2))), (obs - exp) / n1, n1
+
+
 def _shrunk(w, n, base, k=20):
     return (w + k * base) / (n + k) if n + k else base
 
@@ -552,6 +583,18 @@ class MetaStats:
 
         all_items = {i for r in rows for i in r[1] if i in completed}
         items = option_stats(lambda r, k: k in r[1], all_items)
+        legend_ids = {i for i, it in completed.items() if "Boots" not in it.get("tags", [])}
+        # (win, item set, stratum, half): stratum = completed items at game end, half = fixed split
+        prep = [(r[0], set(r[1]), sum(1 for i in r[1] if i in legend_ids),
+                 zlib.crc32((str(r[1]) + str(r[3])).encode()) % 2) for r in rows]
+        halves = [[x for x in prep if x[3] == h] for h in (0, 1)]
+        for it in items:  # end-of-game inventory is biased toward long/won games -> compare like with like
+            k = it["id"]
+            prob, up, _ = _stratified_effect(prep, lambda r: k in r[1], lambda r: r[2])
+            it["raw_winrate"] = it["winrate"]
+            it["prob_better"], it["uplift"] = round(prob, 3), round(100 * up, 1)
+            it["replicates"] = all(_stratified_effect(hh, lambda r: k in r[1], lambda r: r[2])[1] > 0 for hh in halves)
+            it["snowball"] = k in SNOWBALL_ITEMS
         for it in items:
             it["name"] = self.gd.item_name(it["id"])
             it["boots"] = it["id"] in boots
@@ -586,16 +629,18 @@ class MetaStats:
             return None
 
         def gems(opts, meta_ids, key_fn):
+            cand = [o for o in opts if o["id"] not in meta_ids and o["games"] >= min_games and 1.5 <= o["pickrate"] <= 15]
+            # many options are searched -> stricter bar (Bonferroni-like): 90 % for one, up to 99 % for many
+            bar = min(0.99, 1 - 0.1 / max(1, len(cand)) ** 0.5)
             out = []
-            for o in opts:
-                if o["id"] in meta_ids or o["games"] < min_games or not (1.5 <= o["pickrate"] <= 15):
+            for o in cand:
+                if o.get("replicates") is False or o.get("snowball") or concentrated(o, key_fn):
                     continue
-                if concentrated(o, key_fn):
-                    continue
-                if o["prob_better"] >= 0.9 and o["uplift"] >= 2.0:
-                    pct = "≥99" if o["prob_better"] >= 0.99 else str(round(o["prob_better"] * 100))
-                    o = dict(o, verdict=f"{pct}% Wahrscheinlichkeit besser, "
-                                        f"+{o['uplift']}% Winrate bei nur {o['pickrate']}% Pickrate")
+                if o["prob_better"] >= bar and o["uplift"] >= 2.0:
+                    o = dict(o, tested=len(cand), verdict=(
+                        f"Bei gleicher Item-Anzahl +{o['uplift']}% Winrate (Pickrate {o['pickrate']}%, "
+                        f"{o['games']} Games, in beiden Datenhälften bestätigt, {len(cand)} Optionen geprüft). "
+                        "Zusammenhang – kein Beweis, dass das Item selbst den Sieg bringt."))
                     out.append(o)
             return sorted(out, key=lambda x: (-x["prob_better"], -x["uplift"]))
 

@@ -22,6 +22,26 @@ def _grade(score):
     return "A" if score >= 80 else "B" if score >= 65 else "C" if score >= 50 else "D"
 
 
+BENCH = None  # app sets: callable(champion, role) -> MetaStats.benchmarks(...) result or None
+
+
+def _targets(champ):
+    """Same benchmark as the coach (champion + role + elo from real games) instead of fixed numbers."""
+    jcs, vpm, scope = JUNGLE_CS10_TARGET, VISION_PER_MIN_TARGET, "Richtwert (zu wenig Vergleichsdaten)"
+    try:
+        b = BENCH(champ, "JUNGLE") if BENCH else None
+    except Exception:  # noqa: BLE001
+        b = None
+    if b:
+        d = b.get("dist", {})
+        if d.get("jcs10"):
+            jcs = d["jcs10"][len(d["jcs10"]) // 2]
+        if d.get("vpm"):
+            vpm = d["vpm"][len(d["vpm"]) // 2]
+        scope = f"Median {b['scope']} ({b['games']} Games)"
+    return jcs, vpm, scope
+
+
 def deep_analyze(match, timeline, puuid):
     info = match["info"]
     parts = info["participants"]
@@ -68,7 +88,7 @@ def deep_analyze(match, timeline, puuid):
         n_enemies = 1 + len(ev.get("assistingParticipantIds", []))
         tags = []
         if n_enemies >= 2:
-            tags.append(f"Unterzahl (gegen {n_enemies})")
+            tags.append(f"mehrere Gegner beteiligt ({n_enemies})")
         if area.startswith("gegnerischer"):
             tags.append("im gegnerischen Jungle")
         if ej_pid and (ev.get("killerId") == ej_pid or ej_pid in ev.get("assistingParticipantIds", [])):
@@ -78,7 +98,7 @@ def deep_analyze(match, timeline, puuid):
         lost = [o for o in enemy_objs if 0 <= o["timestamp"] / 1000 - ts <= 90]
         if lost:
             raw = lost[0].get("monsterSubType") or lost[0].get("monsterType")
-            tags.append(f"Objective danach verloren ({OBJ_NAMES.get(raw, raw)})")
+            tags.append(f"≤90 s danach Objective an Gegner ({OBJ_NAMES.get(raw, raw)}) – zeitliche Folge, nicht bewiesen")
         gd = curve[min(round(ts / 60), len(curve) - 1)]["gold_diff"] if curve else 0
         if gd < -1000:
             tags.append(f"{gd} Gold hinten gegen Gegner-Jungler")
@@ -115,25 +135,26 @@ def deep_analyze(match, timeline, puuid):
     obj_pre20 = [o for o in objectives if o["min"] < 20]
     obj_share = (sum(o["ours"] for o in obj_pre20) / len(obj_pre20)) if obj_pre20 else 0.5
     presence = (sum(o["present"] for o in objectives) / len(objectives)) if objectives else 0.5
-    bad_deaths = sum(1 for d in deaths if any(t.startswith(("Unterzahl", "im gegnerischen")) for t in d["tags"]))
+    bad_deaths = sum(1 for d in deaths if any(t.startswith(("mehrere Gegner", "im gegnerischen")) for t in d["tags"]))
 
+    t_jcs, t_vpm, t_scope = _targets(me.get("championName"))
     cats = {
-        "Tempo & Farm": _clamp(50 + gd10 / 25 + (jcs10 - JUNGLE_CS10_TARGET) * 1.2),
+        "Tempo & Farm": _clamp(50 + gd10 / 25 + (jcs10 - t_jcs) * 1.2),
         "Gank-Impact": _clamp(kp * 110 + ganks["kills"] * 4),
         "Objectives": _clamp(obj_share * 70 + presence * 30),
-        "Vision": _clamp(vpm / VISION_PER_MIN_TARGET * 70 + me.get("detectorWardsPlaced", 0) * 3),
+        "Vision": _clamp(vpm / max(t_vpm, 0.1) * 70 + me.get("detectorWardsPlaced", 0) * 3),
         "Überleben": _clamp(100 - me["deaths"] * 9 - bad_deaths * 8),
     }
     advice = {
-        "Tempo & Farm": f"Gold @10 {gd10:+} vs Gegner-Jungler, {jcs10} Jungle-CS @10 (Ziel ~{JUNGLE_CS10_TARGET}). "
+        "Tempo & Farm": f"Gold @10 {gd10:+} vs Gegner-Jungler, {jcs10} Jungle-CS @10 (Vergleich ~{t_jcs}: {t_scope}). "
                         "Clear-Route optimieren, nach Ganks sofort Camps nachholen statt Lane zu stehen.",
         "Gank-Impact": f"Kill-Beteiligung {round(kp * 100)}%. Ganks auf Lanes mit Prio/CC timen, "
                        "Gegner-Jungler auf der anderen Seite tracken und dann gehen.",
         "Objectives": f"{sum(o['ours'] for o in obj_pre20)}/{len(obj_pre20)} Objectives vor Min 20, "
-                      f"bei {round(presence * 100)}% anwesend. 60–90 s vorher Wave pushen lassen, warden, Reset timen.",
+                      f"bei ~{round(presence * 100)}% in der Nähe (Position minütlich, ±30 s ungenau). 60–90 s vorher Wave pushen lassen, warden, Reset timen.",
         "Vision": f"{vpm:.2f} Vision/Min, {me.get('detectorWardsPlaced', 0)} Control Wards. "
                   "Pro Back eine Control Ward, Sweeper ab Objective-Phase.",
-        "Überleben": f"{me['deaths']} Tode, davon {bad_deaths} in Unterzahl/gegnerischem Jungle. "
+        "Überleben": f"{me['deaths']} Tode, davon {bad_deaths} mit mehreren Gegnern/im gegnerischen Jungle. "
                      "Vor Invades Lane-Prio checken, Gegner-Jungler-Position kennen.",
     }
     ranked = sorted(cats.items(), key=lambda kv: kv[1])

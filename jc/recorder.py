@@ -31,9 +31,10 @@ def _fmt(sec):
 
 TIPS = {
     "death": "Vor dem Fight zählen: Wie viele Gegner sind sichtbar, wo ist der Gegner-Jungler? Ohne Info nicht nachrücken.",
-    "outnumbered": "Unterzahl-Tod: In Fog nur mit Sicht gehen, bei 2+ fehlenden Gegnern zurückziehen.",
+    "outnumbered": "Mehrere Gegner beteiligt: Vor dem Nachrücken zählen, wie viele sichtbar sind – ohne Info zurückziehen.",
     "enemy_gank": "Gegner-Jungler-Position tracken (letzter Sichtpunkt + seine Camps), Lane rechtzeitig pingen oder Counter-Gank laufen.",
     "objective_lost": "60–90 s vorher: Lanes mit Prio pushen, Wards in den Fluss, mit vollem Leben und Items ankommen.",
+    "trade": "Möglicher Tausch: Prüfe, ob das Geholte mehr wert war als das Verlorene (Drache-Seele? Baron? Türme?).",
     "kill": "Stark! Was hat den Kill möglich gemacht (Timing, CC, Überzahl)? Genau das wiederholen.",
     "multikill": "Highlight! Achte darauf, wie der Fight aufgebaut war – das ist dein Gewinnmuster.",
     "objective_taken": "Gutes Objective – Setup merken: Wer hatte Prio, wo standen die Wards?",
@@ -53,7 +54,8 @@ def detect_mistakes(data, me_names, my_team, ej_names, name_team, name_pos, name
             if victim in me_names:
                 enemies = 1 + len(assist)
                 jg = bool(ej_names & ({killer} | set(assist)))
-                why = f"Tod gegen {enemies} Gegner" + (" inkl. Gegner-Jungler" if jg else "")
+                why = (f"{enemies} Gegner beteiligt" if enemies >= 2 else "1 Gegner beteiligt") + \
+                    (" inkl. Gegner-Jungler" if jg else "")
                 out.append({"t": t, "type": "death", "kind": "mistake", "title": "Eigener Tod", "why": why,
                             "pre": 20, "post": 6, "killer": champ(killer), "assisters": [champ(a) for a in assist],
                             "tip": TIPS["outnumbered" if enemies >= 2 else "death"]})
@@ -79,12 +81,37 @@ def detect_mistakes(data, me_names, my_team, ej_names, name_team, name_pos, name
             killer = ev.get("KillerName")
             label = OBJECTIVES[n] + (f" ({ev['DragonType']})" if ev.get("DragonType") else "")
             if killer and name_team.get(killer) and name_team.get(killer) != my_team:
-                out.append({"t": t, "type": "objective_lost", "kind": "mistake", "title": f"{label} verloren",
-                            "why": "Setup/Prio vor dem Objective prüfen", "pre": 35, "post": 5, "tip": TIPS["objective_lost"]})
+                trade = _our_take_near(data, t, my_team, name_team)
+                if trade:  # a lost objective is not automatically a mistake – maybe a trade
+                    out.append({"t": t, "type": "objective_trade", "kind": "review", "title": f"{label} abgegeben",
+                                "why": f"Gleichzeitig geholt: {trade} – war der Tausch es wert?", "pre": 35, "post": 5,
+                                "tip": TIPS["trade"]})
+                else:
+                    out.append({"t": t, "type": "objective_lost", "kind": "mistake", "title": f"{label} verloren",
+                                "why": "Kein Gegenwert in ±60 s – Setup/Prio vor dem Objective prüfen", "pre": 35,
+                                "post": 5, "tip": TIPS["objective_lost"]})
             elif killer in me_names or (me_names & set(ev.get("Assisters", []))):
                 out.append({"t": t, "type": "objective_taken", "kind": "highlight", "title": f"{label} geholt",
                             "why": "Objective für dein Team", "pre": 20, "post": 4, "tip": TIPS["objective_taken"]})
     return out
+
+
+def _our_take_near(data, t, my_team, name_team, window=60):
+    """What did our team take within ±window s (turrets, inhibitors, other epic monsters)?"""
+    got = []
+    for ev in data.get("events", {}).get("Events", []):
+        et, n = ev.get("EventTime", 0), ev.get("EventName")
+        if abs(et - t) > window:
+            continue
+        if n in ("TurretKilled", "InhibKilled"):
+            tag = ev.get("TurretKilled") or ev.get("InhibKilled") or ""
+            # Turret_T1_* / Barracks_T1_* belong to ORDER (blue): destroyed by the other team
+            owner = "ORDER" if "_T1_" in tag else "CHAOS" if "_T2_" in tag else None
+            if owner and owner != my_team:
+                got.append("Turm" if n == "TurretKilled" else "Inhibitor")
+        elif n in OBJECTIVES and name_team.get(ev.get("KillerName")) == my_team:
+            got.append(OBJECTIVES[n])
+    return ", ".join(sorted(set(got)))
 
 
 _PIPE = {}
@@ -318,6 +345,37 @@ def cut_clips(full, mistakes, g0, out_dir, exe=None):
             clips.append({**m, "time": _fmt(m["t"]), "file": name,
                           "thumb": thumb if os.path.exists(os.path.join(out_dir, thumb)) else None})
     return clips
+
+
+def set_feedback(sid, file, verdict):
+    """'Bewertung stimmt nicht' – stores the player's verdict on a clip (correct / wrong / unsure),
+    so misclassifications can be counted and the rules checked against them."""
+    if not sid or "/" in sid or "\\" in sid or verdict not in ("ok", "wrong", "unsure", None):
+        return False
+    p = os.path.join(REC_DIR, sid, "session.json")
+    if not os.path.exists(p):
+        return False
+    with open(p, encoding="utf-8") as f:
+        s = json.load(f)
+    hit = False
+    for c in s.get("clips", []):
+        if c.get("file") == file:
+            c["feedback"] = verdict; hit = True
+    if hit:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(s, f, ensure_ascii=False, indent=1)
+    return hit
+
+
+def feedback_stats():
+    """Per clip type: how often the player said the verdict was right / wrong."""
+    out = {}
+    for se in list_sessions(limit=200):
+        for c in se["clips"]:
+            if c.get("feedback"):
+                d = out.setdefault(c.get("type", "?"), {"ok": 0, "wrong": 0, "unsure": 0})
+                d[c["feedback"]] += 1
+    return out
 
 
 def list_sessions(limit=20):

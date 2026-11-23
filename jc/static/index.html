@@ -494,7 +494,7 @@ function gameplanCard(g) {
     `<div class="steps">${g.steps.map(x => `<div>${esc(x)}</div>`).join("")}</div>
     ${d ? `<div class="two" style="grid-template-columns:1fr 1fr;gap:18px;margin-top:16px">
       <div><div class="muted small">Duell vs ${esc(d.enemy)} · Level 3: <b>${esc(d.lvl3_txt)}</b></div><div class="duel" style="margin-top:8px"><span class="small red">er</span><div class="track"><i style="left:${pos(d.lvl3)}%"></i></div><span class="small green">du</span></div></div>
-      <div><div class="muted small">Level 6: <b>${esc(d.lvl6_txt)}</b>${d.winrate ? ` · echte Games: ${d.winrate}% WR (${d.games})` : ""}</div><div class="duel" style="margin-top:8px"><span class="small red">er</span><div class="track"><i style="left:${pos(d.lvl6)}%"></i></div><span class="small green">du</span></div></div></div>` : ""}
+      <div><div class="muted small">Level 6: <b>${esc(d.lvl6_txt)}</b>${d.winrate ? ` · echte Games: ${d.winrate}% WR (${d.games})` : ""}</div><div class="duel" style="margin-top:8px"><span class="small red">er</span><div class="track"><i style="left:${pos(d.lvl6)}%"></i></div><span class="small green">du</span></div></div></div>${d.model_note ? `<div class="small muted" style="margin-top:6px">ℹ️ ${esc(d.model_note)}</div>` : ""}` : ""}
     ${(g.lanes || []).length ? `<div class="muted small" style="margin-top:16px">Gank-Prioritäten</div>${g.lanes.map((l, i) => `<div class="row small"><span>${i === 0 ? "⭐ " : ""}<b>${esc(l.lane)}</b> · ${esc(l.ally)} vs ${esc(l.enemy)}</span><span>${l.winrate != null ? `<b class="${l.winrate >= 50 ? "green" : "red"}">${l.winrate}%</b> Lane-WR` : '<span class="muted">wenig Daten</span>'}</span></div>`).join("")}` : ""}
     ${(g.spikes || []).length ? `<div class="muted small" style="margin-top:16px">Power-Spikes</div><div class="build" style="margin-top:6px">${g.spikes.map((x, i) => `${i ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(x.id, 44)}<small>${esc(x.when)}</small>${x.winrate ? `<small class="${x.winrate >= 50 ? "green" : "red"}">${x.winrate}% WR</small>` : ""}</div>`).join("")}</div>` : ""}`, true);
 }
@@ -584,6 +584,14 @@ document.addEventListener("keydown", e => {  // YouTube-like shortcuts for the c
   const m = map[e.key]; if (!m) return;
   e.preventDefault(); vctl(id, m[0], m[1]);
 });
+const kindLabel = c => ({highlight: "Highlight", review: "Prüfen"})[c.kind] || "Fehler";
+async function clipFeedback(sid, file, verdict) {
+  try {
+    await fetch("/api/clip-feedback", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({sid, file, verdict})});
+    sessions.forEach(se => se.id === sid && (se.clips || []).forEach(c => { if (c.file === file) c.feedback = verdict; }));
+    render();
+  } catch (e) {}
+}
 function clipPlayer(sid, clips) {
   if (!clips || !clips.length) return '<span class="muted small">Keine Clips für dieses Game.</span>';
   const cur = selClip && selClip.sid === sid ? selClip.file : clips[0].file;
@@ -598,24 +606,27 @@ function clipPlayer(sid, clips) {
         <div class="chips">${[[-10, "⏪ 10s"], [-5, "‹ 5s"], [5, "5s ›"], [10, "10s ⏩"]].map(([d, l]) => `<button class="chip" onclick="vctl('${id}','seek',${d})">${l}</button>`).join("")}
           <button class="chip" onclick="vctl('${id}','frame',-1)">◀ Bild</button><button class="chip" onclick="vctl('${id}','frame',1)">Bild ▶</button></div>
         <div class="chips">${[0.25, 0.5, 1, 1.5, 2].map(r => `<button class="chip ${r === 1 ? "on" : ""}" data-rate-for="${id}" data-rate="${r}" onclick="vctl('${id}','rate',${r})">${r}×</button>`).join("")}</div></div>
-      <div class="fcard" style="margin-top:12px"><div class="k">${(c0.kind || "mistake") === "highlight" ? "Highlight" : "Fehler"} · ${esc(c0.time)}</div>
+      <div class="fcard" style="margin-top:12px"><div class="k">${kindLabel(c0)} · ${esc(c0.time)}</div>
         <h4>${esc(c0.title)}</h4><div class="small muted">${esc(c0.why || "")}</div>
         ${champs(c0).length ? `<div class="chips" style="margin-top:10px">${champs(c0).map(x => `<span class="chip">${cImg(x, 20, 6)} ${esc(x)}</span>`).join("")}</div>` : ""}
-        ${c0.tip ? `<div class="drill">💡 ${esc(c0.tip)}</div>` : ""}</div></div>
-    <div><div class="chips" style="margin-bottom:10px">${[["all", "Alle"], ["mistake", "Fehler"], ["highlight", "Highlights"]].map(([k, l]) => `<button class="chip ${clipFilter === k ? "on" : ""}" onclick="clipFilter='${k}';render()">${l} · ${k === "all" ? clips.length : clips.filter(c => (c.kind || "mistake") === k).length}</button>`).join("")}</div>
+        ${c0.tip ? `<div class="drill">💡 ${esc(c0.tip)}</div>` : ""}
+        <div class="row small" style="border:0;padding:10px 0 0;gap:6px;flex-wrap:wrap"><span class="muted">Stimmt die Bewertung?</span>
+          <div class="chips">${[["ok", "👍 Ja"], ["wrong", "👎 Nein"], ["unsure", "🤷 Unklar"]].map(([v, l]) => `<button class="chip ${c0.feedback === v ? "on" : ""}" onclick='clipFeedback(${JSON.stringify(sid)},${JSON.stringify(c0.file)},"${v}")'>${l}</button>`).join("")}</div></div>
+        <div class="small muted" style="margin-top:6px">Erkannt aus dem Killfeed der Live-API (ohne Positionen) – ob es wirklich ein Fehler war, entscheidest du im Clip.</div></div></div>
+    <div><div class="chips" style="margin-bottom:10px">${[["all", "Alle"], ["mistake", "Fehler"], ["review", "Prüfen"], ["highlight", "Highlights"]].map(([k, l]) => `<button class="chip ${clipFilter === k ? "on" : ""}" onclick="clipFilter='${k}';render()">${l} · ${k === "all" ? clips.length : clips.filter(c => (c.kind || "mistake") === k).length}</button>`).join("")}</div>
       <div style="display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:4px">${shown.map(c => `
         <div class="click" style="display:grid;grid-template-columns:132px 1fr;gap:12px;align-items:center;padding:8px;border-radius:14px;border:1px solid ${c.file === cur ? "rgba(34,211,238,.6)" : "var(--sep)"};background:${c.file === cur ? "rgba(34,211,238,.08)" : "var(--card2)"}"
           onclick='selClip={sid:${JSON.stringify(sid)},file:${JSON.stringify(c.file)}};activeVid="${id}";render()'>
           <div style="position:relative;width:132px;height:74px;border-radius:10px;overflow:hidden;background:#000">
             ${c.thumb ? `<img src="${base}${encodeURIComponent(c.thumb)}" style="width:100%;height:100%;object-fit:cover" loading="lazy">` : ""}
-            <span class="badge ${(c.kind || "mistake") === "highlight" ? "team" : "mu"}" style="position:absolute;left:6px;top:6px">${(c.kind || "mistake") === "highlight" ? "Highlight" : "Fehler"}</span>
+            <span class="badge ${(c.kind || "mistake") === "highlight" ? "team" : "mu"}" style="position:absolute;left:6px;top:6px">${kindLabel(c)}</span>${c.feedback ? `<span style="position:absolute;right:6px;top:5px;font-size:13px">${{ok: "✅", wrong: "❌", unsure: "❔"}[c.feedback] || ""}</span>` : ""}
             <span style="position:absolute;right:6px;bottom:5px;font-size:11px;font-weight:800;background:rgba(0,0,0,.65);padding:1px 6px;border-radius:6px">${esc(c.time)}</span></div>
           <div><div style="font-weight:700">${esc(c.title)}</div><div class="small muted">${esc(c.why || "")}</div><div style="display:flex;gap:3px;margin-top:5px">${icons(c)}</div></div></div>`).join("")}</div></div></div>`;
 }
 function sessionsCards() {
   if (!sessions.length) return card("Clips", "Die letzten 3 Games werden automatisch aufgenommen und geschnitten – Fehler und Highlights.", empty("🎬", "Noch keine Clips", "Spiel ein Game – Tode, verlorene Objectives, Gegner-Ganks und deine Kills landen danach hier."), true);
   return sessions.map(se => card(`Clips · ${se.champion || "Game"}`, new Date(se.start_wall * 1000).toLocaleString("de-DE") +
-    ` · ${(se.clips || []).filter(c => (c.kind || "mistake") === "mistake").length} Fehler · ${(se.clips || []).filter(c => c.kind === "highlight").length} Highlights`, clipPlayer(se.id, se.clips), true)).join("");
+    ` · ${(se.clips || []).filter(c => (c.kind || "mistake") === "mistake").length} Fehler · ${(se.clips || []).filter(c => c.kind === "review").length} Prüfen · ${(se.clips || []).filter(c => c.kind === "highlight").length} Highlights`, clipPlayer(se.id, se.clips), true)).join("");
 }
 function deepCard(g) {
   const D = g.deep, clipFor = t => (g.clips || []).find(c => Math.abs(c.t - t) < 6);
@@ -721,8 +732,12 @@ function renderCoach() {
   let h = card("", "", `<div class="hero">${ring(c.score, "Leistung")}
       <div><div class="muted small" style="font-weight:800;letter-spacing:.6px;text-transform:uppercase">Dein Spielertyp</div>
         <div class="huge g">${esc(pt.name)}</div><p style="margin:6px 0 0;font-size:15px">${esc(pt.text)}</p>
-        <p class="small muted" style="margin-top:8px">${c.games} Games${(c.roles || []).length > 1 ? " · " + c.roles.map(r => ROLE_DE[r] || r).join(", ") : ""}${c.account ? " · " + esc(c.account) : ""} · verglichen mit ${esc(c.scope)} (${c.bench_games.toLocaleString("de-DE")} Games)</p></div>
+        <p class="small muted" style="margin-top:8px">${c.games} Games${(c.roles || []).length > 1 ? " · " + c.roles.map(r => ROLE_DE[r] || r).join(", ") : ""}${c.account ? " · " + esc(c.account) : ""} · verglichen mit ${esc(c.scope)} (${c.bench_games.toLocaleString("de-DE")} Games)</p>
+        ${c.confidence ? `<p class="small muted" style="margin-top:2px">⚖️ Aussagekraft: ${esc(c.confidence)}</p>` : ""}</div>
       ${cons ? ring(cons.score, "Konstanz", 110) : ""}</div>`, true).replace('class="card', 'class="card glow');
+  if (c.session_task) h += card("Deine Aufgabe für die nächste Session", "Nur eine Sache – nicht zehn Zahlen.",
+    `<div class="fcard"><h4>🎯 ${esc(c.session_task.title)}</h4><div class="drill">${esc(c.session_task.drill)}</div>
+      <div class="small muted" style="margin-top:8px">${esc(c.session_task.check)}</div></div>`, true);
   h += card("Deine Schwerpunkte", "Das bringt dir gerade am meisten Winrate – automatisch gewählt aus Schwächen, die in deinen Niederlagen den Unterschied machen.",
     c.focus.length ? `<div class="focus">${c.focus.map((f, i) => `<div class="fcard"><div class="k">Schwerpunkt ${i + 1}</div><h4>${esc(f.title)}</h4>
       <div class="small muted">${esc(f.why)}</div><div class="drill">🎯 ${esc(f.drill)}</div>
@@ -747,7 +762,7 @@ function renderCoach() {
         <div class="stat"><b class="${(t.after_loss.winrate ?? 100) < 45 ? "red" : ""}">${t.after_loss.winrate ?? "–"}%</b><span>WR nach Niederlage</span></div></div>
       ${t.rule ? `<div class="drill" style="margin-top:14px;border-radius:12px;padding:12px;background:rgba(251,113,133,.1);border:1px solid rgba(251,113,133,.3)">🛑 <b>Deine Stopp-Regel:</b> ${esc(t.rule)}</div>`
                : `<p class="small green" style="margin-top:12px">Kein Tilt-Muster erkennbar – deine Leistung hält über die Session.</p>`}`);
-  if (c.patterns.length) h += card("Was deine Siege ausmacht", "Größte Unterschiede zwischen deinen Siegen und Niederlagen.",
+  if (c.patterns.length) h += card("Was deine Siege ausmacht", `Größte Unterschiede zwischen deinen Siegen und Niederlagen · ${esc(c.patterns[0].evidence || "vorläufig")}.`,
     `<table class="tl"><tr><th>Bereich</th><th>Siege</th><th>Niederlagen</th></tr>${c.patterns.map(p => `<tr><td><b>${esc(p.label)}</b></td><td class="green">${esc(p.wins)}</td><td class="red">${esc(p.losses)}</td></tr>`).join("")}</table>`);
   if (c.strengths.length) h += card("Deine Stärken", "Darauf kannst du bauen.", c.strengths.map(x => `<div class="row"><span>💪 ${esc(x.label)}</span><b class="green">besser als ${x.percentile}%</b></div>`).join(""));
   return `<h1 class="title">Dein <span class="g">Coach</span></h1><p class="subtitle">Aus deinen letzten 10 Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.</p><div class="grid">${h}</div>`;
@@ -786,7 +801,7 @@ function champView(p) {
   h += card("Build", "Kern-Items nach Häufigkeit – mit Winrate.", `${core.length ? `<div class="build">${core.map((i, n) => `${n ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(i.id, 52)}<small>${esc(i.name)}</small><small class="${i.winrate >= 50 ? "green" : "red"}">${i.winrate}% · ${i.pickrate}%</small></div>`).join("")}
       ${p.boots ? `<span class="arr">+</span><div class="ibox">${iImg(p.boots.id, 52)}<small>${esc(p.boots.name)}</small><small>${p.boots.pickrate}%</small></div>` : ""}</div>` : '<span class="muted small">Zu wenig Daten.</span>'}
     ${p.skill_order ? `<div class="muted small" style="margin:16px 0 6px">Skill-Reihenfolge (maximieren)</div><div class="skills">${p.skill_order.map((k, i) => `${i ? '<span class="arr muted">›</span>' : ""}<div class="skey ${k.toLowerCase()}">${k}</div>`).join("")}<span class="arr muted">·</span><div class="skey" style="color:var(--gold)">R</div><span class="small muted">auf 6/11/16</span></div>` : ""}
-    ${(p.gems || []).length ? `<div class="muted small" style="margin:16px 0 4px">💎 Geheimtipps (selten, aber nachweislich besser)</div>${p.gems.map(g => `<div class="item">${g.icon ? rImg(g.icon, 36) : iImg(g.id, 36)}<div><div class="n">${esc(g.name)} ${badge("Geheimtipp")}</div><div class="w">${esc(g.verdict)}</div></div></div>`).join("")}` : ""}`);
+    ${(p.gems || []).length ? `<div class="muted small" style="margin:16px 0 4px">💎 Geheimtipps (selten, statistisch auffällig – kein Beweis)</div>${p.gems.map(g => `<div class="item">${g.icon ? rImg(g.icon, 36) : iImg(g.id, 36)}<div><div class="n">${esc(g.name)} ${badge("Geheimtipp")}</div><div class="w">${esc(g.verdict)}</div></div></div>`).join("")}` : ""}`);
   const mu = (arr, good) => (arr || []).filter(m => m.id).slice(0, 5).map(m => `<div class="row click" onclick="openChamp('${m.id}')"><span class="champ">${cImg(m.id, 30, 8)} ${esc(m.name)}</span><span><b class="${good ? "green" : "red"}">${m.adj_winrate}%</b> <span class="muted small">${m.games} G</span></span></div>`).join("") || '<span class="muted small">Zu wenig Daten.</span>';
   h += card("Matchups", "Bereinigte Winrate gegen den direkten Gegner.", `<div class="two" style="grid-template-columns:1fr 1fr;gap:18px"><div><div class="muted small">Gut gegen</div>${mu(st.best_matchups, true)}</div><div><div class="muted small">Schwer gegen</div>${mu(st.worst_matchups, false)}</div></div>`);
   if (p.benchmarks) h += card("So spielen gute Spieler", `${esc(p.benchmarks.scope)} · ${p.benchmarks.games} Games`,

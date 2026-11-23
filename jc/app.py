@@ -624,6 +624,10 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 profile._mem.clear()
                 return self._send(200, {"ok": True})
+            if self.path == "/api/clip-feedback":
+                b = self._body()
+                ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))
+                return self._send(200 if ok else 400, {"ok": ok, "stats": recorder.feedback_stats()})
             if self.path == "/api/test-key":
                 return self._test_key(self._body().get("riot_api_key"))
             if self.path == "/api/config":
@@ -667,6 +671,7 @@ def start(cfg=None):
     i18n.setup(cfg)
     gd = GameData(cfg.get("display_language") or i18n.ddragon_locale())
     print(f"Patch {gd.version} geladen.")
+    deep.BENCH = lambda champ, role: (lambda ms: ms.benchmarks(champ, role, current_bracket(cfg)) if ms else None)(meta_stats(gd))
     lcu = LCU(cfg.get("league_path"))
     if os.path.exists(REVIEW_CACHE):
         try:

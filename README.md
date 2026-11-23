@@ -2,7 +2,7 @@
 
 Lokales Tool für Jungler: Champ-Select-Analyse, Runen und Build gegen das Gegnerteam, Live-Build-Anpassung, Tracking des Gegner-Junglers und Review nach dem Spiel.
 
-**Vanguard-sicher:** nutzt ausschließlich offizielle Riot-Schnittstellen – LCU API (Client), Live Client Data API (Port 2999), Riot API (match-v5) und Data Dragon. Kein Memory-Reading, keine Injection, keine Infos, die du im Spiel nicht selbst sehen könntest.
+**Vanguard-kompatibel (keine Freigabe-Garantie):** nutzt ausschließlich offizielle Riot-Schnittstellen – LCU API (Client), Live Client Data API (Port 2999), Riot API (match-v5) und Data Dragon. Kein Memory-Reading, keine Injection, keine Infos, die du im Spiel nicht selbst sehen könntest. Riot bewertet Tools aber auch nach dem Informationsvorteil – ob alle Funktionen erlaubt sind, entscheidet Riot (Third-Party-Policy), nicht die Zugriffsmethode.
 
 ## Bereiche der App
 | Tab | Was du dort findest |

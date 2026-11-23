@@ -68,10 +68,9 @@ def build(live, gd, gold, owned, focus=None, plan_step=None):
         if ago <= 45:
             side = {"TOP": T("Top", "top"), "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": T("Bot", "bot"),
                     "UTILITY": T("Bot", "bot")}.get(seen[0]["where"], seen[0]["where"])
-            other = T("Bot-Seite", "bot side") if seen[0]["where"] == "TOP" else \
-                T("Top-Seite", "top side") if seen[0]["where"] in ("BOTTOM", "UTILITY") else None
-            prompts.append((2, T(f"Gegner-Jungler vor {int(ago)} s {side} gesehen" + (f" → {other} ist sicher" if other else ""),
-                                  f"Enemy jungler seen {side} {int(ago)} s ago" + (f" → {other} is safe" if other else "")),
+            # kill participation, not a sighting: the API gives no position -> never claim a side is safe
+            prompts.append((3, T(f"Gegner-Jungler vor {int(ago)} s an Kill auf {side} beteiligt – Position unbestätigt",
+                                  f"Enemy jungler joined a kill on {side} {int(ago)} s ago – position unconfirmed"),
                             "info"))
     if ej.get("level", 0) >= 6 and not any(p[0] <= 2 for p in prompts):
         prompts.append((5, T("Gegner-Jungler hat Ult – Duelle nur mit Vorteil", "Enemy jungler has ult – duel only with an edge"), "info"))

@@ -64,7 +64,8 @@ def build(my_id, enemy_jg_id, allies, enemies, meta_stats=None, bracket=None):
     if ej:
         r3, r6 = _duel(me, ej, 3, 0, d), _duel(me, ej, 6, 0, d)
         duel = {"enemy": ej["name"], "lvl3": round(r3, 2), "lvl6": round(r6, 2),
-                "lvl3_txt": _verdict(r3), "lvl6_txt": _verdict(r6)}
+                "lvl3_txt": _verdict(r3), "lvl6_txt": _verdict(r6),
+                "model_note": "Modellwert aus den Spieldateien (ohne Items, Skillshots als Treffer) – echte Matchup-Winrate hat Vorrang."}
         if meta_stats:
             try:
                 mu = meta_stats.matchup(sim._ddragon_id(me), sim._ddragon_id(ej), bracket)

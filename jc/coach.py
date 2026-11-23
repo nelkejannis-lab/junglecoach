@@ -180,6 +180,8 @@ def analyze(games, bench, now=None, bench_by_champ=None):
                 f"{tilt['later_games']['winrate']}% → nach 2 Games Pause machen.")
     elif len(after_2l) >= 3 and (tilt["after_2_losses"]["winrate"] or 100) < 40:
         stop = f"Nach 2 Niederlagen in Folge gewinnst du nur {tilt['after_2_losses']['winrate']}% → dann aufhören."
+    if stop:
+        stop += f" (vorläufiges Muster aus {n} Games / {len(sess)} Sessions)"
     tilt["rule"] = stop
 
     # ---- what wins look like
@@ -196,6 +198,8 @@ def analyze(games, bench, now=None, bench_by_champ=None):
                 lv = statistics.median([g["stats"][m] for g in losses if m in g["stats"]])
                 patterns.append({"metric": m, "label": METRICS[m][0], "gap": round(sum(w) / len(w) - sum(lo) / len(lo)),
                                  "wins": _fmt(m, wv), "losses": _fmt(m, lv)})
+        for p in patterns:
+            p["evidence"] = f"{len(wins)} Siege vs. {len(losses)} Niederlagen – vorläufig"
         patterns.sort(key=lambda x: -x["gap"])
         patterns = [p for p in patterns if p["gap"] >= 8][:4]
         early_g = [g for g in games if g.get("first_action_min") is not None and g["first_action_min"] <= 4.5]
@@ -262,7 +266,16 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     else:
         ptype = ("Allrounder", "Ausgeglichen – die Schwerpunkte unten bringen dir am meisten.")
 
+    # one learning task for the next session instead of many numbers
+    task = None
+    if focus:
+        f0 = focus[0]
+        task = {"metric": f0["metric"], "title": f0["title"], "drill": f0["drill"], "target": f0["target"],
+                "check": f"Nach der Session prüft der Coach: {f0['target']} erreicht? (zuletzt {f0['last10'] or '–'})"}
+    confidence = ("sehr vorläufig" if n < 5 else "vorläufig") + f" – Basis {n} Games, Vergleich {bench['games']} Games ({bench['scope']})"
+
     return {"ready": True, "games": n, "scope": bench["scope"], "bench_games": bench["games"],
+            "session_task": task, "confidence": confidence,
             "player_type": {"name": ptype[0], "text": ptype[1]},
             "score": _avg(scores), "profile": profile, "strengths": strengths, "weaknesses": weaknesses,
             "consistency": cons, "tilt": tilt, "patterns": patterns, "focus": focus,
