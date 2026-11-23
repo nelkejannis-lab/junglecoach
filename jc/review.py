@@ -13,6 +13,14 @@ REGION_ROUTING = {"euw1": "europe", "eun1": "europe", "tr1": "europe", "ru": "eu
                   "kr": "asia", "jp1": "asia", "oc1": "sea", "sg2": "sea", "tw2": "sea", "vn2": "sea"}
 
 
+class RiotKeyError(RuntimeError):
+    pass
+
+
+class RiotNotFound(RuntimeError):
+    pass
+
+
 class RiotAPI:
     def __init__(self, key, platform="euw1"):
         self.key = key
@@ -35,9 +43,19 @@ class RiotAPI:
                 if e.code == 429:  # rate limit: wait as told
                     time.sleep(int(e.headers.get("Retry-After", "5")) + 1)
                     continue
-                if e.code == 403:
-                    raise RuntimeError("Riot API Key ungültig oder abgelaufen (Dev-Keys laufen nach 24h ab).")
-                raise
+                try:
+                    detail = json.loads(e.read().decode("utf-8")).get("status", {}).get("message", "")
+                except Exception:
+                    detail = ""
+                where = path.split("?")[0]
+                if e.code in (401, 403):
+                    raise RiotKeyError(f"Riot lehnt den API Key ab ({e.code}{': ' + detail if detail else ''}). "
+                                       "Dev-Keys laufen nach 24 h ab und werden ungültig, sobald du auf "
+                                       "developer.riotgames.com einen neuen erzeugst. Aktuellen Key in den "
+                                       "Einstellungen eintragen.")
+                if e.code == 404:
+                    raise RiotNotFound(f"Nicht gefunden: {where}")
+                raise RuntimeError(f"Riot API Fehler {e.code} bei {where}{': ' + detail if detail else ''}")
         raise RuntimeError("Riot API Rate-Limit – später erneut versuchen.")
 
 

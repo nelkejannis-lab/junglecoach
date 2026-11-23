@@ -117,3 +117,20 @@ class ChampSelectMetaTests(unittest.TestCase):
         session["theirTeam"] = [{"cellId": 5, "championId": 60, "assignedPosition": "jungle"}]
         out = champselect.analyze(GD, session, {"champion_pool": ["LeeSin", "Viego"]}, MetaTests.ms)
         self.assertTrue(any("vs Elise" in w for w in out["pick_suggestions"][0]["why"] + out["pick_suggestions"][-1]["why"]))
+
+
+class MergeTests(unittest.TestCase):
+    def test_merge_prune(self):
+        import tempfile, os
+        d = tempfile.mkdtemp()
+        a, b = meta.connect(os.path.join(d, "a.sqlite")), meta.connect(os.path.join(d, "b.sqlite"))
+        rng = random.Random(1)
+        for i in range(50):
+            meta.store_match(a, fake_match(i, rng), "GOLD")
+        for i in range(30, 90):
+            meta.store_match(b, fake_match(i, rng), "GOLD")
+        b.close()
+        added = meta.merge_from(a, os.path.join(d, "b.sqlite"))
+        self.assertEqual(added, 80)  # 40 new matches x 2 junglers
+        meta.prune(a, max_rows=100)
+        self.assertEqual(a.execute("SELECT COUNT(*) FROM games").fetchone()[0], 100)

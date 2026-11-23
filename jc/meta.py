@@ -33,7 +33,7 @@ def bracket_of(tier):
 
 
 def connect(path=None):
-    db = sqlite3.connect(path or DB_PATH, check_same_thread=False)
+    db = sqlite3.connect(path or DB_PATH, check_same_thread=False, timeout=30)
     db.execute("""CREATE TABLE IF NOT EXISTS games(match_id TEXT, champ TEXT, team INT, win INT,
                   items TEXT, keystone INT, enemy TEXT, patch TEXT, created INT, tier TEXT, perks TEXT, enemies TEXT,
                   PRIMARY KEY(match_id, team))""")
@@ -81,8 +81,10 @@ def store_match(db, match, tier=None):
 
 # ---------------------------------------------------------------- crawler
 class Crawler:
-    def __init__(self, cfg):
+    def __init__(self, cfg, db_path=None, deadline=None):
         self.cfg = cfg
+        self.db_path = db_path
+        self.deadline = deadline  # unix time: stop collecting after this (cloud crawler)
         self.state = {"running": False, "matches": 0, "players": 0, "message": "bereit"}
         self._stop = False
 
@@ -120,20 +122,23 @@ class Crawler:
     def _run(self):
         st = self.state
         st.update(running=True, message="lade Spielerliste…")
-        db = connect()
+        db = connect(self.db_path)
+        db.execute("PRAGMA busy_timeout=30000")
         try:
             api = RiotAPI(self.cfg["riot_api_key"], self.cfg.get("platform", "euw1"))
             players = self._players(api)
             target = int(self.cfg.get("meta_max_matches", 1500))
             seen = {r[0] for r in db.execute("SELECT match_id FROM seen")}
             for puuid, tier in players:
+                if self.deadline and time.time() > self.deadline:
+                    break
                 if self._stop or st["matches"] >= target:
                     break
                 st["players"] += 1
                 ids = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids",
                               {"queue": 420, "count": int(self.cfg.get("meta_matches_per_player", 5))})
                 for mid in ids:
-                    if self._stop or st["matches"] >= target:
+                    if self._stop or st["matches"] >= target or (self.deadline and time.time() > self.deadline):
                         break
                     if mid in seen:
                         continue
@@ -147,6 +152,30 @@ class Crawler:
         finally:
             st["running"] = False
             db.close()
+
+
+def prune(db, keep_patches=2, max_rows=400_000):
+    """Keep the database small: only the newest patches and at most max_rows games."""
+    patches = [r[0] for r in db.execute("SELECT patch FROM games GROUP BY patch ORDER BY MAX(created) DESC")]
+    for old in patches[keep_patches:]:
+        db.execute("DELETE FROM games WHERE patch=?", (old,))
+    db.execute("""DELETE FROM games WHERE rowid IN (SELECT rowid FROM games ORDER BY created DESC LIMIT -1 OFFSET ?)""",
+               (max_rows,))
+    db.commit()
+
+
+def merge_from(db, other_path):
+    """Adds all games of another meta database (e.g. the daily cloud download)."""
+    db.execute("ATTACH DATABASE ? AS other", (other_path,))
+    cols = [r[1] for r in db.execute("PRAGMA other.table_info(games)")]
+    mine = {r[1] for r in db.execute("PRAGMA main.table_info(games)")}
+    use = ", ".join(c for c in cols if c in mine)
+    before = db.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    db.execute(f"INSERT OR IGNORE INTO games ({use}) SELECT {use} FROM other.games")
+    db.execute("INSERT OR IGNORE INTO seen SELECT match_id FROM other.seen")
+    db.commit()
+    db.execute("DETACH DATABASE other")
+    return db.execute("SELECT COUNT(*) FROM games").fetchone()[0] - before
 
 
 # ---------------------------------------------------------------- stats

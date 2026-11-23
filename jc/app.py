@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import urllib.parse
 
-from . import champselect, deep, live, meta, minimap, profile, ranked, recorder, review
+from . import champselect, deep, live, meta, meta_cloud, minimap, profile, ranked, recorder, review
 from .ddragon import GameData
 from .lcu import LCU
 
@@ -172,11 +172,11 @@ def make_handler(gd, cfg, lcu):
                 try:
                     prof = profile.fetch(cfg["riot_api_key"], cfg.get("platform", "euw1"), rid, gd,
                                          int(cfg.get("profile_games", 20)), int(queue) if queue else None)
+                except review.RiotNotFound:
+                    return self._send(404, {"error": f"Spieler „{rid}“ nicht gefunden. Riot ID genau wie im Client "
+                                                     f"(Name#TAG) und Region {cfg.get('platform', 'euw1')} prüfen."})
                 except Exception as e:
-                    msg_ = str(e)
-                    if "404" in msg_:
-                        msg_ = f"Spieler {rid} nicht gefunden (Region {cfg.get('platform', 'euw1')} richtig?)."
-                    return self._send(500, {"error": msg_})
+                    return self._send(500, {"error": str(e)})
                 solo = prof["ranks"].get("solo")
                 if solo and rid.lower() == cfg.get("riot_id", "").lower():  # feed LP tracker without client
                     class _FromApi:
@@ -185,6 +185,26 @@ def make_handler(gd, cfg, lcu):
                                     "leaguePoints": solo["lp"], "wins": solo["wins"], "losses": solo["losses"]}}}
                     ranked.snapshot(_FromApi())
                 return self._send(200, {k: v for k, v in prof.items() if not k.startswith("_")})
+            if self.path == "/api/test-key":
+                steps = []
+                key = cfg.get("riot_api_key", "")
+                api = review.RiotAPI(key, cfg.get("platform", "euw1"))
+                try:
+                    api.get_platform("/lol/status/v4/platform-data")
+                    steps.append({"ok": True, "text": f"API Key gültig, Server {cfg.get('platform', 'euw1')} erreichbar"})
+                    rid = cfg.get("riot_id", "")
+                    if "#" in rid:
+                        n, t = rid.split("#", 1)
+                        try:
+                            api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(n)}/{urllib.parse.quote(t)}")
+                            steps.append({"ok": True, "text": f"Account {rid} gefunden"})
+                        except review.RiotNotFound:
+                            steps.append({"ok": False, "text": f"Account {rid} nicht gefunden – Schreibweise/TAG prüfen"})
+                    else:
+                        steps.append({"ok": False, "text": "Riot ID fehlt (Format Name#TAG)"})
+                except Exception as e:
+                    steps.append({"ok": False, "text": str(e)})
+                return self._send(200, {"steps": steps})
             if self.path == "/api/ranked":
                 with LOCK:
                     rev = STATE.get("review") or {}
@@ -207,7 +227,7 @@ def make_handler(gd, cfg, lcu):
                 cr = META["crawler"]
                 out = {"crawler": cr.state if cr else {"running": False, "message": "bereit", "matches": 0},
                        "total": ms.total() if ms else 0, "patch": ms.current_patch() if ms else None,
-                       "bracket": current_bracket(cfg), "champions": [], "tierlist": []}
+                       "bracket": current_bracket(cfg), "champions": [], "tierlist": [], "cloud": meta_cloud.STATE}
                 if ms:
                     b = current_bracket(cfg)
                     out["tierlist"] = [dict(t, name=gd.champ_name(gd.champ(t["champion"])))
@@ -268,7 +288,9 @@ def make_handler(gd, cfg, lcu):
                 body = self._body()
                 for k in EDITABLE:
                     if k in body and not (k == "riot_api_key" and not body[k]):
-                        cfg[k] = body[k]
+                        cfg[k] = body[k].strip() if isinstance(body[k], str) else body[k]
+                if body.get("riot_api_key"):
+                    cfg.pop("_key_from_build", None)  # user's own key wins over the built-in one
                 save_config(cfg)
                 return self._send(200, {"ok": True})
             if self.path == "/api/meta/crawl":
@@ -313,6 +335,13 @@ def start(cfg=None):
         except (OSError, ValueError):
             pass
     threading.Thread(target=poll_loop, args=(gd, cfg, lcu), daemon=True).start()
+
+    def cloud_loop():
+        while True:
+            if meta_cloud.update(cfg):
+                META["stats"] = None  # reopen with the new games
+            time.sleep(1800)
+    threading.Thread(target=cloud_loop, daemon=True).start()
     port = cfg.get("port", 8765)
     host = "0.0.0.0" if cfg.get("allow_phone", False) else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), make_handler(gd, cfg, lcu))

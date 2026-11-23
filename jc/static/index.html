@@ -372,10 +372,11 @@ function renderMeta() {
   if (!m) return page("Meta", "Lade…", "");
   const cr = m.crawler || {};
   let h = card("Datenbasis", `Ranked-Games aus allen Elos (Iron bis Challenger), gleichmäßig verteilt. Ausgewertet für: <b>${esc(m.bracket ? {low: "Iron–Silver", mid: "Gold–Platin", high: "Emerald–Diamond", apex: "Master+"}[m.bracket] : "alle Elos")}</b>`,
-    `<div class="stats"><div class="stat"><b>${m.total}</b><span>Jungler-Datensätze</span></div><div class="stat"><b>${esc(m.patch || "–")}</b><span>Aktueller Patch</span></div></div>
+    `<div class="stats"><div class="stat"><b>${m.total.toLocaleString("de-DE")}</b><span>Jungler-Datensätze</span></div><div class="stat"><b>${esc(m.patch || "–")}</b><span>Aktueller Patch</span></div>
+       <div class="stat"><b style="font-size:15px">${esc((m.cloud || {}).status || "–")}</b><span>Tägliche Cloud-Datenbank${m.cloud && m.cloud.updated ? " · " + new Date(m.cloud.updated * 1000).toLocaleString("de-DE") : ""}</span></div></div>
      <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
      <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Daten sammeln"}</button></div>
-     <p class="small muted">Dauert mit Dev-Key ca. 1 Std. pro 1.500 Games (Riot-Limit). Läuft im Hintergrund weiter.</p>`);
+     <p class="small muted">Die Cloud-Datenbank (EUW, NA, KR – rund um die Uhr gesammelt) wird automatisch alle 6 Std. geladen. „Daten sammeln“ ergänzt zusätzlich Games von deinem PC aus.</p>`);
   h += card("So funktionieren Geheimtipps", "",
     `<p class="small">Seltene Items und Runen werden per <b>Simulation</b> gegen den Rest verglichen: 4.000 Mal werden aus den echten Ergebnissen plausible Winrates gezogen (Bayes). Empfohlen wird nur, was in ≥ 90 % der Durchläufe besser ist und ≥ 2 % mehr Winrate bringt – und nicht nur gegen einen einzelnen Gegner gut ist.</p>
      <p class="small muted">Das ist Statistik auf echten Games, kein Kampf-Simulator. Je mehr Daten, desto sicherer.</p>`);
@@ -406,6 +407,8 @@ function renderSettings() {
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
       <label class="f">Riot API Key ${c.riot_api_key_set ? '<span class="badge team">gespeichert</span>' : '<span class="badge">fehlt</span>'}</label>
       <input class="f" id="s_key" type="password" placeholder="${c.riot_api_key_set ? "Neuen Key eingeben, um zu ersetzen" : "RGAPI-…"}">
+      <div class="row" style="border:0"><button class="btn sec" onclick="testKey()">Verbindung testen</button></div>
+      <div class="small">${(msg.test || []).map(s => `<div class="${s.ok ? "green" : "red"}">${s.ok ? "✓" : "✕"} ${esc(s.text)}</div>`).join("")}</div>
       <p class="small muted">Kostenlos auf <a href="https://developer.riotgames.com" target="_blank">developer.riotgames.com</a>. Dev-Keys laufen nach 24 h ab – für Dauerbetrieb einen Personal Key beantragen.</p>`) +
     card("Champions & Empfehlungen", "", `
       <label class="f">Dein Champion-Pool</label><input class="f" id="s_pool" value="${esc((c.champion_pool || []).join(", "))}" placeholder="LeeSin, Viego, Amumu">
@@ -463,6 +466,7 @@ async function saveCfg() {
   const r = await (await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
   msg.cfg = r.ok ? "Gespeichert ✓" : "Fehler beim Speichern"; await loadCfg(); profData = null; profErr = "";
 }
+async function testKey() { msg.test = [{ok: true, text: "Teste…"}]; render(); const r = await getJson("/api/test-key"); msg.test = r.steps; render(); }
 function togglePlay() {
   if (playTimer) { clearInterval(playTimer); playTimer = null; render(); return; }
   if (replayMin >= 15) replayMin = 0;
