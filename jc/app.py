@@ -56,6 +56,40 @@ def current_bracket(cfg):
 COACH = {}
 
 
+HISTORY_DIR = os.path.join(ROOT, "cache", "history")
+
+
+def _hist_path(account):
+    safe = "".join(c if c.isalnum() else "_" for c in (account or "me").lower())[:60]
+    return os.path.join(HISTORY_DIR, safe + ".json")
+
+
+def load_history(account):
+    try:
+        with open(_hist_path(account), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_history(account, res):
+    """Keeps a light record of every analysed game (stats only, no timelines) for the 30-day progress –
+    the review itself only holds the most recent games."""
+    hist = load_history(account)
+    for g in (res.get("games") or []) + (res.get("other_games") or []):
+        if g.get("match_id") and g.get("stats"):
+            hist[g["match_id"]] = {"game_start": g.get("game_start"), "champion": g.get("champion"),
+                                   "role": g.get("role") or "JUNGLE", "win": g.get("win"), "stats": g["stats"]}
+    cutoff = time.time() - 120 * 86400
+    hist = {k: v for k, v in hist.items() if (v.get("game_start") or 0) >= cutoff}
+    if len(hist) > 600:
+        hist = dict(sorted(hist.items(), key=lambda kv: -(kv[1].get("game_start") or 0))[:600])
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    with open(_hist_path(account), "w", encoding="utf-8") as f:
+        json.dump(hist, f)
+    return hist
+
+
 def run_review(cfg):
     """Loads + analyses the recent ranked games of the active account (or the configured Riot ID)."""
     rid = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
@@ -78,6 +112,10 @@ def run_review(cfg):
         raise
     res["account"] = rid
     res["analysed_at"] = time.time()
+    try:
+        save_history(rid, res)
+    except OSError:
+        pass
     attach_clips(res["games"], recorder.list_sessions())
     with open(REVIEW_CACHE, "w", encoding="utf-8") as f:
         json.dump(res, f)
@@ -179,6 +217,11 @@ def coach_plan(gd, cfg, rev, cache=None):
     plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(main[0], main[1], None),
                          bench_by_champ=by)
     plan["roles"] = sorted({k[1] for k in counts})
+    try:
+        hist = list(load_history(rev.get("account")).values()) or games
+        plan["progress"] = coach.progress(hist, plan.get("focus"))
+    except Exception:  # noqa: BLE001 - progress is a bonus, never break the plan
+        plan["progress"] = []
     plan["account"] = rev.get("account")
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
     if cache is COACH and plan.get("ready"):
@@ -247,6 +290,7 @@ def champion_page(gd, cfg, c, role=None):
         if bp.get("enough"):
             out["core"] = [dict(x, pickrate=x["share"]) for x in bp["core"]]
             out["build_alts"] = bp["alternatives"]
+            out["build_exact"] = bool(bp.get("exact"))
             out["late"] = bp["late"]
             if bp.get("boots"):
                 out["boots"] = dict(bp["boots"], pickrate=bp["boots"]["share"])
@@ -757,6 +801,19 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
                 return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
+            if self.path == "/api/recording":  # clips on/off, sound, how many games are kept
+                b = self._body()
+                rc = cfg.setdefault("recording", {})
+                for k in ("enabled", "audio"):
+                    if isinstance(b.get(k), bool):
+                        rc[k] = b[k]
+                if isinstance(b.get("keep_games"), int):
+                    rc["keep_games"] = max(1, min(10, b["keep_games"]))
+                save_config(cfg)
+                if REC.get("obj"):
+                    REC["obj"].cfg.update({k: rc[k] for k in ("enabled", "audio", "keep_games") if k in rc})
+                return self._send(200, {"enabled": rc.get("enabled", True), "audio": rc.get("audio", True),
+                                        "keep_games": rc.get("keep_games", 3)})
             if self.path == "/api/overlay-settings":
                 b = self._body()
                 oc = cfg.setdefault("overlay", {})

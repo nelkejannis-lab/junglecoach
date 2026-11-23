@@ -58,3 +58,74 @@ class GpmTests(unittest.TestCase):
         self.assertEqual(hud.gold_per_min(live, 600, {"p25": 330, "p50": 390})["rate"], "good")
         self.assertEqual(hud.gold_per_min({"_t": 1200, "_item_gold": 5000}, 0, {"p25": 330, "p50": 390})["rate"], "bad")
         self.assertEqual(hud.gold_per_min({"_t": 200, "_item_gold": 900}, 300)["rate"], "neutral")
+
+
+class DeathTests(unittest.TestCase):
+    def _setup(self, extra_events=(), gold=300):
+        parts = [{"participantId": i, "teamId": 100 if i <= 5 else 200, "championName": f"C{i}",
+                  "teamPosition": ["JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"][(i - 1) % 5]} for i in range(1, 11)]
+        pf = {str(i): {"position": {"x": 7000 if i in (1, 6, 7) else 1000, "y": 7000 if i in (1, 6, 7) else 1000},
+                       "currentGold": gold if i == 1 else 0, "level": 6} for i in range(1, 11)}
+        frames = [{"participantFrames": pf, "events": []} for _ in range(10)]
+        ev = {"type": "CHAMPION_KILL", "victimId": 1, "killerId": 6, "assistingParticipantIds": [7],
+              "timestamp": 300000, "position": {"x": 7000, "y": 7000}}
+        team_of = {p["participantId"]: p["teamId"] for p in parts}
+        from jc import deep
+        return deep.death_context(ev, 300, frames, parts, 1, 100, list(extra_events), [], team_of)
+
+    def test_outnumbered(self):
+        c = self._setup()
+        self.assertEqual(c["cause"], "outnumbered")
+        self.assertEqual(c["killers"], ["C6", "C7"])
+        self.assertEqual(c["allies_near"], 0)
+
+    def test_trade(self):
+        c = self._setup([{"type": "BUILDING_KILL", "teamId": 200, "buildingType": "TOWER_BUILDING", "timestamp": 320000}])
+        self.assertEqual(c["cause"], "trade")
+        self.assertIn("Turm", c["trade"])
+
+
+class ProgressTests(unittest.TestCase):
+    def test_progress(self):
+        from jc import coach
+        now = 1_800_000_000
+        hist = [{"game_start": now - (20 - i) * 86400, "win": i % 2 == 0, "stats": {"kp": 40 + i}} for i in range(20)]
+        out = coach.progress(hist, [{"metric": "kp", "title": "Kill-Beteiligung", "target_val": 58, "higher": True, "target": "58%"}], now=now)
+        self.assertTrue(out[0]["enough"])
+        self.assertTrue(out[0]["better"])
+        self.assertEqual(out[0]["games"], 20)
+        self.assertEqual(out[0]["hit"], "2/20")
+
+
+class ExactBuildTests(unittest.TestCase):
+    def test_purchases_and_path(self):
+        import json
+        import os
+        import tempfile
+        from jc import meta
+        tl = {"info": {"frames": [{"events": [
+            {"type": "ITEM_PURCHASED", "participantId": 1, "itemId": 1055, "timestamp": 1000},
+            {"type": "ITEM_PURCHASED", "participantId": 1, "itemId": 2003, "timestamp": 1000},
+            {"type": "ITEM_PURCHASED", "participantId": 1, "itemId": 3006, "timestamp": 400000},
+            {"type": "ITEM_UNDO", "participantId": 1, "beforeId": 3006, "afterId": 0, "timestamp": 401000},
+            {"type": "ITEM_PURCHASED", "participantId": 1, "itemId": 6692, "timestamp": 600000}]}]}}
+        self.assertEqual(meta.purchases(tl)[1], [[1055, 0.0], [6692, 10.0]])
+
+        class G:
+            def completed_items(self):
+                return {6692: {"tags": []}, 3071: {"tags": []}, 6333: {"tags": []}, 3047: {"tags": ["Boots"]}}
+
+            def item_name(self, i):
+                return str(i)
+        db = meta.connect(os.path.join(tempfile.mkdtemp(), "t.sqlite"))
+        for n in range(60):
+            seq = [[6692, 11], [3047, 13], [3071, 19], [6333, 26]] if n % 4 else [[3071, 12], [6692, 20]]
+            db.execute("INSERT INTO games (match_id, champ, team, win, items, patch, created, role, build) VALUES (?,?,?,?,?,?,?,?,?)",
+                       (f"M{n}", "LeeSin", 100, n % 2, "[]", "16.23", n, "JUNGLE", json.dumps(seq)))
+        db.commit()
+        ms = meta.MetaStats(G(), db)
+        bp = ms.build_path("LeeSin", role="JUNGLE")
+        self.assertTrue(bp["exact"])
+        self.assertEqual([c["id"] for c in bp["core"]], [6692, 3071, 6333])
+        self.assertEqual(bp["core"][0]["minute"], 11)
+        self.assertEqual(bp["boots"]["id"], 3047)

@@ -84,7 +84,7 @@ def connect(path=None):
         pass
     schema = """CREATE TABLE IF NOT EXISTS {t}(match_id TEXT, champ TEXT, team INT, win INT,
                   items TEXT, keystone INT, enemy TEXT, patch TEXT, created INT, tier TEXT, perks TEXT, enemies TEXT,
-                  role TEXT, stats TEXT, PRIMARY KEY(match_id, champ))"""
+                  role TEXT, stats TEXT, build TEXT, PRIMARY KEY(match_id, champ))"""
     db.execute(schema.format(t="games"))
     db.execute("CREATE TABLE IF NOT EXISTS seen(match_id TEXT PRIMARY KEY)")
     # players found on a focus champion (e.g. Gwen / Graves mains): every crawl starts with them
@@ -94,11 +94,14 @@ def connect(path=None):
     if cols and "stats" not in cols and "role" in cols:
         db.execute("ALTER TABLE games ADD COLUMN stats TEXT")
         cols.append("stats")
+    if cols and "build" not in cols and "role" in cols:  # purchase order from the match timeline
+        db.execute("ALTER TABLE games ADD COLUMN build TEXT")
+        cols.append("build")
     pk = [r[1] for r in sorted(db.execute("PRAGMA table_info(games)"), key=lambda r: r[5]) if r[5]]
     if pk != ["match_id", "champ"] or "role" not in cols:  # migrate older databases
         db.execute(schema.format(t="games_new"))
         keep = [c for c in cols if c in ("match_id", "champ", "team", "win", "items", "keystone", "enemy", "patch",
-                                         "created", "tier", "perks", "enemies", "role", "stats")]
+                                         "created", "tier", "perks", "enemies", "role", "stats", "build")]
         db.execute(f"INSERT OR IGNORE INTO games_new ({','.join(keep)}) SELECT {','.join(keep)} FROM games")
         if "role" not in cols:
             db.execute("UPDATE games_new SET role='JUNGLE' WHERE role IS NULL")
@@ -161,7 +164,30 @@ def metrics_of(p, duration_s):
     return {k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.items() if x is not None}
 
 
-def store_match(db, match, tier=None, focus=None, all_players=True):
+NOT_BUILD = {2003, 2010, 2031, 2033, 2055, 2138, 2139, 2140, 3340, 3363, 3364, 2052, 2422}  # potions, wards, trinkets, elixirs
+
+
+def purchases(timeline):
+    """participantId -> [[item_id, minute], ...]: first purchase of each item in order (undos removed)."""
+    out = {}
+    for fr in (timeline or {}).get("info", {}).get("frames", []):
+        for ev in fr.get("events", []):
+            t, pid = ev.get("type"), ev.get("participantId")
+            if not pid:
+                continue
+            lst = out.setdefault(pid, [])
+            if t == "ITEM_PURCHASED" and ev.get("itemId") not in NOT_BUILD:
+                if all(x[0] != ev["itemId"] for x in lst):
+                    lst.append([ev["itemId"], round(ev.get("timestamp", 0) / 60000, 1)])
+            elif t == "ITEM_UNDO" and ev.get("beforeId"):
+                for i in range(len(lst) - 1, -1, -1):
+                    if lst[i][0] == ev["beforeId"]:
+                        del lst[i]
+                        break
+    return out
+
+
+def store_match(db, match, tier=None, focus=None, all_players=True, timeline=None):
     """Stores all 10 players of a ranked match (champion, role, items, runes, lane opponent),
     so statistics exist for every champion and role. focus only steers the crawler (snowball).
     all_players=False keeps the old behaviour (only the two junglers)."""
@@ -179,18 +205,20 @@ def store_match(db, match, tier=None, focus=None, all_players=True):
         if len(chosen) != 2:
             return 0
     patch = patch_of(info.get("gameVersion", ""))
+    bought = purchases(timeline) if timeline else {}
     for p in chosen:
         role = p.get("teamPosition") or ""
         opp = next((o for o in parts if o["teamId"] != p["teamId"] and o.get("teamPosition") == role and role), None)
         items = [p.get(f"item{i}", 0) for i in range(7) if p.get(f"item{i}", 0)]
         ks, page = _page(p)
         enemies = [o["championName"] for o in parts if o["teamId"] != p["teamId"]]
+        b = bought.get(p.get("participantId"))
         db.execute("INSERT OR REPLACE INTO games (match_id, champ, team, win, items, keystone, enemy, patch, created, "
-                   "tier, perks, enemies, role, stats) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   "tier, perks, enemies, role, stats, build) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (mid, p["championName"], p["teamId"], int(bool(p.get("win"))), json.dumps(items), ks,
                     opp["championName"] if opp else "", patch, info.get("gameCreation", 0), tier,
                     json.dumps(page) if page else None, json.dumps(enemies), role,
-                    json.dumps(metrics_of(p, info.get("gameDuration", 0)))))
+                    json.dumps(metrics_of(p, info.get("gameDuration", 0))), json.dumps(b) if b else None))
     db.commit()
     return len(chosen)
 
@@ -276,7 +304,13 @@ class Crawler:
                         continue
                     seen.add(mid)
                     m = api.get(f"/lol/match/v5/matches/{mid}")
-                    if store_match(db, m, tier, focus or None):
+                    tl = None
+                    if self.cfg.get("meta_timelines") and m.get("info", {}).get("gameDuration", 0) >= 15 * 60:
+                        try:  # exact purchase order (costs one extra request per match)
+                            tl = api.get(f"/lol/match/v5/matches/{mid}/timeline")
+                        except Exception:  # noqa: BLE001
+                            tl = None
+                    if store_match(db, m, tier, focus or None, timeline=tl):
                         st["matches"] += 1
                         if focus and any(p["championName"] in focus for p in m["info"]["participants"]):  # snowball: players on a focus champion probably play it again
                             for p in m["info"]["participants"]:
@@ -556,6 +590,70 @@ class MetaStats:
         return {"enough": True, "games": n, "scope": scope, "enemies": enemy_ids,
                 "keystones": keys[:3], "items": items[:5], "boots": boots[:1], "rune_page": page}
 
+    def _exact_path(self, champ_id, bracket=None, role=None, min_games=40):
+        """Build path from real purchase order (timeline data from the crawler), if enough games have it."""
+        patch = self.current_patch()
+        tiers = BRACKETS.get(bracket) if bracket else None
+        rq = " AND role=?" if role else ""
+        tries = []
+        if tiers:
+            tries.append((f" AND patch=? AND tier IN ({','.join('?' * len(tiers))})", [patch, *tiers], f"Patch {patch}, Elo {bracket}"))
+        tries += [(" AND patch=?", [patch], f"Patch {patch}, alle Elos"), ("", [], "alle gesammelten Games")]
+        rows, scope = [], ""
+        for where, args, label in tries:
+            rows = self.db.execute(f"SELECT win, build FROM games WHERE champ=? AND build IS NOT NULL{rq}{where}",
+                                   [champ_id] + ([role] if role else []) + args).fetchall()
+            scope = label + (f", Rolle {role.title()}" if role else "")
+            if len(rows) >= min_games:
+                break
+        if len(rows) < min_games:
+            return None
+        completed = self.gd.completed_items()
+        boots = {i for i, it in completed.items() if "Boots" in it.get("tags", [])}
+        legend = {i for i in completed if i not in boots and i not in SNOWBALL_ITEMS}
+        games = []
+        for w, b in rows:
+            seq = json.loads(b)
+            games.append((w, [(i, m) for i, m in seq if i in legend], [(i, m) for i, m in seq if i in boots]))
+        base = sum(g[0] for g in games) / len(games)
+        core, alts = [], []
+        for step in range(3):
+            prefix = [c["id"] for c in core]
+            pool = [g for g in games if len(g[1]) > step and [i for i, _ in g[1][:step]] == prefix]
+            cnt = {}
+            for g in pool:
+                i, mnt = g[1][step]
+                c = cnt.setdefault(i, [0, 0, 0.0])
+                c[0] += 1; c[1] += g[0]; c[2] += mnt
+            if not cnt:
+                break
+            opts = sorted(({"id": i, "name": self.gd.item_name(i), "share": round(100 * n / len(pool), 1), "games": n,
+                            "winrate": round(100 * w / n, 1), "minute": round(t / n), "score": _shrunk(w, n, base, k=40)}
+                           for i, (n, w, t) in cnt.items()), key=lambda o: -o["share"])
+            best = opts[0]
+            for o in opts[1:]:  # consensus first; winrate only between almost equally popular options
+                if o["share"] >= 0.75 * best["share"] and o["games"] >= 80 and o["score"] >= best["score"] + 0.02:
+                    best = o
+            core.append(dict(best, step=step + 1))
+            alts.append({"step": step + 1, "options": [o for o in opts if o is not best and o["share"] >= 5][:2]})
+        late = {}
+        full = [g for g in games if [i for i, _ in g[1][:3]] == [c["id"] for c in core]]
+        for g in full:
+            for i, _ in g[1][3:5]:
+                late[i] = late.get(i, 0) + 1
+        bc = {}
+        for g in games:
+            if g[2]:
+                i, mnt = g[2][0]
+                c = bc.setdefault(i, [0, 0.0]); c[0] += 1; c[1] += mnt
+        bt = max(bc.items(), key=lambda kv: kv[1][0], default=None)
+        return {"enough": bool(core), "exact": True, "games": len(rows), "scope": scope, "core": core,
+                "alternatives": alts, "next": None,
+                "late": [{"id": i, "name": self.gd.item_name(i), "share": round(100 * n / max(1, len(full)), 1)}
+                         for i, n in sorted(late.items(), key=lambda kv: -kv[1])[:4]],
+                "boots": {"id": bt[0], "name": self.gd.item_name(bt[0]), "share": round(100 * bt[1][0] / len(games), 1),
+                          "minute": round(bt[1][1] / bt[1][0])} if bt else None}
+
     def build_path(self, champ_id, bracket=None, role=None):
         """Ordered core build from real games (Riot stores only the end inventory, no purchase order).
 
@@ -570,6 +668,9 @@ class MetaStats:
             rows, scope = self._rows(champ_id, bracket)
         finally:
             self.role = prev
+        exact = self._exact_path(champ_id, bracket, role or prev)
+        if exact:
+            return exact
         if len(rows) < 40:
             return {"enough": False, "games": len(rows), "scope": scope}
         completed = self.gd.completed_items()

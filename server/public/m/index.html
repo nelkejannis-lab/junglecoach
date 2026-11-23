@@ -68,7 +68,19 @@
   .xbtn { position:sticky; top:0; float:right; z-index:2; width:34px; height:34px; border-radius:50%; border:0; background:rgba(255,255,255,.12); color:var(--txt);
     font:700 17px/34px -apple-system, system-ui, sans-serif; text-align:center; padding:0; margin:-2px -4px 0 0; cursor:pointer; }
   @keyframes up { from { transform:translateY(40px); opacity:.4; } } @keyframes fade { from { opacity:0; } }
-  .team { margin:8px 0 14px; } .pl { display:flex; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .team { margin:14px 0; } .teamh { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px; }
+  .mecard { position:relative; padding:14px; border-radius:20px; background:linear-gradient(160deg,rgba(251,113,133,.14),rgba(255,255,255,.03)); border:1px solid var(--line); }
+  .mecard.win { background:linear-gradient(160deg,rgba(52,211,153,.16),rgba(255,255,255,.03)); }
+  .mecard .stat span { white-space:nowrap; font-size:11px; } .mecard .stat b { font-size:18px; }
+  .mecard img.big { width:60px; height:60px; border-radius:16px; } .mecard .stat b small { font-size:11px; color:var(--sec); font-weight:600; }
+  .mecard .items img, .mecard .items i { width:34px; height:34px; border-radius:9px; }
+  .pl2 { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
+  .pl2:last-child { border:0; } .pl2 > img { width:36px; height:36px; border-radius:11px; flex:none; }
+  .pl2.me { background:rgba(45,212,191,.08); border-radius:12px; padding:8px 6px; }
+  .pl2h { display:flex; justify-content:space-between; gap:8px; font-size:13.5px; } .pl2h b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pl2h span { font-weight:700; white-space:nowrap; }
+  .pl2s { display:flex; gap:10px; align-items:center; font-size:11.5px; color:var(--sec); margin-top:2px; }
+  .pl2s .dmg { flex:1; height:4px; border-radius:9px; background:var(--card2); overflow:hidden; } .pl2s .dmg i { display:block; height:100%; background:var(--orange); }
+  .mini { display:flex; gap:3px; margin-top:5px; } .mini img, .mini i { width:18px; height:18px; border-radius:5px; background:var(--card2); display:block; } .pl { display:flex; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .pl img { width:30px; height:30px; border-radius:9px; } .pl.me { background:rgba(45,212,191,.08); border-radius:10px; padding:7px 6px; }
   .bar { height:5px; border-radius:9px; background:var(--card2); overflow:hidden; margin-top:3px; } .bar i { display:block; height:100%; background:var(--orange); border-radius:9px; }
   .skel { height:70px; border-radius:18px; background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04)); background-size:200% 100%; animation:sh 1.2s linear infinite; margin-bottom:10px; }
@@ -212,18 +224,34 @@ addEventListener("touchend", e => { const el = document.getElementById("sheet-in
   if (dy > 90) closeSheet(); else el.style.transform = ""; });
 function matchSheet() {
   const m = MATCH[S.sheet.id]; if (!m || !m.info) return "";
-  const info = m.info, max = Math.max(...info.participants.map(p => p.totalDamageDealtToChampions));
-  const team = tid => info.participants.filter(p => p.teamId === tid).map(p => `<div class="pl ${p.puuid === S.sheet.puuid ? "me" : ""}">${cImg(p.championName, "")}
-      <div style="flex:1;min-width:0"><b style="font-size:13px">${esc(p.riotIdGameName || p.summonerName || "")}</b> <span class="muted">${p.kills}/${p.deaths}/${p.assists}</span>
-      <div class="bar"><i style="width:${100 * p.totalDamageDealtToChampions / max}%"></i></div></div>
-      <div class="items" style="margin:0">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div>`).join("");
-  const win = info.teams.find(t => t.win);
+  const info = m.info, min = Math.max(1, info.gameDuration / 60), P = info.participants;
+  const me = P.find(p => p.puuid === S.sheet.puuid) || P[0];
+  const maxD = Math.max(...P.map(p => p.totalDamageDealtToChampions));
+  const teamK = tid => P.filter(p => p.teamId === tid).reduce((a, p) => a + p.kills, 0);
+  const teamG = tid => P.filter(p => p.teamId === tid).reduce((a, p) => a + p.goldEarned, 0);
+  const cs = p => p.totalMinionsKilled + p.neutralMinionsKilled;
+  const k = n => n >= 1000 ? (n / 1000).toFixed(1).replace(".", ",") + "k" : n;
+  const kp = Math.round(100 * (me.kills + me.assists) / Math.max(1, teamK(me.teamId)));
+  const dmgShare = Math.round(100 * me.totalDamageDealtToChampions / Math.max(1, P.filter(p => p.teamId === me.teamId).reduce((a, p) => a + p.totalDamageDealtToChampions, 0)));
+  const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}">${cImg(p.championName, "")}
+      <div style="flex:1;min-width:0"><div class="pl2h"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)}</b><span>${p.kills}/${p.deaths}/${p.assists}</span></div>
+        <div class="pl2s"><span>${cs(p)} CS</span><span>${k(p.goldEarned)} G</span><span class="dmg"><i style="width:${100 * p.totalDamageDealtToChampions / maxD}%"></i></span></div>
+        <div class="mini">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div></div>`;
+  const team = tid => { const w = (info.teams.find(t => t.teamId === tid) || {}).win;
+    return `<div class="team"><div class="teamh"><b class="${w ? "green" : "red"}">${w ? "Sieg" : "Niederlage"}</b><span class="muted small">${tid === 100 ? "Blau" : "Rot"} · ${teamK(tid)} Kills · ${k(teamG(tid))} Gold</span></div>${P.filter(p => p.teamId === tid).map(row).join("")}</div>`; };
+  const mine = me.teamId;
   return `<div class="sheet" onclick="if(event.target===this)closeSheet()"><div class="in" id="sheet-in"><button class="xbtn" onclick="closeSheet()" aria-label="Schließen">✕</button><div class="grip" onclick="closeSheet()"></div>
-    <h3 style="margin:0 0 2px">${QUEUE[info.queueId] || "Spiel"} · ${Math.round(info.gameDuration / 60)} min</h3>
-    <p class="muted small" style="margin:0 0 6px">${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleString("de-DE")} · Balken = Schaden an Champions</p>
-    <div class="team"><b class="${win && win.teamId === 100 ? "green" : "red"}">Blaues Team ${win && win.teamId === 100 ? "· Sieg" : ""}</b>${team(100)}</div>
-    <div class="team"><b class="${win && win.teamId === 200 ? "green" : "red"}">Rotes Team ${win && win.teamId === 200 ? "· Sieg" : ""}</b>${team(200)}</div>
-    <p class="muted small">Clips und Detail-Analyse (Tode, Ganks, Objectives) findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
+    <p class="muted small" style="margin:0 0 10px">${QUEUE[info.queueId] || "Spiel"} · ${Math.round(min)} min · ${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleDateString("de-DE")}</p>
+    <div class="mecard ${me.win ? "win" : ""}"><div style="display:flex;gap:12px;align-items:center">${cImg(me.championName, "big")}
+      <div><div class="${me.win ? "green" : "red"}" style="font-weight:800;font-size:13px">${me.win ? "SIEG" : "NIEDERLAGE"}</div>
+        <div style="font-size:24px;font-weight:800;letter-spacing:-.5px">${me.kills}/${me.deaths}/${me.assists}</div>
+        <div class="muted small">${me.championName} · Level ${me.champLevel ?? "–"}</div></div></div>
+      <div class="stats" style="margin-top:12px">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
+        ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>
+      <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
+    ${team(mine)}${team(mine === 100 ? 200 : 100)}
+    <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
 }
 function vHome() {
   const c = S.coach, r = solo(S.league), gs = S.games || [];

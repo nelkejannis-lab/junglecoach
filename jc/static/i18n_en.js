@@ -725,5 +725,19 @@ window.I18N_EN = {
 "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen.": "The overlay can be moved now – drag it with the mouse.",
 "Wann es erscheint, wo es steht und wie durchsichtig es ist. Strg+Shift+J blendet es im Spiel ein/aus.": "When it shows, where it sits and how transparent it is. Ctrl+Shift+J shows/hides it in game.",
 "Größe": "Size",
-"Wann es erscheint, wo es steht, wie groß und durchsichtig es ist. Tab halten zeigt die Item-Auswahl: Item anklicken = wird als nächstes Item angezeigt. Strg+Shift+J blendet alles ein/aus.": "When it shows, where it sits, how big and transparent it is. Hold Tab for the item picker: click an item to show it as your next item. Ctrl+Shift+J shows/hides everything."
+"Wann es erscheint, wo es steht, wie groß und durchsichtig es ist. Tab halten zeigt die Item-Auswahl: Item anklicken = wird als nächstes Item angezeigt. Strg+Shift+J blendet alles ein/aus.": "When it shows, where it sits, how big and transparent it is. Hold Tab for the item picker: click an item to show it as your next item. Ctrl+Shift+J shows/hides everything.",
+"Aufnahme & Clips": "Recording & clips",
+"Spiele aufnehmen": "Record games",
+"Mit Ton": "With sound",
+"(gesamter PC-Ton, auch Discord)": "(all PC sound, incl. Discord)",
+"Gespeicherte Games": "Games kept",
+"Nimmt nur das Spielfenster auf und schneidet danach Fehler- und Highlight-Clips. Alles bleibt lokal auf deinem PC.": "Records only the game window and cuts mistake and highlight clips afterwards. Everything stays on your PC.",
+"Aus: keine Aufnahme, keine Clips – Analyse und Coaching laufen trotzdem.": "Off: no recording, no clips – analysis and coaching keep working.",
+"Tode verstehen": "Understanding deaths",
+"Fortschritt · 30 Tage": "Progress · 30 days",
+"Wird besser": "Improving",
+"Wird schlechter": "Getting worse",
+"Unverändert": "Unchanged",
+"▶ Clip ansehen": "▶ Watch clip",
+"Keine Tode – stark!": "No deaths – strong!"
 };

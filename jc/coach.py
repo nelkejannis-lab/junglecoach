@@ -237,7 +237,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
         if impact.get(m, 0) >= 8:
             why += f" · in Siegen deutlich besser als in Niederlagen"
         focus.append({"metric": m, "title": title, "why": why, "drill": drill.format(t=w["target_txt"]),
-                      "target": w["target_txt"], "last10": f"{len(ok)}/{len(hit)}",
+                      "target": w["target_txt"], "target_val": w["target"], "higher": higher, "last10": f"{len(ok)}/{len(hit)}",
                       "week": {"done": len(week_ok), "games": len(week)}})
     if tilt.get("rule") and len(focus) < 3:
         focus.append({"metric": "tilt", "title": "Session-Disziplin", "why": tilt["rule"],
@@ -281,3 +281,37 @@ def analyze(games, bench, now=None, bench_by_champ=None):
             "consistency": cons, "tilt": tilt, "patterns": patterns, "focus": focus,
             "trend": [{"t": g.get("game_start"), "score": g["score"], "win": g.get("win"), "champion": g.get("champion")}
                       for g in sorted(games, key=lambda g: g.get("game_start") or 0)]}
+
+
+def progress(history, focus, now=None, days=30):
+    """30-day progress per focus area from the stored game history:
+    every game's value, weekly averages, the target and whether the trend goes the right way."""
+    now = now or time.time()
+    start = now - days * 86400
+    out = []
+    for f in focus or []:
+        m = f.get("metric")
+        if m not in METRICS or f.get("target_val") is None:
+            continue
+        pts = sorted(((g.get("game_start") or 0, g["stats"][m], bool(g.get("win"))) for g in history
+                      if (g.get("game_start") or 0) >= start and m in (g.get("stats") or {})), key=lambda x: x[0])
+        if len(pts) < 2:
+            out.append({"metric": m, "title": f["title"], "points": [], "enough": False})
+            continue
+        weeks = []
+        for w in range(days // 7 + 1):
+            a, b = start + w * 7 * 86400, start + (w + 1) * 7 * 86400
+            vals = [v for t, v, _ in pts if a <= t < b]
+            weeks.append(round(sum(vals) / len(vals), 2) if vals else None)
+        half = len(pts) // 2
+        first = sum(v for _, v, _ in pts[:half]) / max(1, half)
+        last = sum(v for _, v, _ in pts[half:]) / max(1, len(pts) - half)
+        better = (last > first) == f.get("higher", True)
+        change = round(last - first, 2)
+        hit = sum(1 for _, v, _ in pts if (v >= f["target_val"]) == f.get("higher", True) or v == f["target_val"])
+        out.append({"metric": m, "title": f["title"], "enough": True, "target": f["target_val"],
+                    "target_txt": f.get("target"), "higher": f.get("higher", True),
+                    "points": [{"t": t, "v": v, "win": w} for t, v, w in pts], "weeks": weeks,
+                    "change": change, "better": better if abs(change) > 1e-9 else None,
+                    "hit": f"{hit}/{len(pts)}", "games": len(pts)})
+    return out

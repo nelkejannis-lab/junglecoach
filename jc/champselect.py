@@ -52,6 +52,7 @@ def apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, enemy_ids=None)
         for c in bp["core"]:
             core.append({"id": c["id"], "name": c["name"], "badge": f"{c['step']}. Item",
                          "why": f"{c['share']}% bauen es als {c['step']}. Item" +
+                                (f" (fertig ~{c['minute']}. Min)" if c.get("minute") else "") +
                                 (f" · {c['winrate']}% WR ({c['games']} Games)" if c.get("winrate") is not None else "")})
             seen.add(c["id"])
         for o in bp.get("late", [])[:3]:
@@ -100,7 +101,8 @@ def apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, enemy_ids=None)
                              "why": f"{m['pickrate']}% Pickrate, {m['winrate']}% WR"}); seen.add(m["id"])
     if core:
         b["core"] = core[:3]
-        b["source"] = f"echte Games: {bp.get('games', 0)} ({bp.get('scope', '')})" if bp.get("enough") else "Meta"
+        b["source"] = (f"echte Kaufreihenfolge aus {bp.get('games', 0)} Games ({bp.get('scope', '')})" if bp.get("exact")
+                       else f"geschätzt aus {bp.get('games', 0)} Games ({bp.get('scope', '')})") if bp.get("enough") else "Meta"
         b["situational"] = situ + [x for x in b.get("situational", []) if x["id"] not in seen]
     return out
 

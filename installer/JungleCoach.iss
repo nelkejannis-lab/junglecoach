@@ -1,6 +1,6 @@
 ; Inno Setup script – builds JungleCoach-Setup.exe
 #define AppName "Jungle Coach"
-#define AppVersion "1.5.3"
+#define AppVersion "1.6.0"
 #define AppExe "JungleCoach.exe"
 
 [Setup]

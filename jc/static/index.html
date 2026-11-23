@@ -341,7 +341,7 @@ const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
-  if (v === "settings") { loadAccount(); ovSet({}); }
+  if (v === "settings") { loadAccount(); ovSet({}); recSet({}); }
   if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") { loadSessions(); loadReviewData(); }
   if (v === "coach") loadCoach();
   if (v === "friends") { loadFriends(); if (friendView) friendCoachLoad(friendView); }
@@ -888,8 +888,14 @@ function deepCard(g) {
       <div><b>Deine 3 Prioritäten</b>${D.priorities.map((p, i) => `<div class="item"><div class="num">${i + 1}</div><div><div class="n">${esc(p.name)} <span class="${gradeCol(p.grade)}">${p.grade}</span></div><div class="w">${esc(p.advice)}</div></div></div>`).join("")}</div>
       <div><b>Gold vs Gegner-Jungler</b>${lineChart(D.curve.map(c => c.gold_diff), [0, 5, 10, 15, 20, 25, 30].filter(m => m < D.curve.length).map(m => [m, m + "'"]), {zero: true, h: 130})}
         <div class="stats"><div class="stat"><b>${D.stats.kp}%</b><span>Kill-Beteiligung</span></div><div class="stat"><b>${D.stats.vision_per_min}</b><span>Vision / Min</span></div><div class="stat"><b>${D.stats.jungle_cs_10}</b><span>Jungle-CS @10</span></div></div></div>
-      <div><b>Tode im Detail</b>${list(D.deaths, d => { const c = clipFor(d.t);
-        return `<li><b>${d.min}'</b> · ${esc(d.area)} ${c ? `<a href="#" onclick='selClip={sid:${JSON.stringify(g.session_id)},file:${JSON.stringify(c.file)}};render();return false'>▶ Clip</a>` : ""}<div class="muted small">${esc(d.tags.join(" · "))}</div></li>`; })}
+      <div><b>Tode verstehen</b>${D.death_causes && Object.keys(D.death_causes).length ? `<div class="chips" style="margin:8px 0 4px">${Object.entries(D.death_causes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip" style="${k === "trade" ? "" : "border-color:rgba(251,113,133,.35)"}">${esc({trade: "Tausch", outnumbered: "Unterzahl", deep: "Tief im Gegner-Jungle", gold: "Gold nicht ausgegeben", level: "Level-Nachteil", vision: "Ohne Sicht", jungler: "Gegner-Jungler-Gank", duel: "Duell verloren"}[k] || k)} · ${n}×</span>`).join("")}</div>` : ""}
+        ${(D.deaths || []).length ? D.deaths.map(d => { const c = clipFor(d.t);
+        return `<div style="padding:10px 12px;border-radius:14px;background:var(--card2);border:1px solid var(--sep);margin-top:8px">
+          <div class="row" style="border:0;padding:0"><span><b>${d.min}'</b> · ${esc(d.area)}</span>${d.cause_label ? `<span class="badge ${d.cause === "trade" ? "team" : "mu"}">${esc(d.cause_label)}</span>` : ""}</div>
+          ${d.facts ? `<div class="muted small" style="margin-top:4px">${esc(d.facts.join(" · "))}</div>` : `<div class="muted small">${esc(d.tags.join(" · "))}</div>`}
+          ${d.tip ? `<div class="small" style="margin-top:6px">💡 ${esc(d.tip)}</div>` : ""}
+          ${c ? `<a class="small" href="#" onclick='selClip={sid:${JSON.stringify(g.session_id)},file:${JSON.stringify(c.file)}};render();return false'>▶ Clip ansehen</a>` : ""}</div>`; }).join("") : '<p class="muted small">Keine Tode – stark!</p>'}
+        <p class="muted small" style="margin-top:6px">Aus Riots Match-Timeline: Positionen gibt es nur minütlich (±30 s), Sicht/Fog gar nicht – „in der Nähe“ ist eine Schätzung.</p>
         <b style="display:block;margin-top:12px">Objectives</b>${list(D.objectives, o => `<li class="small"><span class="${o.ours ? "green" : "red"}">${o.min}' ${esc(o.type)} ${o.ours ? "geholt" : "verloren"}</span> <span class="muted">${o.present ? "· du warst da" : "· du warst weg"}</span></li>`)}</div>
     </div>${g.clips ? `<div style="margin-top:18px"><b>Fehler-Clips dieses Games</b><div style="margin-top:8px">${clipPlayer(g.session_id, g.clips)}</div></div>` : ""}`, true);
 }
@@ -980,6 +986,22 @@ function renderCoach() {
     card("", "", empty("🧠", "Noch kein Coaching-Plan", `<p>${esc(c.reason)}</p><button class="btn" onclick="go('analyse');loadReview()">Jetzt Games analysieren</button>`), true));
   return coachBody(c);
 }
+function progCard(p) {
+  if (!p.enough) return `<div class="fcard"><div class="k">${esc(p.title)}</div><p class="muted small" style="margin:8px 0 0">Noch zu wenige Games in den letzten 30 Tagen – der Verlauf füllt sich mit jedem Game.</p></div>`;
+  const W = 300, H = 90, pts = p.points, vals = pts.map(x => x.v).concat([p.target]);
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
+  const X = t => 8 + (t - t0) / ((t1 - t0) || 1) * (W - 16), Y = v => H - 8 - (v - lo) / span * (H - 16);
+  // moving average (5 games) as the trend line
+  const ma = pts.map((_, i) => { const w = pts.slice(Math.max(0, i - 4), i + 1); return w.reduce((a, x) => a + x.v, 0) / w.length; });
+  const trend = p.better == null ? ["Unverändert", "muted"] : p.better ? ["Wird besser", "green"] : ["Wird schlechter", "red"];
+  return `<div class="fcard"><div class="row" style="border:0;padding:0"><div class="k">${esc(p.title)}</div><b class="small ${trend[1]}">${trend[0]}</b></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:8px">
+      <line x1="0" x2="${W}" y1="${Y(p.target)}" y2="${Y(p.target)}" stroke="var(--acc)" stroke-dasharray="4 4" opacity=".7"/>
+      <polyline points="${pts.map((x, i) => X(x.t) + "," + Y(ma[i])).join(" ")}" fill="none" stroke="#fff" stroke-width="2" opacity=".85"/>
+      ${pts.map(x => `<circle cx="${X(x.t)}" cy="${Y(x.v)}" r="3.2" fill="${x.win ? "var(--green)" : "var(--red)"}"/>`).join("")}</svg>
+    <div class="row small" style="border:0;padding:4px 0 0"><span class="muted">Ziel ${esc(p.target_txt || "")} · im Ziel ${esc(p.hit)}</span><span class="muted">${p.games} Games</span></div></div>`;
+}
 function coachBody(c, who) {
   const pt = c.player_type, cons = c.consistency, t = c.tilt;
   const counts = {}; (c.trend || []).forEach(g => g.champion && (counts[g.champion] = (counts[g.champion] || 0) + 1));
@@ -1001,6 +1023,8 @@ function coachBody(c, who) {
         <div class="meter"><i style="width:${(() => { const [a, b] = f.last10.split("/").map(Number); return b ? 100 * a / b : 0; })()}%;background:var(--grad)"></i></div>` : ""}
       ${f.week && f.week.games ? `<div class="small muted" style="margin-top:8px">Diese Woche: ${f.week.done}/${f.week.games} Games im Ziel</div>` : ""}</div>`).join("")}</div>`
       : `<p class="muted">Keine klaren Schwächen gefunden – stark! Halte deine Konstanz.</p>`, true);
+  if ((c.progress || []).length) h += card("Fortschritt · 30 Tage", "Wirkt das Coaching? Jeder Punkt ist ein Game (grün = Sieg), die gestrichelte Linie ist dein Ziel.",
+    `<div class="focus">${c.progress.map(p => progCard(p)).join("")}</div>`, true);
   h += card("Du im Vergleich", `Besser als x % der ${esc(c.scope)} Spieler. Strich in der Mitte = Durchschnitt.`,
     c.profile.map(p => pbar(p.label, p.percentile, `${p.you} · Top: ${p.top}`)).join(""));
   if (cons) h += card("Konstanz", esc(cons.verdict), `<div class="stats" style="margin-top:0">
@@ -1053,7 +1077,7 @@ function champView(p) {
   h += card("Runen", "Beste vollständige Seite aus echten Games.", runesBody(p.runes) +
     ((p.keystones || []).length ? `<div class="muted small" style="margin-top:14px">Keystones im Vergleich</div>${p.keystones.slice(0, 4).map(k => `<div class="row small"><span style="display:flex;align-items:center;gap:8px">${rImg(k.icon, 24)} ${esc(k.name)}</span><span><b class="${k.winrate >= 50 ? "green" : "red"}">${k.winrate}%</b> <span class="muted">${k.pickrate}% · ${k.games} G</span></span></div>`).join("")}` : ""));
   const core = p.core || [];
-  h += card("Build-Pfad", p.build_alts ? "Reihenfolge, die echte Spieler bauen – Winrate in vergleichbaren Games, % = wie viele es an dieser Stelle bauen." : "Kern-Items nach Häufigkeit – mit Winrate.", `${core.length ? `<div class="build">${core.map((i, n) => `${n ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(i.id, 52)}<small>${esc(i.name)}</small><small class="${(i.winrate ?? 50) >= 50 ? "green" : "red"}">${i.winrate ?? "–"}% · ${i.pickrate}%</small></div>`).join("")}
+  h += card("Build-Pfad", p.build_exact ? "Echte Kaufreihenfolge aus Riots Match-Timeline – % = wie viele es an dieser Stelle bauen, Minute = Ø fertig gekauft." : p.build_alts ? "Reihenfolge geschätzt aus dem Inventar am Spielende – % = wie viele es an dieser Stelle bauen." : "Kern-Items nach Häufigkeit – mit Winrate.", `${core.length ? `<div class="build">${core.map((i, n) => `${n ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(i.id, 52)}<small>${esc(i.name)}</small><small class="${(i.winrate ?? 50) >= 50 ? "green" : "red"}">${i.winrate ?? "–"}% · ${i.pickrate}%</small>${i.minute ? `<small>~${i.minute}. Min</small>` : ""}</div>`).join("")}
       ${p.boots ? `<span class="arr">+</span><div class="ibox">${iImg(p.boots.id, 52)}<small>${esc(p.boots.name)}</small><small>${p.boots.pickrate}%</small></div>` : ""}</div>` : '<span class="muted small">Zu wenig Daten.</span>'}
     ${(p.build_alts || []).some(a => a.options.length) ? `<div class="muted small" style="margin:14px 0 6px">Alternativen pro Schritt</div>${p.build_alts.filter(a => a.options.length).map(a => `<div class="row small"><span>${a.step}. Item</span><span style="display:flex;gap:10px;align-items:center">${a.options.map(o => `<span style="display:flex;gap:5px;align-items:center">${iImg(o.id, 24)} ${esc(o.name)} <span class="muted">${o.share}%</span></span>`).join("")}</span></div>`).join("")}` : ""}
     ${(p.late || []).length ? `<div class="muted small" style="margin:14px 0 6px">Danach häufig</div><div style="display:flex;gap:8px;flex-wrap:wrap">${p.late.map(o => `<span class="chip" style="display:flex;gap:6px;align-items:center">${iImg(o.id, 22)} ${esc(o.name)} <span class="muted">${o.share}%</span></span>`).join("")}</div>` : ""}
@@ -1094,7 +1118,19 @@ function METAEXTRA() {
 }
 
 // ------------------------------------------------------------ SETTINGS
-let ovData = {mode: "always", opacity: 0.72, move: false};
+let ovData = {mode: "always", opacity: 0.72, move: false}, recData = {enabled: true, audio: true, keep_games: 3};
+async function recSet(patch) {
+  try { recData = await (await fetch("/api/recording", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(patch || {})})).json(); } catch (e) {}
+  if (view === "settings") render();
+}
+function recCard() {
+  const r = recData;
+  return card("Aufnahme & Clips", "Nimmt nur das Spielfenster auf und schneidet danach Fehler- und Highlight-Clips. Alles bleibt lokal auf deinem PC.", `
+    <label class="switch"><span>Spiele aufnehmen</span><input type="checkbox" ${r.enabled ? "checked" : ""} onchange="recSet({enabled:this.checked})"></label>
+    <label class="switch"><span>Mit Ton <span class="small muted">(gesamter PC-Ton, auch Discord)</span></span><input type="checkbox" ${r.audio ? "checked" : ""} ${r.enabled ? "" : "disabled"} onchange="recSet({audio:this.checked})"></label>
+    <div class="switch" style="border:0"><span>Gespeicherte Games</span><div class="chips">${[1, 3, 5, 10].map(n => `<button class="chip ${r.keep_games === n ? "on" : ""}" onclick="recSet({keep_games:${n}})">${n}</button>`).join("")}</div></div>
+    ${r.enabled ? "" : '<p class="small muted" style="margin:6px 0 0">Aus: keine Aufnahme, keine Clips – Analyse und Coaching laufen trotzdem.</p>'}`);
+}
 async function ovSet(patch) {
   try { ovData = await (await fetch("/api/overlay-settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(patch || {})})).json(); } catch (e) {}
   if (view === "settings") render();
@@ -1115,7 +1151,7 @@ function renderSettings() {
   if (!c) return page("Einstellungen", "Lade…", "");
   const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
   return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
-    accountCard() + overlayCard() +
+    accountCard() + overlayCard() + recCard() +
     card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>

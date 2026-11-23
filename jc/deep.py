@@ -42,6 +42,91 @@ def _targets(champ):
     return jcs, vpm, scope
 
 
+CAUSES = {  # cause -> (label, what to do differently)
+    "trade": ("Tausch", "Dein Team hat im selben Moment etwas geholt – prüfe, ob es das wert war."),
+    "outnumbered": ("Unterzahl", "Mehr Gegner als Verbündete in der Nähe: ohne Info nicht nachrücken, früher abdrehen."),
+    "deep": ("Tief im Gegner-Jungle", "Invades nur mit Lane-Prio und wenn du weißt, wo der Gegner-Jungler ist."),
+    "gold": ("Gold nicht ausgegeben", "Mit viel Gold kein Risiko: erst zurück und kaufen, dann kämpfen."),
+    "level": ("Level-Nachteil", "2+ Level hinten: Duelle meiden, farmen und auf Team-Fights warten."),
+    "vision": ("Ohne Sicht", "Vor Flussbewegungen ein Ward oder Sweeper nutzen – Gegner im Fog einplanen."),
+    "jungler": ("Gegner-Jungler-Gank", "Gegner-Jungler-Position tracken; wenn er unsichtbar ist, vorsichtiger stehen."),
+    "duel": ("Duell verloren", "Vor dem Duell: Level, Items, Cooldowns (Smite/Flash) vergleichen."),
+}
+
+
+def _near(frames, minute_a, minute_b, who, xy, radius=2200):
+    """Was 'who' within radius of xy at the minute frames around the death? (positions only per minute)."""
+    best = None
+    for m in (minute_a, minute_b):
+        if 0 <= m < len(frames):
+            p = frames[m]["participantFrames"].get(str(who), {}).get("position")
+            if p:
+                d = _dist((p["x"], p["y"]), xy)
+                best = d if best is None else min(best, d)
+    return best is not None and best <= radius
+
+
+def death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of):
+    """Why did you die? Built only from official timeline data (no visibility data exists there):
+    who was involved, who was roughly nearby (minute positions, ±30 s), unspent gold, level gap,
+    own/team wards in the 90 s before, objectives your team took at the same time (trade)."""
+    p = ev.get("position") or {}
+    xy = (p.get("x", 0), p.get("y", 0))
+    m0, m1 = int(ts // 60), int(ts // 60) + 1
+    champ = {x["participantId"]: x["championName"] for x in parts}
+    killers = [ev.get("killerId")] + list(ev.get("assistingParticipantIds", []))
+    killers = [k for k in killers if k and team_of.get(k) != team]
+    allies_near = [x["participantId"] for x in parts if team_of[x["participantId"]] == team and x["participantId"] != pid
+                   and _near(frames, m0, m1, x["participantId"], xy)]
+    me_f = frames[min(m0, len(frames) - 1)]["participantFrames"].get(str(pid), {})
+    unspent = me_f.get("currentGold", 0)
+    kf = frames[min(m0, len(frames) - 1)]["participantFrames"].get(str(ev.get("killerId")), {}) if ev.get("killerId") else {}
+    level_gap = (me_f.get("level") or 0) - (kf.get("level") or 0) if kf else 0
+    team_wards = [e for e in events if e.get("type") == "WARD_PLACED" and team_of.get(e.get("creatorId")) == team
+                  and e.get("wardType") not in ("UNDEFINED",) and 0 <= ts - e["timestamp"] / 1000 <= 90]
+    own_wards = [w for w in my_wards if 0 <= ts - w <= 90]
+    took = []
+    for e in events:
+        if abs(e.get("timestamp", 0) / 1000 - ts) > 60:
+            continue
+        if e.get("type") == "BUILDING_KILL" and e.get("teamId") not in (None, team):
+            took.append("Turm" if e.get("buildingType") == "TOWER_BUILDING" else "Inhibitor")
+        elif e.get("type") == "ELITE_MONSTER_KILL" and e.get("killerTeamId") == team:
+            raw = e.get("monsterSubType") or e.get("monsterType")
+            took.append(OBJ_NAMES.get(raw, raw))
+    ej_inv = any(x.get("teamPosition") == "JUNGLE" and x["participantId"] in killers for x in parts)
+    area = region(*xy, team) if p else "?"
+    # main cause (first match wins – most useful lesson first)
+    if took:
+        cause = "trade"
+    elif len(killers) >= 2 and len(killers) > len(allies_near) + 1:
+        cause = "outnumbered"
+    elif area.startswith("gegnerischer") and len(killers) >= 1 and not own_wards:
+        cause = "deep"
+    elif unspent >= 1300:
+        cause = "gold"
+    elif level_gap <= -2:
+        cause = "level"
+    elif ej_inv and len(killers) >= 2:
+        cause = "jungler"
+    elif not own_wards and not team_wards:
+        cause = "vision"
+    else:
+        cause = "duel"
+    facts = [f"{len(killers)} Gegner beteiligt ({', '.join(champ[k] for k in killers)})",
+             f"ca. {len(allies_near)} Verbündete in der Nähe"]
+    if unspent >= 700:
+        facts.append(f"{unspent} Gold nicht ausgegeben")
+    if level_gap:
+        facts.append(f"Level {'+' if level_gap > 0 else ''}{level_gap} vs Killer")
+    facts.append(f"{len(own_wards)} eigene / {len(team_wards)} Team-Wards in 90 s davor")
+    if took:
+        facts.append("gleichzeitig geholt: " + ", ".join(sorted(set(took))))
+    return {"cause": cause, "cause_label": CAUSES[cause][0], "tip": CAUSES[cause][1], "facts": facts,
+            "killers": [champ[k] for k in killers], "allies_near": len(allies_near), "unspent": unspent,
+            "level_gap": level_gap, "trade": sorted(set(took))}
+
+
 def deep_analyze(match, timeline, puuid):
     info = match["info"]
     parts = info["participants"]
@@ -102,7 +187,9 @@ def deep_analyze(match, timeline, puuid):
         gd = curve[min(round(ts / 60), len(curve) - 1)]["gold_diff"] if curve else 0
         if gd < -1000:
             tags.append(f"{gd} Gold hinten gegen Gegner-Jungler")
-        deaths.append({"min": round(ts / 60, 1), "t": ts, "area": area, "tags": tags or ["kein klares Muster"]})
+        ctx = death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of)
+        deaths.append({"min": round(ts / 60, 1), "t": ts, "area": area, "tags": tags or ["kein klares Muster"],
+                       **ctx})
 
     # ---- objectives incl. presence
     objectives = []
@@ -157,13 +244,21 @@ def deep_analyze(match, timeline, puuid):
         "Überleben": f"{me['deaths']} Tode, davon {bad_deaths} mit mehreren Gegnern/im gegnerischen Jungle. "
                      "Vor Invades Lane-Prio checken, Gegner-Jungler-Position kennen.",
     }
+    causes = {}
+    for dth in deaths:
+        causes[dth["cause"]] = causes.get(dth["cause"], 0) + 1
+    if causes:
+        top = max(causes, key=causes.get)
+        if top != "trade" and causes[top] >= 2:
+            advice["Überleben"] += f" Häufigste Todesursache: {CAUSES[top][0]} ({causes[top]}×) – {CAUSES[top][1]}"
     ranked = sorted(cats.items(), key=lambda kv: kv[1])
     return {
+        "v": 2,
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
         "overall": _grade(sum(cats.values()) / len(cats)),
         "priorities": [{"name": k, "grade": _grade(v), "advice": advice[k]} for k, v in ranked[:3]],
-        "curve": curve, "deaths": deaths, "objectives": objectives, "ganks": ganks,
+        "curve": curve, "deaths": deaths, "death_causes": causes, "objectives": objectives, "ganks": ganks,
         "stats": {"kp": round(kp * 100), "vision_per_min": round(vpm, 2), "jungle_cs_10": jcs10,
                   "gold_diff_10": gd10, "enemy_jungle_cs_taken": ch.get("enemyJungleMonsterKills"),
                   "scuttles": ch.get("scuttleCrabKills"), "damage_share": round((ch.get("teamDamagePercentage") or 0) * 100)},
