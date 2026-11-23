@@ -441,6 +441,18 @@ function renderMeta() {
      <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
      <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Daten sammeln"}</button></div>
      <p class="small muted">Die Cloud-Datenbank (EUW, NA, KR – rund um die Uhr gesammelt) wird automatisch alle 6 Std. geladen. „Daten sammeln“ ergänzt zusätzlich Games von deinem PC aus.</p>`);
+
+  const w = m.websites || {};
+  h += card("Builds, Runen & Matchups · Websites", "Nur aktueller Patch · Jungle · automatischer Abruf alle 6 Stunden",
+    '<p class="small">' + esc(w.status || "Noch nicht geladen") + ' · Patch ' + esc(w.patch || "–") + '</p>' +
+    '<p class="small muted">Patch-Statistiken, keine reinen Tagesdaten. Quellen und ihre Rang-/Regionsfilter getrennt betrachten. Abrufe älter als 24 Stunden werden ausgeblendet.</p>' +
+    (w.results || []).map(r => '<details style="margin:12px 0"><summary>' +
+      esc(r.champion) + ' · ' + esc(r.source) + ' · ' + esc(new Date(r.fetched_at).toLocaleString("de-DE")) +
+      '</summary>' + (r.sections || []).map(s => '<div style="margin:12px 0"><b>' + esc(s.heading) +
+        '</b><p class="small" style="white-space:pre-wrap">' + esc(s.text || "") + '</p><p class="small muted">' +
+        esc((s.images || []).map(i => i.label).filter(Boolean).join(" · ")) + '</p></div>').join("") +
+      '</details>').join(""));
+
   h += card("So funktionieren Geheimtipps", "",
     `<p class="small">Seltene Items und Runen werden per <b>Simulation</b> gegen den Rest verglichen: 4.000 Mal werden aus den echten Ergebnissen plausible Winrates gezogen (Bayes). Empfohlen wird nur, was in ≥ 90 % der Durchläufe besser ist und ≥ 2 % mehr Winrate bringt – und nicht nur gegen einen einzelnen Gegner gut ist.</p>
      <p class="small muted">Das ist Statistik auf echten Games, kein Kampf-Simulator. Je mehr Daten, desto sicherer.</p>`);
