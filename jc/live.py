@@ -90,23 +90,7 @@ def analyze(gd, data, timers=None, preset_lookup=None):
     preset = preset_lookup(my_champ["id"]) if (preset_lookup and my_champ) else None
     build = analyzer.recommend_build(gd, my_champ, prof, owned=owned, enemy_live=live_ctx, preset=preset) \
         if my_champ else None
-    # simulation with the real items: my completed items stay, enemies' real armor / MR / HP count
     sim_res = None
-    if my_champ:
-        try:
-            from jc import sim
-            pos = (me.get("position") or "").upper() or None
-            pos = {"MID": "MIDDLE", "BOT": "BOTTOM", "ADC": "BOTTOM", "SUPPORT": "UTILITY"}.get(pos, pos)
-            if _is_jungler(me):
-                pos = "JUNGLE"
-            ecs = [(c, p) for p in enemies for c in [_champ(gd, p)] if c]
-            sim_res = sim.recommend_async(
-                my_champ["id"], tuple(c["id"] for c, _ in ecs), pos,
-                owned=tuple(sorted(i for i in owned if i)),
-                enemy_items={c["id"]: tuple(sorted(it.get("itemID") for it in p.get("items", []) if it.get("itemID")))
-                             for c, p in ecs})
-        except Exception as e:  # noqa: BLE001
-            sim_res = {"available": False, "reason": str(e)}
 
     # ---- enemy jungler tracking (kill feed + scoreboard only)
     ej = next((p for p in enemies if _is_jungler(p)), None)

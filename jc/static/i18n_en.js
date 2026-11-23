@@ -619,5 +619,8 @@ window.I18N_EN = {
 "Spieler. Strich in der Mitte = Durchschnitt.": "players. Line in the middle = average.",
 "auf": "to",
 "Tag und Nacht": "Dusk and Dawn",
-"Aus deinen letzten 10 Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.": "From your last 10 games – compared with real players of your champion and elo. Updates automatically after every game."
+"Aus deinen letzten 10 Games – verglichen mit echten Spielern deines Champions und Elos. Wird nach jedem Game automatisch aktualisiert.": "From your last 10 games – compared with real players of your champion and elo. Updates automatically after every game.",
+"Aus echten Matchup-Daten und den Werten des Patches – passt sich jedem neuen Pick an.": "From real matchup data and the patch values – adapts to every new pick.",
+"Tierliste, Runen, Builds und Matchups für jeden Champion – aus echten Ranked-Games dieses Patches.": "Tier list, runes, builds and matchups for every champion – from real ranked games of this patch.",
+"Klick auf einen Champion für Runen, Build und Matchups.": "Click a champion for runes, build and matchups."
 };

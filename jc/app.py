@@ -191,12 +191,6 @@ def champion_page(gd, cfg, c, role=None):
                 m["id"] = e["id"]
                 m["name"] = gd.champ_name(e)
     ms.role = None
-    try:
-        rec = sim.recommend(c["id"], [], role, meta_stats=ms, bracket=bracket)
-        out["sim"] = rec
-        out["skill_order"] = rec.get("skill_order") if rec.get("available") else None
-    except Exception as e:  # noqa: BLE001
-        out["sim"] = {"available": False, "reason": str(e)}
     b = ms.benchmarks(c["id"], role, bracket)
     if b:
         good = []
@@ -341,7 +335,17 @@ def make_handler(gd, cfg, lcu):
             if self.path == "/api/state":
                 with LOCK:
                     from . import i18n
-                    return self._send(200, dict(STATE, version=gd.version, lang=i18n.LANG["code"]))
+                    light = {k: v for k, v in STATE.items() if k != "review"}  # big analysis is loaded separately
+                    return self._send(200, dict(light, version=gd.version, lang=i18n.LANG["code"]))
+            if self.path == "/api/review-data":
+                with LOCK:
+                    return self._send(200, STATE.get("review") or {})
+            if self.path == "/api/overlay":  # tiny payload, polled every second by the in-game overlay
+                from . import i18n
+                with LOCK:
+                    lv = STATE.get("live")
+                    small = {"hud": lv.get("hud"), "game_time": lv.get("game_time"), "cs_per_min": lv.get("cs_per_min")} if lv else None
+                return self._send(200, {"live": small, "lang": i18n.LANG["code"]})
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()

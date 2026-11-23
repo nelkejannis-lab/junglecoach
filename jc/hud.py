@@ -47,19 +47,13 @@ def build(live, gd, gold, owned, focus=None, plan_step=None):
 
     # ---- next item and whether you can afford it
     item = None
-    sim = live.get("sim") or {}
-    if sim.get("available"):
-        for it in sim.get("items", []):
-            if it.get("badge") != "gekauft" and it["id"] not in owned:
-                name = it.get("name_de") if i18n.LANG["code"] == "de" else it.get("name")
-                cost = (gd.items.get(it["id"], {}).get("gold") or {}).get("total") if gd else None
-                item = {"id": it["id"], "name": name or it["name"], "cost": cost, "why": it.get("why", "")}
-                break
     if not item:
         b = live.get("build") or {}
         nxt = (b.get("situational") or []) + (b.get("core") or [])
         if nxt:
-            item = {"id": nxt[0].get("id"), "name": nxt[0]["name"], "cost": None, "why": nxt[0].get("why", "")}
+            iid = nxt[0].get("id")
+            cost = ((gd.items.get(iid) or {}).get("gold") or {}).get("total") if (gd and iid) else None
+            item = {"id": iid, "name": nxt[0]["name"], "cost": cost, "why": nxt[0].get("why", "")}
     if item and item.get("cost") and gold is not None:
         item["missing"] = max(0, item["cost"] - int(gold))
         if gold >= item["cost"]:

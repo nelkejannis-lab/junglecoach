@@ -190,7 +190,7 @@ def run(url, cfg):
 
     def refresh():
         try:
-            with urllib.request.urlopen(url + "/api/state", timeout=2) as r:
+            with urllib.request.urlopen(url + "/api/overlay", timeout=2) as r:
                 state = json.loads(r.read().decode("utf-8"))
             blocks = layout(state)
             lang = "en" if state.get("lang") == "en" else "de"

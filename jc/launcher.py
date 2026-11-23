@@ -43,7 +43,18 @@ def _follow_game(window, url):
         time.sleep(1.5)
 
 
+def _low_priority():
+    """Below-normal CPU priority: League always gets the CPU first (app, overlay and recording)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def main():
+    _low_priority()
     from jc.app import load_config
     cfg = load_config()
     port = cfg.get("port", 8765)
@@ -66,7 +77,7 @@ def main():
         app.start(cfg)
 
     if not already and cfg.get("overlay", {}).get("enabled", True):
-        flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+        flags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0  # no window, below-normal priority
         proc = subprocess.Popen(_overlay_cmd(), creationflags=flags)
         atexit.register(proc.terminate)
 

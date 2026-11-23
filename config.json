@@ -39,9 +39,9 @@
   },
   "recording": {
     "enabled": true,
-    "fps": 30,
-    "crf": 28,
-    "encoder": "libx264",
+    "fps": 15,
+    "crf": 30,
+    "encoder": "auto",
     "keep_full": true,
     "keep_games": 3
   },

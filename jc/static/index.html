@@ -208,6 +208,8 @@ let view = "profile", profData = null, profQuery = "", profQueue = "all", profLo
 let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null, selClip = null, msg = {};
 let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null, rankedAccount = "";
 let onb = {role: "", mains: [], q: "", msg: ""}, champList = [];
+let reviewData = null;
+async function loadReviewData() { try { const r = await getJson("/api/review-data"); reviewData = r && r.games ? r : null; if (view === "analyse") render(); } catch (e) {} }
 let coachData = null, tierRole = "JUNGLE", tierData = {}, champPage = null, champLoading = "", tierQuery = "";
 async function runLab() {
   labForm = {champ: $("#lab-champ").value.trim(), role: $("#lab-role").value, enemies: $("#lab-enemies").value, msg: "Rechne …"};
@@ -236,7 +238,7 @@ document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dat
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
   if (v === "settings") loadAccount();
-  if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") loadSessions();
+  if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") { loadSessions(); loadReviewData(); }
   if (v === "coach") loadCoach();
   render();
 }
@@ -476,13 +478,13 @@ function gameplanCard(g) {
   if (!g.steps || !g.steps.length) return "";
   const d = g.duel;
   const pos = r => Math.max(2, Math.min(98, 50 + (Math.log(r) / Math.log(2)) * 60));
-  return card("Dein Spielplan", "Aus Simulation (Skills, Werte des Patches) und echten Matchup-Daten – passt sich jedem neuen Pick an.",
+  return card("Dein Spielplan", "Aus echten Matchup-Daten und den Werten des Patches – passt sich jedem neuen Pick an.",
     `<div class="steps">${g.steps.map(x => `<div>${esc(x)}</div>`).join("")}</div>
     ${d ? `<div class="two" style="grid-template-columns:1fr 1fr;gap:18px;margin-top:16px">
       <div><div class="muted small">Duell vs ${esc(d.enemy)} · Level 3: <b>${esc(d.lvl3_txt)}</b></div><div class="duel" style="margin-top:8px"><span class="small red">er</span><div class="track"><i style="left:${pos(d.lvl3)}%"></i></div><span class="small green">du</span></div></div>
       <div><div class="muted small">Level 6: <b>${esc(d.lvl6_txt)}</b>${d.winrate ? ` · echte Games: ${d.winrate}% WR (${d.games})` : ""}</div><div class="duel" style="margin-top:8px"><span class="small red">er</span><div class="track"><i style="left:${pos(d.lvl6)}%"></i></div><span class="small green">du</span></div></div></div>` : ""}
     ${(g.lanes || []).length ? `<div class="muted small" style="margin-top:16px">Gank-Prioritäten</div>${g.lanes.map((l, i) => `<div class="row small"><span>${i === 0 ? "⭐ " : ""}<b>${esc(l.lane)}</b> · ${esc(l.ally)} vs ${esc(l.enemy)}</span><span>${l.winrate != null ? `<b class="${l.winrate >= 50 ? "green" : "red"}">${l.winrate}%</b> Lane-WR` : '<span class="muted">wenig Daten</span>'}</span></div>`).join("")}` : ""}
-    ${(g.spikes || []).length ? `<div class="muted small" style="margin-top:16px">Power-Spikes</div><div class="build" style="margin-top:6px">${g.spikes.map((x, i) => `${i ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(x.id, 44)}<small>${esc(x.when)}</small>${x.dmg ? `<small class="green">+${x.dmg}%</small>` : ""}</div>`).join("")}</div>` : ""}`, true);
+    ${(g.spikes || []).length ? `<div class="muted small" style="margin-top:16px">Power-Spikes</div><div class="build" style="margin-top:6px">${g.spikes.map((x, i) => `${i ? '<span class="arr">›</span>' : ""}<div class="ibox">${iImg(x.id, 44)}<small>${esc(x.when)}</small>${x.winrate ? `<small class="${x.winrate >= 50 ? "green" : "red"}">${x.winrate}% WR</small>` : ""}</div>`).join("")}</div>` : ""}`, true);
 }
 function renderSelect() {
   const cs = state.champ_select;
@@ -508,7 +510,6 @@ function renderSelect() {
        <button class="btn sec" onclick="applyRunes()">Jetzt setzen</button></div>`);
     h += card("Build", "Reihenfolge der Kern-Items. Abzeichen zeigen, woher die Empfehlung kommt.", buildList(cs.build) +
       `<p class="small muted" style="margin-top:12px">${badge("Team-Fit")} gegen dieses Team ${badge("Matchup")} gegen den Jungler ${badge("Geheimtipp")} selten, aber besser ${badge("Meta")} meistgespielt</p>`);
-    h += simCard(cs.sim, "Rechnet Skills, Passive, Ult und Item-Effekte gegen genau dieses Gegnerteam durch – wird bei jedem neuen Gegner-Pick neu berechnet.");
   }
   return page("Champ Select", "Analyse des Gegnerteams, beste Picks aus deinem Pool, Runen und Build – wird bei jedem neuen Gegner-Pick neu berechnet.", h);
 }
@@ -529,7 +530,6 @@ function renderLive() {
     <div class="muted small" style="margin-top:10px">Zuletzt im Killfeed</div>${list(ej.last_seen, s => `<li class="small">${esc(s.time)} · ${esc(s.where)}</li>`)}` : '<span class="muted">Nicht erkannt.</span>');
   h += card("Build – live angepasst", "Passt sich an die Items und den Spielstand der Gegner an.", buildList(l.build) +
     (l.enemy.fed.length ? `<p class="red small">Gefüttert: ${l.enemy.fed.map(f => esc(f.name + " " + f.kda)).join(", ")}</p>` : ""));
-  if (l.sim) h += simCard(l.sim, "Rechnet mit deinen gekauften Items und den echten Rüstungs-/MR-Werten der Gegner weiter.");
   h += card("Fehler bisher", "Werden nach dem Spiel automatisch als Clip gespeichert.", list(l.mistakes, m => `<li><b>${esc(m.time)}</b> ${esc(m.title)}<div class="muted small">${esc(m.why)}</div></li>`));
   return page("Live", "Hilfe während des Spiels. Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J ein/aus).", h);
 }
@@ -574,7 +574,7 @@ function replayCard(g) {
     <div><b>Gegner-Jungler pro Minute</b>${list(R.enemy_jg.filter(p => p.min >= 1), p => `<li class="small ${p.min === m ? "sel" : ""}">${p.min}' · ${esc(p.area)}</li>`)}</div></div>`, true);
 }
 function renderAnalyse() {
-  const r = state.review;
+  const r = reviewData;
   const loadBtn = `<button class="btn" onclick="loadReview()">${r ? "Neu laden" : "Letzte Games analysieren"}</button> <span class="small muted">${esc(msg.review || "")}</span>`;
   if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.",
     card("", "", empty("🔍", "Noch nichts analysiert", `<p>Lädt deine letzten Ranked-Games über die Riot API.<br>Voraussetzung: Riot ID und API Key in den <a href="#" onclick="go('settings');return false">Einstellungen</a>.</p>${loadBtn}`), true) + sessionsCards());
@@ -716,7 +716,6 @@ function champView(p) {
       ${p.boots ? `<span class="arr">+</span><div class="ibox">${iImg(p.boots.id, 52)}<small>${esc(p.boots.name)}</small><small>${p.boots.pickrate}%</small></div>` : ""}</div>` : '<span class="muted small">Zu wenig Daten.</span>'}
     ${p.skill_order ? `<div class="muted small" style="margin:16px 0 6px">Skill-Reihenfolge (maximieren)</div><div class="skills">${p.skill_order.map((k, i) => `${i ? '<span class="arr muted">›</span>' : ""}<div class="skey ${k.toLowerCase()}">${k}</div>`).join("")}<span class="arr muted">·</span><div class="skey" style="color:var(--gold)">R</div><span class="small muted">auf 6/11/16</span></div>` : ""}
     ${(p.gems || []).length ? `<div class="muted small" style="margin:16px 0 4px">💎 Geheimtipps (selten, aber nachweislich besser)</div>${p.gems.map(g => `<div class="item">${g.icon ? rImg(g.icon, 36) : iImg(g.id, 36)}<div><div class="n">${esc(g.name)} ${badge("Geheimtipp")}</div><div class="w">${esc(g.verdict)}</div></div></div>`).join("")}` : ""}`);
-  h += simCard(p.sim, "Theorie-Build gegen ein Durchschnitts-Team – im Champ Select rechnet die App gegen dein echtes Gegnerteam.");
   const mu = (arr, good) => (arr || []).filter(m => m.id).slice(0, 5).map(m => `<div class="row click" onclick="openChamp('${m.id}')"><span class="champ">${cImg(m.id, 30, 8)} ${esc(m.name)}</span><span><b class="${good ? "green" : "red"}">${m.adj_winrate}%</b> <span class="muted small">${m.games} G</span></span></div>`).join("") || '<span class="muted small">Zu wenig Daten.</span>';
   h += card("Matchups", "Bereinigte Winrate gegen den direkten Gegner.", `<div class="two" style="grid-template-columns:1fr 1fr;gap:18px"><div><div class="muted small">Gut gegen</div>${mu(st.best_matchups, true)}</div><div><div class="muted small">Schwer gegen</div>${mu(st.worst_matchups, false)}</div></div>`);
   if (p.benchmarks) h += card("So spielen gute Spieler", `${esc(p.benchmarks.scope)} · ${p.benchmarks.games} Games`,
@@ -735,9 +734,9 @@ function renderMeta() {
     `<table class="tl"><tr><th>#</th><th>Champion</th><th>Tier</th><th>Winrate</th><th>Pickrate</th><th>Games</th></tr>
       ${list.slice(0, 60).map(t => `<tr class="click" onclick="openChamp('${t.champion}','${tierRole}')"><td class="muted">${t.rank}</td><td><span class="champ">${cImg(t.champion, 32, 9)} ${esc(t.name)}</span></td>
         <td><span class="tier ${t.tier}">${t.tier}</span></td><td><b class="${t.winrate >= 50 ? "green" : "red"}">${t.winrate}%</b></td><td>${t.pickrate}%</td><td class="muted">${t.games.toLocaleString("de-DE")}</td></tr>`).join("")}</table>`}
-    ${d ? `<p class="small muted" style="margin-top:10px">Patch ${esc(d.patch || "–")} · ${d.bracket ? "dein Elo" : "alle Elos"} · Klick auf einen Champion für Runen, Build, Skills und Matchups.</p>` : ""}`, true);
+    ${d ? `<p class="small muted" style="margin-top:10px">Patch ${esc(d.patch || "–")} · ${d.bracket ? "dein Elo" : "alle Elos"} · Klick auf einen Champion für Runen, Build und Matchups.</p>` : ""}`, true);
   h += METAEXTRA();
-  return `<h1 class="title">Meta & <span class="g">Builds</span></h1><p class="subtitle">Tierliste, Runen, Builds, Skill-Reihenfolge und Matchups für jeden Champion – aus echten Ranked-Games dieses Patches, ergänzt um den Simulations-Build.</p><div class="grid">${h}</div>`;
+  return `<h1 class="title">Meta & <span class="g">Builds</span></h1><p class="subtitle">Tierliste, Runen, Builds und Matchups für jeden Champion – aus echten Ranked-Games dieses Patches.</p><div class="grid">${h}</div>`;
 }
 function METAEXTRA() {
   const m = metaData;
@@ -748,13 +747,6 @@ function METAEXTRA() {
      <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
      <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Zusätzlich vom PC sammeln"}</button></div>
      <p class="small muted">Gesammelt wird rund um die Uhr in der Cloud (EUW, NA, KR, OCE) mit Schwerpunkt auf deinen Champions.</p>`);
-  const L = labForm;
-  h += card("Build-Labor", "Beliebigen Champion auf beliebiger Rolle gegen ein Wunsch-Team simulieren.",
-    `<div class="two" style="gap:10px;grid-template-columns:1fr 1fr"><input id="lab-champ" placeholder="Champion, z. B. Gwen" value="${esc(L.champ)}" oninput="labForm.champ=this.value">
-       <select id="lab-role" onchange="labForm.role=this.value">${["", "TOP", "JUNGLE", "MIDDLE", "BOTTOM"].map(r => `<option value="${r}"${r === L.role ? " selected" : ""}>${r ? ROLE_DE[r] : "Rolle automatisch"}</option>`).join("")}</select></div>
-     <input id="lab-enemies" style="margin-top:10px;width:100%" placeholder="Gegner (optional), z. B. Ornn, Viego, Ahri, Jinx, Thresh" value="${esc(L.enemies)}" oninput="labForm.enemies=this.value">
-     <div class="row" style="border:0;margin-top:10px"><span class="small muted">${esc(L.msg || "")}</span><button class="btn" onclick="runLab()">Simulieren</button></div>
-     ${labData ? simBody(labData) : ""}`, true);
   return h;
 }
 
@@ -890,13 +882,15 @@ function render() {
   }
 }
 async function tick() {
+  if (document.hidden && Date.now() - (tick._t || 0) < 8000) return;  // window in background (e.g. in game): poll rarely
+  tick._t = Date.now();
   let txt;
   try { txt = await (await fetch("/api/state")).text(); } catch (e) { txt = JSON.stringify({...state, error: "App-Server nicht erreichbar"}); }
   if (txt === lastJson) return;
   lastJson = txt; state = JSON.parse(txt);
   if (state.lang && state.lang !== LANG) setLang(state.lang);
   const rsNow = JSON.stringify(state.review_status || {});
-  if (rsNow !== tick._rs) { const was = tick._rs; tick._rs = rsNow; if (was && !(state.review_status || {}).running) { coachData = null; loadCoach(); } }
+  if (rsNow !== tick._rs) { const was = tick._rs; tick._rs = rsNow; if (was && !(state.review_status || {}).running) { coachData = null; loadCoach(); loadReviewData(); } }
   const ph = state.live ? "InGame" : state.phase;          // auto-switch on phase change only
   if (ph !== lastPhase) {
     if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live");
@@ -918,7 +912,7 @@ function alertMsg(t) { state.error = t; render(); }
 async function loadReview() {
   msg.review = "Lade Games… (ca. 1 Minute)"; render();
   const r = await getJson("/api/review"); msg.review = r.error || "";
-  if (!r.error) { state.review = r; selGame = 0; loadRanked(); coachData = null; loadCoach(); }
+  if (!r.error) { reviewData = r; selGame = 0; loadRanked(); coachData = null; loadCoach(); }
   render();
 }
 async function saveCfg() {

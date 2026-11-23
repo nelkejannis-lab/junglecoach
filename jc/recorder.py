@@ -55,10 +55,36 @@ def detect_mistakes(data, me_names, my_team, ej_names, name_team, name_pos):
     return out
 
 
+_ENCODER = {}
+
+
+def pick_encoder(exe):
+    """Hardware encoder of the graphics card if there is one (NVIDIA / AMD / Intel): almost no CPU load,
+    so the game stays smooth. Falls back to x264 'ultrafast'."""
+    if "enc" in _ENCODER:
+        return _ENCODER["enc"]
+    flags = 0x08000000 if sys.platform == "win32" else 0
+    for enc in ("h264_nvenc", "h264_amf", "h264_qsv"):
+        try:
+            r = subprocess.run([exe, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                                "color=black:s=320x240:d=0.2", "-c:v", enc, "-f", "null", "-"],
+                               capture_output=True, timeout=15, creationflags=flags)
+            if r.returncode == 0:
+                _ENCODER["enc"] = enc
+                return enc
+        except (OSError, subprocess.SubprocessError):
+            pass
+    _ENCODER["enc"] = "libx264"
+    return "libx264"
+
+
 class Recorder:
     def __init__(self, cfg):
-        self.cfg = {"enabled": True, "fps": 30, "crf": 28, "encoder": "libx264", "keep_full": True, "keep_games": 3,
-                    **cfg.get("recording", {})}
+        rc = dict(cfg.get("recording", {}))
+        if rc.get("fps") == 30 and rc.get("encoder") == "libx264":  # old defaults -> new light defaults
+            rc.update(fps=15, encoder="auto")
+        self.cfg = {"enabled": True, "fps": 15, "crf": 30, "encoder": "auto", "width": 1280, "keep_full": True,
+                    "keep_games": 3, **rc}
         self.proc = None
         self.session = None
 
@@ -79,11 +105,17 @@ class Recorder:
         else:  # dev/testing on Linux
             src = ["-f", "x11grab", "-framerate", str(self.cfg["fps"]), "-i", os.environ.get("DISPLAY", ":0")]
         enc = self.cfg["encoder"]
-        venc = ["-c:v", enc] + (["-preset", "veryfast", "-crf", str(self.cfg["crf"])] if enc == "libx264"
-                                else ["-preset", "p4", "-cq", str(self.cfg["crf"])])
-        cmd = [exe, "-hide_banner", "-loglevel", "error", "-y"] + src + venc + \
-              ["-g", str(self.cfg["fps"] * 2), "-pix_fmt", "yuv420p", full]
-        flags = 0x08000000 if sys.platform == "win32" else 0
+        if enc == "auto":
+            enc = pick_encoder(exe)
+        q = str(self.cfg["crf"])
+        venc = {"libx264": ["-preset", "ultrafast", "-tune", "zerolatency", "-crf", q, "-threads", "2"],
+                "h264_nvenc": ["-preset", "p1", "-cq", q], "h264_amf": ["-quality", "speed", "-rc", "cqp", "-qp_i", q, "-qp_p", q],
+                "h264_qsv": ["-preset", "veryfast", "-global_quality", q]}.get(enc, [])
+        scale = ["-vf", f"scale={int(self.cfg['width'])}:-2"] if self.cfg.get("width") else []
+        cmd = [exe, "-hide_banner", "-loglevel", "error", "-y"] + src + scale + ["-c:v", enc] + venc + \
+              ["-g", str(self.cfg["fps"] * 2), "-pix_fmt", "nv12" if enc == "h264_qsv" else "yuv420p", full]
+        # no console window + below-normal priority: the game always wins the CPU
+        flags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, creationflags=flags)
         self.session = {"id": sid, "dir": d, "full": full, "start_wall": time.time(),
                         "game_time_at_start": game_time, "mistakes": [], "clips": []}

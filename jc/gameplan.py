@@ -128,19 +128,15 @@ def build(my_id, enemy_jg_id, allies, enemies, meta_stats=None, bracket=None):
         elif top:
             plan["objective"] = {"first": "Void-Grubs", "why": "Top-Seite ist deine stärkere Seite – Grubs mit Top-Prio holen."}
 
-    # ---- 3) power spikes from the simulation
-    try:
-        rec = sim.recommend(my_id, [c for c, _ in enemies], "JUNGLE", meta_stats=meta_stats, bracket=bracket)
-        if rec.get("available"):
-            spikes = []
-            for i, it in enumerate(rec["items"][:3]):
-                from jc import i18n
-                spikes.append({"item": (it["name_de"] if i18n.LANG["code"] == "de" else it["name"]) or it["name"], "id": it["id"], "dmg": it.get("dmg"),
-                               "when": ["1. Item", "2. Items", "3. Items"][i]})
-            plan["spikes"] = spikes
-            plan["skill_order"] = rec.get("skill_order")
-    except Exception:  # noqa: BLE001
-        pass
+    # ---- 3) power spikes: the core items real players build (meta data)
+    if meta_stats:
+        try:
+            st = meta_stats.champion(sim._ddragon_id(me), bracket=bracket)
+            if st.get("enough"):
+                plan["spikes"] = [{"item": it["name"], "id": it["id"], "winrate": it.get("winrate"),
+                                   "when": ["1. Item", "2. Items", "3. Items"][i]} for i, it in enumerate(st["meta_core"][:3])]
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---- 4) the 3-step checklist
     if plan.get("start"):
@@ -151,6 +147,6 @@ def build(my_id, enemy_jg_id, allies, enemies, meta_stats=None, bracket=None):
         plan["steps"].append(f"Erstes Objective: {plan['objective']['first']} – {plan['objective']['why']}")
     if plan.get("spikes"):
         s = plan["spikes"][0]
-        plan["steps"].append(f"Power-Spike: {s['item']}" + (f" (+{s['dmg']}% Schaden)" if s.get("dmg") else "")
+        plan["steps"].append(f"Power-Spike: {s['item']}" + (f" ({s['winrate']}% WR)" if s.get("winrate") else "")
                              + " – danach aktiv Fights und Objectives suchen.")
     return plan
