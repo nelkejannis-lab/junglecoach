@@ -168,10 +168,12 @@ def make_handler(gd, cfg, lcu):
                     return self._send(400, {"error": "Riot API Key fehlt – trag ihn in den Einstellungen ein."})
                 if "#" not in rid:
                     return self._send(400, {"error": "Riot ID im Format Name#TAG eingeben."})
-                queue = (q.get("queue") or [None])[0]
+                queue = (q.get("queue") or ["all"])[0]
+                if q.get("all"):
+                    profile.load_all(cfg["riot_api_key"], cfg.get("platform", "euw1"), rid, gd, queue)
                 try:
                     prof = profile.fetch(cfg["riot_api_key"], cfg.get("platform", "euw1"), rid, gd,
-                                         int(cfg.get("profile_games", 20)), int(queue) if queue else None)
+                                         int(cfg.get("profile_games", 20)), queue, more=bool(q.get("more")))
                 except review.RiotNotFound:
                     return self._send(404, {"error": f"Spieler „{rid}“ nicht gefunden. Riot ID genau wie im Client "
                                                      f"(Name#TAG) und Region {cfg.get('platform', 'euw1')} prüfen."})
@@ -184,7 +186,17 @@ def make_handler(gd, cfg, lcu):
                             return {"queueMap": {"RANKED_SOLO_5x5": {"tier": solo["tier"], "division": solo["division"],
                                     "leaguePoints": solo["lp"], "wins": solo["wins"], "losses": solo["losses"]}}}
                     ranked.snapshot(_FromApi())
-                return self._send(200, {k: v for k, v in prof.items() if not k.startswith("_")})
+                res = {k: v for k, v in prof.items() if not k.startswith("_")}
+                res["load_all"] = profile.LOAD_ALL.get((rid.lower(), queue if queue in profile.FILTERS else "all"))
+                return self._send(200, res)
+            if self.path.startswith("/api/match"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    det = profile.match_detail(cfg["riot_api_key"], cfg.get("platform", "euw1"),
+                                               q["id"][0], (q.get("puuid") or [""])[0], gd)
+                    return self._send(200, det)
+                except Exception as e:
+                    return self._send(500, {"error": str(e)})
             if self.path.startswith("/api/test-key"):
                 return self._test_key(None)
             if self.path == "/api/ranked":

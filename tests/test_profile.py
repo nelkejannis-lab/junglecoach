@@ -30,7 +30,7 @@ class ProfileTests(unittest.TestCase):
             def __init__(self, *a): pass
             def get(self, path, params=None, host=None):
                 if "accounts" in path: return {"puuid": "me", "gameName": "Jannis", "tagLine": "EUW"}
-                if path.endswith("/ids"): return ["EUW1_1", "EUW1_2"]
+                if path.endswith("/ids"): return ["EUW1_1", "EUW1_2"] if params.get("start", 0) == 0 else (["EUW1_3"] if params["start"] == 2 else [])
                 return match(int(path[-1]), path.endswith("1"))
             def get_platform(self, path, params=None):
                 if "summoners" in path: return {"summonerLevel": 321, "profileIconId": 29}
@@ -40,6 +40,25 @@ class ProfileTests(unittest.TestCase):
             p = profile.fetch("k", "euw1", "Jannis#EUW", GD)
         self.assertEqual(p["ranks"]["solo"]["winrate"], 55); self.assertEqual(p["level"], 321)
         self.assertEqual(p["masteries"][0]["champion"], "LeeSin"); self.assertEqual(p["recent"]["wins"], 1)
+        with mock.patch.object(profile, "RiotAPI", FakeAPI), mock.patch.object(profile, "_match", lambda api, mid: match(int(mid[-1]), mid.endswith("1"))):
+            p2 = profile.fetch("k", "euw1", "Jannis#EUW", GD, more=True)
+        self.assertEqual(len(p2["games"]), 3); self.assertTrue(p2["has_more"])
+
+    def test_match_detail(self):
+        m = match(1, True)
+        m["info"]["teams"] = [{"teamId": 100, "win": True, "bans": [{"championId": 64}], "objectives": {"dragon": {"kills": 3}}},
+                              {"teamId": 200, "win": False, "bans": [], "objectives": {}}]
+        for p_ in m["info"]["participants"]:
+            p_.setdefault("championName", "Viego"); p_.setdefault("deaths", 1); p_.setdefault("assists", 0)
+            p_.setdefault("totalMinionsKilled", 100); p_["summoner1Id"] = 4; p_["summoner2Id"] = 11
+        m["info"]["participants"].append({"puuid": "e1", "championName": "Elise", "teamId": 200, "win": False, "kills": 2,
+                                          "deaths": 5, "assists": 1, "totalMinionsKilled": 20, "teamPosition": "JUNGLE"})
+        with mock.patch.object(profile, "_match", lambda api, mid: m), mock.patch.object(profile, "RiotAPI", lambda *a: None):
+            d = profile.match_detail("k", "euw1", "EUW1_1", "me", GD)
+        self.assertEqual(len(d["teams"]), 2); self.assertEqual(d["teams"][0]["objectives"]["dragon"], 3)
+        me = next(r for r in d["teams"][0]["players"] if r["me"])
+        self.assertEqual(me["spells"], ["SummonerFlash", "SummonerSmite"]); self.assertEqual(d["teams"][0]["bans"], ["LeeSin"])
+        self.assertTrue(any(r.get("mvp") for t in d["teams"] for r in t["players"]))
 
 
 if __name__ == "__main__":

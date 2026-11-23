@@ -15,6 +15,14 @@ CACHE = os.path.join(DATA_DIR, "cache", "matches")
 QUEUES = {420: "Solo/Duo", 440: "Flex", 400: "Normal Draft", 430: "Normal Blind", 490: "Quickplay",
           450: "ARAM", 1700: "Arena", 1900: "URF", 900: "ARURF", 0: "Custom", 1300: "Nexus Blitz",
           480: "Swiftplay", 720: "ARAM Clash", 700: "Clash"}
+# filter -> Riot match-ids parameters (+ optional client-side queue whitelist)
+FILTERS = {"all": ({}, None), "solo": ({"queue": 420}, None), "flex": ({"queue": 440}, None),
+           "ranked": ({"type": "ranked"}, None),
+           "normal": ({"type": "normal"}, {400, 430, 480, 490}), "aram": ({"queue": 450}, None),
+           "arena": ({"queue": 1700}, None)}
+SPELLS = {1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash", 6: "SummonerHaste", 7: "SummonerHeal",
+          11: "SummonerSmite", 12: "SummonerTeleport", 13: "SummonerMana", 14: "SummonerDot", 21: "SummonerBarrier",
+          32: "SummonerSnowball", 2202: "SummonerFlash", 2201: "SummonerFlash"}
 ROLES = {"TOP": "Top", "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": "Bot", "UTILITY": "Support"}
 _mem = {}
 
@@ -80,47 +88,211 @@ def aggregate(games):
             sorted(({"role": r, "share": round(100 * n / total)} for r, n in roles.items()), key=lambda x: -x["share"]))
 
 
-def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120):
-    key = (riot_id.lower(), count, queue)
-    if key in _mem and time.time() - _mem[key]["_t"] < max_age:
-        return _mem[key]
+def _ids(api, puuid, flt, start, count):
+    params, allowed = FILTERS.get(flt, FILTERS["all"])
+    out, offset = [], start
+    while len(out) < count:
+        batch = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", {**params, "start": offset, "count": 20})
+        if not batch:
+            break
+        offset += len(batch)
+        out += batch
+        if allowed is None:
+            break
+    return out[:count] if allowed is None else out, offset
+
+
+def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False):
+    """queue: filter key (all/solo/flex/ranked/normal/aram/arena). more=True appends the next page."""
+    flt = queue if queue in FILTERS else "all"
+    key = (riot_id.lower(), flt)
+    cached = _mem.get(key)
+    if cached and not more and (time.time() - cached["_t"] < max_age or LOAD_ALL.get(key, {}).get("running")):
+        return cached
     api = RiotAPI(api_key, platform)
-    name, tag = riot_id.split("#", 1)
-    acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
-    puuid = acct["puuid"]
-    summ = api.get_platform(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
-    leagues = api.get_platform(f"/lol/league/v4/entries/by-puuid/{puuid}")
-    try:
-        mastery = api.get_platform(f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", {"count": 5})
-    except Exception:
-        mastery = []
-    params = {"count": count}
-    if queue:
-        params["queue"] = queue
-    ids = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params)
-    games = [summarize_match(_match(api, mid), puuid, gd) for mid in ids]
-    champs, roles = aggregate(games)
-    ranks = {}
-    for e in leagues:
-        q = {"RANKED_SOLO_5x5": "solo", "RANKED_FLEX_SR": "flex"}.get(e.get("queueType"))
-        if q:
-            n = e["wins"] + e["losses"]
-            ranks[q] = {"tier": e["tier"], "division": e.get("rank", ""), "lp": e["leaguePoints"],
-                        "wins": e["wins"], "losses": e["losses"], "winrate": round(100 * e["wins"] / n) if n else 0,
-                        "hot_streak": e.get("hotStreak", False)}
-    masteries = []
-    for m in mastery:
-        c = gd.champ(m.get("championId")) if gd else None
-        masteries.append({"champion": c["id"] if c else str(m.get("championId")),
-                          "name": gd.champ_name(c) if c else str(m.get("championId")),
-                          "level": m.get("championLevel"), "points": m.get("championPoints")})
-    valid = [g for g in games if not g["remake"]]
-    out = {"riot_id": f"{acct.get('gameName', name)}#{acct.get('tagLine', tag)}", "puuid": puuid,
-           "level": summ.get("summonerLevel"), "icon": summ.get("profileIconId"), "ranks": ranks,
-           "masteries": masteries, "games": games, "champions": champs, "roles": roles,
-           "recent": {"games": len(valid), "wins": sum(g["win"] for g in valid),
-                      "kda": round(sum(g["kills"] + g["assists"] for g in valid) / max(1, sum(g["deaths"] for g in valid)), 2),
-                      "kp": round(sum(g["kp"] for g in valid) / max(1, len(valid)))},
-           "version": gd.version if gd else None, "_t": time.time()}
+    if cached and more:
+        out = cached
+        ids, nxt = _ids(api, out["puuid"], flt, out["_next"], count)
+        allowed = FILTERS[flt][1]
+        new = [summarize_match(_match(api, mid), out["puuid"], gd) for mid in ids if mid not in out["_seen"]]
+        if allowed:
+            new = [g for g in new if g["queue_id"] in allowed]
+        out["games"] += new
+        out["_seen"].update(ids)
+        out["_next"] = nxt
+        out["has_more"] = bool(ids)
+    else:
+        name, tag = riot_id.split("#", 1)
+        acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
+        puuid = acct["puuid"]
+        summ = api.get_platform(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
+        leagues = api.get_platform(f"/lol/league/v4/entries/by-puuid/{puuid}")
+        try:
+            mastery = api.get_platform(f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", {"count": 5})
+        except Exception:
+            mastery = []
+        ids, nxt = _ids(api, puuid, flt, 0, count)
+        allowed = FILTERS[flt][1]
+        if cached and cached.get("puuid") == puuid:  # refresh: keep everything loaded, add only new games on top
+            new_ids = [i for i in ids if i not in cached["_seen"]]
+            games = [summarize_match(_match(api, mid), puuid, gd) for mid in new_ids]
+            if allowed:
+                games = [g for g in games if g["queue_id"] in allowed]
+            games += cached["games"]
+            ids, nxt = list(cached["_seen"] | set(ids)), cached["_next"] + len(new_ids)
+            has_more = cached.get("has_more", True)
+        else:
+            games = [summarize_match(_match(api, mid), puuid, gd) for mid in ids]
+            if allowed:
+                games = [g for g in games if g["queue_id"] in allowed]
+            has_more = bool(ids)
+        ranks = {}
+        for e in leagues:
+            q = {"RANKED_SOLO_5x5": "solo", "RANKED_FLEX_SR": "flex"}.get(e.get("queueType"))
+            if q:
+                n = e["wins"] + e["losses"]
+                ranks[q] = {"tier": e["tier"], "division": e.get("rank", ""), "lp": e["leaguePoints"],
+                            "wins": e["wins"], "losses": e["losses"], "winrate": round(100 * e["wins"] / n) if n else 0,
+                            "hot_streak": e.get("hotStreak", False)}
+        masteries = []
+        for m in mastery:
+            c = gd.champ(m.get("championId")) if gd else None
+            masteries.append({"champion": c["id"] if c else str(m.get("championId")),
+                              "name": gd.champ_name(c) if c else str(m.get("championId")),
+                              "level": m.get("championLevel"), "points": m.get("championPoints")})
+        out = {"riot_id": f"{acct.get('gameName', name)}#{acct.get('tagLine', tag)}", "puuid": puuid,
+               "level": summ.get("summonerLevel"), "icon": summ.get("profileIconId"), "ranks": ranks,
+               "masteries": masteries, "games": games, "filter": flt, "has_more": has_more,
+               "version": gd.version if gd else None, "_next": nxt, "_seen": set(ids)}
+    champs, roles = aggregate(out["games"])
+    valid = [g for g in out["games"] if not g["remake"]]
+    out.update(champions=champs, roles=roles, _t=time.time(),
+               recent={"games": len(valid), "wins": sum(g["win"] for g in valid),
+                       "kda": round(sum(g["kills"] + g["assists"] for g in valid) / max(1, sum(g["deaths"] for g in valid)), 2),
+                       "kp": round(sum(g["kp"] for g in valid) / max(1, len(valid)))})
     _mem[key] = out
+    return out
+
+
+LOAD_ALL = {}  # (riot_id, filter) -> {"running", "loaded", "message"}
+
+
+def load_all(api_key, platform, riot_id, gd=None, queue="all"):
+    """Pages through the whole match history Riot still keeps (match-v5, about the last 2 years)
+    in the background. Already downloaded games come from the disk cache, so only the first
+    full load is slow (dev key: ~100 games per 2 minutes)."""
+    import threading
+    flt = queue if queue in FILTERS else "all"
+    key = (riot_id.lower(), flt)
+    st = LOAD_ALL.setdefault(key, {"running": False, "loaded": 0, "message": ""})
+    if st["running"]:
+        return st
+
+    def run():
+        st.update(running=True, message="lädt…")
+        try:
+            out = fetch(api_key, platform, riot_id, gd, 20, flt, max_age=10 ** 9)
+            while out.get("has_more"):
+                out = fetch(api_key, platform, riot_id, gd, 20, flt, more=True)
+                st["loaded"] = len(out["games"])
+                st["message"] = f"{st['loaded']} Games geladen…"
+            st["message"] = f"Alle {len(out['games'])} Games geladen"
+        except Exception as e:
+            st["message"] = f"Abgebrochen: {e}"
+        finally:
+            st["running"] = False
+    threading.Thread(target=run, daemon=True).start()
+    return st
+
+
+def _timeline(api, mid):
+    os.makedirs(CACHE, exist_ok=True)
+    p = os.path.join(CACHE, mid + "_tl.json")
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    t = api.get(f"/lol/match/v5/matches/{mid}/timeline")
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(t, f)
+    return t
+
+
+def _rune_icon(gd, perk_id):
+    if not gd:
+        return None
+    for tree in gd.runes:
+        if tree["id"] == perk_id:
+            return tree.get("icon")
+        for slot in tree["slots"]:
+            for r in slot["runes"]:
+                if r["id"] == perk_id:
+                    return r.get("icon")
+    return None
+
+
+def match_detail(api_key, platform, match_id, puuid, gd=None):
+    """Full scoreboard of one game; for own jungle games also the deep analysis + map replay."""
+    api = RiotAPI(api_key, platform)
+    m = _match(api, match_id)
+    info = m["info"]
+    mins = max(1, info.get("gameDuration", 0) / 60)
+    teams = {}
+    for t in info.get("teams", []):
+        obj = t.get("objectives", {})
+        teams[t["teamId"]] = {"win": t.get("win"), "players": [],
+                              "bans": [b.get("championId") for b in t.get("bans", []) if b.get("championId", -1) > 0],
+                              "objectives": {k: obj.get(k, {}).get("kills", 0) for k in
+                                             ("champion", "dragon", "baron", "tower", "horde", "riftHerald", "atakhan", "inhibitor")}}
+    for p in info["participants"]:
+        c = gd.champ(p["championName"]) if gd else None
+        if gd and not c:
+            c = next((v for k, v in gd.champ_by_id.items() if k.lower() == p["championName"].lower()), None)
+        try:
+            styles = p["perks"]["styles"]
+            keystone, sub = styles[0]["selections"][0]["perk"], styles[1]["style"]
+        except (KeyError, IndexError):
+            keystone = sub = None
+        cs = p["totalMinionsKilled"] + p.get("neutralMinionsKilled", 0)
+        row = {"puuid": p["puuid"], "me": p["puuid"] == puuid,
+               "name": p.get("riotIdGameName") or p.get("summonerName") or "?", "tag": p.get("riotIdTagline", ""),
+               "champion": c["id"] if c else p["championName"], "champion_name": gd.champ_name(c) if c else p["championName"],
+               "level": p.get("champLevel"), "role": ROLES.get(p.get("teamPosition"), ""),
+               "kills": p["kills"], "deaths": p["deaths"], "assists": p["assists"],
+               "kda": round((p["kills"] + p["assists"]) / max(1, p["deaths"]), 2),
+               "cs": cs, "cs_min": round(cs / mins, 1), "gold": p.get("goldEarned", 0),
+               "damage": p.get("totalDamageDealtToChampions", 0), "taken": p.get("totalDamageTaken", 0),
+               "vision": p.get("visionScore", 0), "wards": p.get("wardsPlaced", 0),
+               "items": [p.get(f"item{i}", 0) for i in range(7)],
+               "spells": [SPELLS.get(p.get("summoner1Id")), SPELLS.get(p.get("summoner2Id"))],
+               "keystone_icon": _rune_icon(gd, keystone), "sub_icon": _rune_icon(gd, sub),
+               "keystone": gd.rune_disp.get(keystone) if gd and keystone else None,
+               "multikill": p.get("largestMultiKill", 0)}
+        teams.setdefault(p["teamId"], {"win": p.get("win"), "players": [], "bans": [], "objectives": {}})["players"].append(row)
+    order = {"Top": 0, "Jungle": 1, "Mid": 2, "Bot": 3, "Support": 4, "": 5}
+    for t in teams.values():
+        t["players"].sort(key=lambda r: order.get(r["role"], 5))
+        t["kills"] = sum(r["kills"] for r in t["players"])
+        t["gold"] = sum(r["gold"] for r in t["players"])
+        t["bans"] = [gd.champ(b)["id"] if gd and gd.champ(b) else str(b) for b in t["bans"]]
+    allp = [r for t in teams.values() for r in t["players"]]
+    maxdmg = max((r["damage"] for r in allp), default=1) or 1
+    for r in allp:
+        r["damage_pct"] = round(100 * r["damage"] / maxdmg)
+    mvp = max(allp, key=lambda r: r["kda"] * 2 + r["damage"] / maxdmg * 5 + r["vision"] / 40, default=None)
+    if mvp:
+        mvp["mvp"] = True
+    out = {"match_id": match_id, "queue": QUEUES.get(info.get("queueId"), "Andere"), "duration": round(mins),
+           "ended": (info.get("gameEndTimestamp") or info.get("gameCreation", 0)) / 1000,
+           "teams": [dict(teams[k], team_id=k) for k in sorted(teams)], "version": gd.version if gd else None}
+    me = next((p for p in info["participants"] if p["puuid"] == puuid), None)
+    if me and me.get("teamPosition") == "JUNGLE" and info.get("gameDuration", 0) >= 600:
+        try:
+            from . import deep, review
+            tl = _timeline(api, match_id)
+            r = review.review_match(m, tl, puuid)
+            if r:
+                r["deep"] = deep.deep_analyze(m, tl, puuid)
+                out["analysis"] = r
+        except Exception as e:
+            out["analysis_error"] = str(e)
     return out
