@@ -93,3 +93,13 @@ Presets haben Vorrang vor der Regel-Engine. Item-Namen auf Englisch (Teilstring 
 
 ## Tests
 `python -m unittest discover tests`
+
+## Automatische Website-Daten
+
+Im Meta-Tab werden zusätzliche Builds, Runen und Matchup-Abschnitte für Gwen und Graves (Jungle) angezeigt. Die App prüft beim Start und alle 30 Minuten das Release `website-latest` aus `junglecoach-data`. Der Scraper läuft alle sechs Stunden; dafür muss dein PC nicht eingeschaltet sein.
+
+Es werden nur erfolgreiche Abrufe mit der aktuellen Data-Dragon-Patchnummer und höchstens 24 Stunden Abrufalter angezeigt. Bei einem Patchwechsel fallen alte Patchdaten beim nächsten Prüflauf heraus. Separat verifizierte Tages-Matchdaten sind von diesen Website-Exporten nicht verfügbar: Sie werden ausdrücklich als Patch-Fallback behandelt, nicht als heute gespielte Matches. Hotfixes ohne neue Patchnummer können nur durch neue Abrufe erfasst werden.
+
+Die Website-Abschnitte sind zusätzliche Quellen zur Ansicht; sie fließen nicht ungeprüft in Auto-Runen, Simulationen oder statistische Team-Fit-Aussagen ein. Filter der Anbieter und Extraktionsvollständigkeit können abweichen. Quellenfehler führen zu fehlenden Einträgen, nicht zu erfundenen Empfehlungen. Die bestehende Riot-Datenbank bleibt unabhängig.
+
+Für die installierte App ist einmalig ein neuer Installer erforderlich. Workflow „Build website integration installer“ liefert das Artefakt „JungleCoach-Website-Setup“ ohne eingebettete Zugangsdaten; bestehende Benutzereinstellungen bleiben erhalten.
