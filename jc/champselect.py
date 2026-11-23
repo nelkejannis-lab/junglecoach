@@ -151,6 +151,14 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
                 apply_meta(gd, out, my_champ, lane_enemy, meta_stats, bracket, [c["id"] for c in enemies if c])
             except Exception as e:  # never break champ select because of stats
                 out["meta_error"] = str(e)
+    # theory-crafting simulation (runs in the background, result appears on the next poll)
+    if my_champ:
+        try:
+            from jc import sim
+            out["sim"] = sim.recommend_async(my_champ["id"], tuple(c["id"] for c in enemies if c), role,
+                                             meta_stats=meta_stats, bracket=bracket)
+        except Exception as e:  # noqa: BLE001
+            out["sim"] = {"available": False, "reason": str(e)}
     # meta-aware pick suggestions: matchup winrate vs the enemy jungler
     if meta_stats and lane_enemy:
         for p in out["pick_suggestions"]:

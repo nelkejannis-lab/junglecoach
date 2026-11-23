@@ -250,6 +250,25 @@ def make_handler(gd, cfg, lcu):
                                         "improvements": ranked.improvements(games),
                                         "own_matchups": ranked.own_matchups(games), "games": len(games),
                                         "pool_worst": pool_worst})
+            if self.path.startswith("/api/sim"):
+                from jc import sim
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                champ_ref = (q.get("champ") or [""])[0]
+                c = gd.champ(champ_ref) or gd.champ_by_name.get(champ_ref.lower())
+                if not c:
+                    return self._send(400, {"error": "Champion unbekannt"})
+                enemies = [e["id"] for e in (gd.champ(x) or gd.champ_by_name.get(x.lower())
+                                             for x in ((q.get("enemies") or [""])[0]).split(",") if x) if e]
+                ms = meta_stats(gd)
+                ms2 = meta.MetaStats(gd, ms.db) if ms else None
+                if not sim.load():
+                    sim.refresh(force=True)
+                try:
+                    res = sim.recommend(c["id"], enemies, (q.get("role") or [None])[0] or None, meta_stats=ms2,
+                                        bracket=current_bracket(cfg))
+                except Exception as e:  # noqa: BLE001
+                    return self._send(500, {"error": str(e)})
+                return self._send(200, res)
             if self.path == "/api/meta":
                 ms = meta_stats(gd)
                 cr = META["crawler"]
@@ -394,7 +413,9 @@ def start(cfg=None):
     threading.Thread(target=poll_loop, args=(gd, cfg, lcu), daemon=True).start()
 
     def cloud_loop():
+        from jc import sim
         while True:
+            sim.refresh()  # patch data for the build simulation (once a day)
             if meta_cloud.update(cfg):
                 META["stats"] = None  # reopen with the new games
             time.sleep(1800)

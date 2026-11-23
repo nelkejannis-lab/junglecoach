@@ -90,6 +90,23 @@ def analyze(gd, data, timers=None, preset_lookup=None):
     preset = preset_lookup(my_champ["id"]) if (preset_lookup and my_champ) else None
     build = analyzer.recommend_build(gd, my_champ, prof, owned=owned, enemy_live=live_ctx, preset=preset) \
         if my_champ else None
+    # simulation with the real items: my completed items stay, enemies' real armor / MR / HP count
+    sim_res = None
+    if my_champ:
+        try:
+            from jc import sim
+            pos = (me.get("position") or "").upper() or None
+            pos = {"MID": "MIDDLE", "BOT": "BOTTOM", "ADC": "BOTTOM", "SUPPORT": "UTILITY"}.get(pos, pos)
+            if _is_jungler(me):
+                pos = "JUNGLE"
+            ecs = [(c, p) for p in enemies for c in [_champ(gd, p)] if c]
+            sim_res = sim.recommend_async(
+                my_champ["id"], tuple(c["id"] for c, _ in ecs), pos,
+                owned=tuple(sorted(i for i in owned if i)),
+                enemy_items={c["id"]: tuple(sorted(it.get("itemID") for it in p.get("items", []) if it.get("itemID")))
+                             for c, p in ecs})
+        except Exception as e:  # noqa: BLE001
+            sim_res = {"available": False, "reason": str(e)}
 
     # ---- enemy jungler tracking (kill feed + scoreboard only)
     ej = next((p for p in enemies if _is_jungler(p)), None)
@@ -144,7 +161,7 @@ def analyze(gd, data, timers=None, preset_lookup=None):
     return {"game_time": _fmt(t), "me": gd.champ_name(my_champ) if my_champ else "?",
             "cs_per_min": cs_min, "cs_hint": "Farm ok" if cs_min >= 6 or t < 180 else "Unter 6 CS/min → mehr Camps zwischen Ganks",
             "enemy": {"profile": prof, "fed": fed, "armor_stackers": armor_st, "mr_stackers": mr_st},
-            "build": build, "enemy_jungler": jungle, "objectives": objectives,
+            "build": build, "sim": sim_res, "enemy_jungler": jungle, "objectives": objectives,
             "allies": [gd.champ_name(_champ(gd, p)) for p in allies],
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,

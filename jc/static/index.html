@@ -97,6 +97,17 @@
 let view = "profile", profData = null, profQuery = "", profQueue = "all", profLoading = false, profErr = "",
     histChamp = "", histRole = "", histResult = "", matchData = null, matchLoading = false, allTimer = null, state = {}, rankedData = null, metaData = null, cfgData = null, sessions = [];
 let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null, selClip = null, msg = {};
+let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null;
+async function runLab() {
+  labForm = {champ: $("#lab-champ").value.trim(), role: $("#lab-role").value, enemies: $("#lab-enemies").value, msg: "Rechne …"};
+  labData = null; render();
+  try {
+    const q = new URLSearchParams({champ: labForm.champ, role: labForm.role, enemies: labForm.enemies.split(",").map(x => x.trim()).filter(Boolean).join(",")});
+    const r = await fetch("/api/sim?" + q); const j = await r.json();
+    if (j.error) { labForm.msg = j.error; } else { labData = j; labForm.msg = ""; }
+  } catch (e) { labForm.msg = "Fehler: " + e; }
+  render();
+}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const sign = v => v == null ? "–" : (v > 0 ? "+" : "") + v;
@@ -107,7 +118,7 @@ const card = (title, hint, body, wide) => `<div class="card${wide ? " wide" : ""
 const empty = (ico, t, d) => `<div class="empty"><div class="ico">${ico}</div><b>${esc(t)}</b>${d}</div>`;
 const list = (arr, f) => arr && arr.length ? `<ul class="clean">${arr.map((x, i) => f(x, i)).join("")}</ul>` : '<span class="muted small">Noch keine Daten.</span>';
 const page = (title, sub, body) => `<h1 class="title">${esc(title)}</h1><p class="subtitle">${sub}</p><div class="grid">${body}</div>`;
-const BADGE = {Meta: "meta", Geheimtipp: "gem", Matchup: "mu", "Team-Fit": "team"};
+const BADGE = {Meta: "meta", Geheimtipp: "gem", Matchup: "mu", "Team-Fit": "team", "Meta + Sim": "meta", Sim: "mu", Theorie: "team", gekauft: ""};
 const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` : "";
 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
@@ -326,6 +337,25 @@ function buildList(b) {
   if (b.situational.length) h += `<div class="muted small" style="margin-top:12px">Situativ</div>` + b.situational.map(i => `<div class="item"><div class="num">!</div><div><div class="n">${esc(i.name)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("");
   return h;
 }
+// ------------------------------------------------------------ BUILD SIMULATION
+const ROLE_DE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
+function simBody(s) {
+  if (!s) return '<span class="muted small">Noch keine Simulation.</span>';
+  if (!s.available) return `<span class="muted small">${esc(s.reason || "Nicht verfügbar.")}</span>`;
+  const icon = i => img(`https://ddragon.leagueoflegends.com/cdn/${s.patch}/img/item/${i}.png`, 30);
+  const mix = s.enemy_mix || {};
+  return `${s.items.map((i, n) => `<div class="item"><div class="num">${n + 1}</div>${icon(i.id)}<div><div class="n">${esc(i.name_de || i.name)} ${badge(i.badge)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("")}
+    ${s.boots ? `<div class="item"><div class="num">👟</div>${icon(s.boots.id)}<div><div class="n">${esc(s.boots.name_de || s.boots.name)}</div><div class="w">beste Schuhe für diesen Build</div></div></div>` : ""}
+    <div class="row small" style="margin-top:10px"><span>Gegner-Schaden</span><span>${mix.physical || 0}% physisch · ${mix.magic || 0}% magisch · ${mix.true || 0}% true</span></div>
+    <div class="meter" style="height:8px;display:flex"><i style="width:${mix.physical || 0}%;background:var(--orange)"></i><i style="width:${mix.magic || 0}%;background:var(--acc)"></i><i style="width:${mix.true || 0}%;background:var(--sec)"></i></div>
+    ${s.clear_time ? `<div class="row small"><span>Full Clear (Lvl 6, 1. Item)</span><b>~${s.clear_time} s</b></div>` : ""}
+    <div class="row small"><span>Skill-Reihenfolge</span><b>${esc((s.skill_order || []).join(" › "))}</b></div>
+    ${(s.vetoed || []).length ? `<p class="small orange">Rechnerisch stark, aber in echten Games klar schlechter – deshalb ersetzt: ${s.vetoed.map(v => esc(v.name)).join(", ")}</p>` : ""}
+    <p class="small muted">${s.known_enemies < 5 ? `${s.known_enemies}/5 Gegner bekannt – Rest geschätzt. ` : ""}Patch ${esc(s.patch)} · gegen ${esc((s.enemies || []).join(", "))}</p>
+    <p class="small muted">${badge("Meta + Sim")} oft gespielt und rechnerisch stark ${badge("Geheimtipp")} selten, aber rechnerisch stark und gewinnt in echten Games ${badge("Theorie")} kaum Daten – rein rechnerisch</p>`;
+}
+const simCard = (s, hint) => card("Simulations-Build", hint || "Aus Skill-Formeln, Item-Werten und dem Gegnerteam berechnet – nicht aus der Meta abgeschrieben.", simBody(s));
+
 function renderSelect() {
   const cs = state.champ_select;
   if (!cs) return page("Champ Select", "Hier erscheint automatisch deine Analyse, sobald Champ Select startet.",
@@ -349,6 +379,7 @@ function renderSelect() {
        <button class="btn sec" onclick="applyRunes()">Jetzt setzen</button></div>`);
     h += card("Build", "Reihenfolge der Kern-Items. Abzeichen zeigen, woher die Empfehlung kommt.", buildList(cs.build) +
       `<p class="small muted" style="margin-top:12px">${badge("Team-Fit")} gegen dieses Team ${badge("Matchup")} gegen den Jungler ${badge("Geheimtipp")} selten, aber besser ${badge("Meta")} meistgespielt</p>`);
+    h += simCard(cs.sim, "Rechnet Skills, Passive, Ult und Item-Effekte gegen genau dieses Gegnerteam durch – wird bei jedem neuen Gegner-Pick neu berechnet.");
   }
   return page("Champ Select", "Analyse des Gegnerteams, beste Picks aus deinem Pool, Runen und Build – wird bei jedem neuen Gegner-Pick neu berechnet.", h);
 }
@@ -369,6 +400,7 @@ function renderLive() {
     <div class="muted small" style="margin-top:10px">Zuletzt im Killfeed</div>${list(ej.last_seen, s => `<li class="small">${esc(s.time)} · ${esc(s.where)}</li>`)}` : '<span class="muted">Nicht erkannt.</span>');
   h += card("Build – live angepasst", "Passt sich an die Items und den Spielstand der Gegner an.", buildList(l.build) +
     (l.enemy.fed.length ? `<p class="red small">Gefüttert: ${l.enemy.fed.map(f => esc(f.name + " " + f.kda)).join(", ")}</p>` : ""));
+  if (l.sim) h += simCard(l.sim, "Rechnet mit deinen gekauften Items und den echten Rüstungs-/MR-Werten der Gegner weiter.");
   h += card("Fehler bisher", "Werden nach dem Spiel automatisch als Clip gespeichert.", list(l.mistakes, m => `<li><b>${esc(m.time)}</b> ${esc(m.title)}<div class="muted small">${esc(m.why)}</div></li>`));
   return page("Live", "Hilfe während des Spiels. Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J ein/aus).", h);
 }
@@ -441,9 +473,16 @@ function renderMeta() {
      <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
      <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Daten sammeln"}</button></div>
      <p class="small muted">Die Cloud-Datenbank (EUW, NA, KR – rund um die Uhr gesammelt) wird automatisch alle 6 Std. geladen. „Daten sammeln“ ergänzt zusätzlich Games von deinem PC aus.</p>`);
+  const L = labForm;
+  h += card("Build-Labor", "Beliebigen Champion auf beliebiger Rolle gegen ein Wunsch-Team simulieren.",
+    `<div class="two" style="gap:10px"><input id="lab-champ" placeholder="Champion, z. B. Gwen" value="${esc(L.champ)}" oninput="labForm.champ=this.value">
+       <select id="lab-role" onchange="labForm.role=this.value">${["", "TOP", "JUNGLE", "MIDDLE", "BOTTOM"].map(r => `<option value="${r}"${r === L.role ? " selected" : ""}>${r ? ROLE_DE[r] : "Rolle automatisch"}</option>`).join("")}</select></div>
+     <input id="lab-enemies" style="margin-top:10px;width:100%" placeholder="Gegner (optional), z. B. Ornn, Viego, Ahri, Jinx, Thresh" value="${esc(L.enemies)}" oninput="labForm.enemies=this.value">
+     <div class="row" style="border:0;margin-top:10px"><span class="small muted">${esc(L.msg || "")}</span><button class="btn" onclick="runLab()">Simulieren</button></div>
+     ${labData ? simBody(labData) : ""}`, true);
   h += card("So funktionieren Geheimtipps", "",
     `<p class="small">Seltene Items und Runen werden per <b>Simulation</b> gegen den Rest verglichen: 4.000 Mal werden aus den echten Ergebnissen plausible Winrates gezogen (Bayes). Empfohlen wird nur, was in ≥ 90 % der Durchläufe besser ist und ≥ 2 % mehr Winrate bringt – und nicht nur gegen einen einzelnen Gegner gut ist.</p>
-     <p class="small muted">Das ist Statistik auf echten Games, kein Kampf-Simulator. Je mehr Daten, desto sicherer.</p>`);
+     <p class="small"><b>Simulations-Build:</b> Zusätzlich rechnet die App jeden Champion mit den Werten des aktuellen Patches durch – Skill-Schaden und -Skalierung, Passive, Ult, Cooldowns, Item-Effekte, Rüstung/MR der Gegner und deren Schadensmix. Echte Games legen nur die Item-Klasse fest (z. B. Gwen = AP) und streichen Items, die nachweislich verlieren.</p>`);
   if (!m.champions.length) h += card("", "", empty("🧪", "Noch keine Champions", 'Trage deinen Champion-Pool in den <a href="#" onclick="go(\'settings\');return false">Einstellungen</a> ein.'), true);
   for (const c of m.champions) {
     if (!c.enough) { h += card(c.name, `${c.games} Games – zu wenig Daten. Sammle mehr.`, ""); continue; }
