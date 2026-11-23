@@ -2,6 +2,7 @@
   "riot_id": "",
   "platform": "euw1",
   "riot_api_key": "",
+  "server_url": "",
   "review_games": 20,
   "profile_games": 20,
 
@@ -22,7 +23,6 @@
   "port": 8765,
   "allow_phone": false,
   "overlay": { "enabled": true, "x": -470, "y": 60, "width": 450, "alpha": 0.85, "font_size": 11 },
-  "minimap_tracker": { "x": null, "y": null, "size": null, "icon_ratio": 0.085, "threshold": 0.62, "track": "jungler" },
   "recording": { "enabled": true, "fps": 30, "crf": 28, "encoder": "libx264", "keep_full": true, "keep_games": 3 },
   "timers": { "Dragon": 300, "Baron": 360, "Elder": 360 }
 }

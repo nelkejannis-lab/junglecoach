@@ -25,15 +25,6 @@ def format_lines(state):
         out.append((f"Gegner-JG {ej['champion']} Lvl {ej['level']}{where}", TXT))
         for w in (ej.get("warnings") or [])[:2]:
             out.append(("⚠ " + w, ORANGE))
-    mm = (state.get("minimap") or {})
-    if mm.get("on"):
-        jg = [x for x in ((mm.get("data") or {}).get("last_seen") or []) if x.get("jungler")]
-        if jg:
-            j = jg[0]
-            txt = "jetzt sichtbar" if j["visible"] else f"vor {j['ago']}"
-            out.append((f"🗺 {j['champion']}: {j['area']} ({txt})", RED if j["visible"] else ORANGE))
-        else:
-            out.append((f"🗺 Minimap-Tracker: {mm.get('status')}", MUTED))
     b = l.get("build") or {}
     nxt = (b.get("situational") or []) + (b.get("core") or [])
     if nxt:

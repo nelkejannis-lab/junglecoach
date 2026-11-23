@@ -22,23 +22,37 @@ class RiotNotFound(RuntimeError):
 
 
 class RiotAPI:
+    """key = own Riot API key (developer mode) or "jc:<session token>@<server url>" (normal mode:
+    all requests go through the Jungle Coach server, which holds the production key)."""
+
     def __init__(self, key, platform="euw1"):
-        self.key = key
+        self.key = key or ""
         self.platform = platform
         self.routing = REGION_ROUTING.get(platform, "europe")
+        self.proxy = None
+        if self.key.startswith("jc:") and "@" in self.key:
+            token, server = self.key[3:].split("@", 1)
+            self.proxy = (token, server.rstrip("/"))
 
     def get_platform(self, path, params=None):
         return self.get(path, params, host=self.platform)
 
     def get(self, path, params=None, host=None):
-        url = f"https://{host or self.routing}.api.riotgames.com{path}"
+        if self.proxy:
+            url = f"{self.proxy[1]}/riot/{host or self.routing}{path}"
+        else:
+            url = f"https://{host or self.routing}.api.riotgames.com{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
+        headers = {"Accept": "application/json", "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+                   "Accept-Charset": "application/x-www-form-urlencoded; charset=UTF-8",
+                   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) JungleCoach/1.0 (+https://github.com/nelkejannis-lab/junglecoach)"}
+        if self.proxy:
+            headers["Authorization"] = f"Bearer {self.proxy[0]}"
+        else:
+            headers["X-Riot-Token"] = self.key
         for _ in range(4):
-            req = urllib.request.Request(url, headers={
-                "X-Riot-Token": self.key, "Accept": "application/json",
-                "Accept-Language": "de-DE,de;q=0.9,en;q=0.8", "Accept-Charset": "application/x-www-form-urlencoded; charset=UTF-8",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) JungleCoach/0.7 (+https://github.com/nelkejannis-lab/junglecoach)"})
+            req = urllib.request.Request(url, headers=headers)
             try:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     return json.loads(r.read().decode("utf-8"))
@@ -53,6 +67,8 @@ class RiotAPI:
                 except Exception:
                     detail = raw.decode("utf-8", "replace").strip()[:120]
                 where = path.split("?")[0]
+                if self.proxy and e.code == 401:
+                    raise RiotKeyError("Nicht angemeldet oder Sitzung abgelaufen – bitte in den Einstellungen neu anmelden.")
                 if e.code in (401, 403):
                     raise RiotKeyError(f"Riot lehnt den API Key ab ({e.code}{': ' + detail if detail else ''}). "
                                        "Dev-Keys laufen nach 24 h ab und werden ungültig, sobald du auf "

@@ -6,22 +6,35 @@ import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import urllib.error
 import urllib.parse
+import urllib.request
 
-from . import champselect, deep, live, meta, meta_cloud, minimap, profile, ranked, recorder, review
+from . import champselect, deep, live, meta, meta_cloud, profile, ranked, recorder, review
 from .ddragon import GameData
 from .lcu import LCU
 
 from .paths import DATA_DIR as ROOT, STATIC
 
-STATE = {"phase": "Startet…", "champ_select": None, "live": None, "review": None, "error": None,
-         "minimap": {"on": False, "status": "aus", "data": None}}
-TRACKER = {"obj": None}
+STATE = {"phase": "Startet…", "champ_select": None, "live": None, "review": None, "error": None}
 REC = {"obj": None}
 META = {"stats": None, "crawler": None}
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
 EDITABLE = ["riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
+
+
+def riot_cred(cfg):
+    """Own developer key if set, otherwise the logged-in session via the Jungle Coach server."""
+    key = (cfg.get("riot_api_key") or "").strip()
+    if key.startswith("RGAPI-") and "xxxx" not in key:
+        return key
+    if cfg.get("auth_token") and cfg.get("server_url"):
+        return f"jc:{cfg['auth_token']}@{cfg['server_url']}"
+    return None
+
+
+NO_CRED = "Bitte zuerst in den Einstellungen anmelden (Discord oder Google)."
 
 
 def save_config(cfg):
@@ -81,7 +94,6 @@ def poll_loop(gd, cfg, lcu):
                 last_rank = time.time()
                 ranked.snapshot(lcu)
             data = live.fetch()
-            mm_status, mm_data = "aus", None
             if data:
                 presets = dict(cfg.get("champion_presets", {}))
                 with LOCK:
@@ -92,19 +104,6 @@ def poll_loop(gd, cfg, lcu):
                         presets[cid["id"]] = {"core": [gd.items[c["id"]]["name"] for c in last_cs["build"]["core"]
                                                        if c["id"] in gd.items]}
                 live_state = live.analyze(gd, data, cfg.get("timers"), presets.get)
-            with LOCK:
-                mm_on = STATE["minimap"]["on"]
-            if mm_on:
-                if not live_state:
-                    mm_status = "wartet auf Spiel"
-                elif not minimap.is_custom_game(lcu):
-                    mm_status = "gesperrt – nur in Custom Games aktiv"
-                else:
-                    tr = TRACKER["obj"] = TRACKER["obj"] or minimap.MinimapTracker(gd, cfg)
-                    team = live_state["_team_id"]
-                    mm_data = tr.update(data, live_state["_t"], live_state["_enemy_targets"],
-                                        lambda x, y: review.region(x, y, team))
-                    mm_status = "aktiv"
             # ---- automatic recording + mistake clips
             rec = REC["obj"] = REC["obj"] or recorder.Recorder(cfg)
             if live_state and not rec.active and rec.cfg["enabled"]:
@@ -113,9 +112,6 @@ def poll_loop(gd, cfg, lcu):
                 rec.note(live_state["mistakes"], {"champion": live_state["me"]})
             if not live_state and rec.active:
                 threading.Thread(target=rec.stop, daemon=True).start()  # cutting clips takes a moment
-            if not live_state and TRACKER["obj"] and TRACKER["obj"].sightings:
-                TRACKER["obj"].save_session()
-                TRACKER["obj"].reset()
             with LOCK:
                 STATE["phase"] = "InGame" if live_state else (phase or "Client nicht gefunden")
                 if cs:
@@ -123,7 +119,6 @@ def poll_loop(gd, cfg, lcu):
                 elif phase not in ("ChampSelect", "GameStart", "InProgress") and not live_state:
                     STATE["champ_select"] = None  # keep last champ select visible during the game
                 STATE["live"] = live_state
-                STATE["minimap"]["status"], STATE["minimap"]["data"] = mm_status, mm_data
                 STATE["recording"] = rec.active
                 STATE["error"] = None
         except Exception as e:  # keep running, show error in UI
@@ -164,15 +159,15 @@ def make_handler(gd, cfg, lcu):
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()
-                if not cfg.get("riot_api_key") or "xxxx" in cfg["riot_api_key"]:
-                    return self._send(400, {"error": "Riot API Key fehlt – trag ihn in den Einstellungen ein."})
+                if not riot_cred(cfg):
+                    return self._send(400, {"error": NO_CRED})
                 if "#" not in rid:
                     return self._send(400, {"error": "Riot ID im Format Name#TAG eingeben."})
                 queue = (q.get("queue") or ["all"])[0]
                 if q.get("all"):
-                    profile.load_all(cfg["riot_api_key"], cfg.get("platform", "euw1"), rid, gd, queue)
+                    profile.load_all(riot_cred(cfg), cfg.get("platform", "euw1"), rid, gd, queue)
                 try:
-                    prof = profile.fetch(cfg["riot_api_key"], cfg.get("platform", "euw1"), rid, gd,
+                    prof = profile.fetch(riot_cred(cfg), cfg.get("platform", "euw1"), rid, gd,
                                          int(cfg.get("profile_games", 20)), queue, more=bool(q.get("more")))
                 except review.RiotNotFound:
                     return self._send(404, {"error": f"Spieler „{rid}“ nicht gefunden. Riot ID genau wie im Client "
@@ -189,10 +184,49 @@ def make_handler(gd, cfg, lcu):
                 res = {k: v for k, v in prof.items() if not k.startswith("_")}
                 res["load_all"] = profile.LOAD_ALL.get((rid.lower(), queue if queue in profile.FILTERS else "all"))
                 return self._send(200, res)
+            if self.path.startswith("/api/login"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                prov = (q.get("provider") or ["discord"])[0]
+                if prov not in ("discord", "google") or not cfg.get("server_url"):
+                    return self._send(400, {"error": "Anmeldung ist noch nicht eingerichtet."})
+                port = cfg.get("port", 8765)
+                cb = urllib.parse.quote(f"http://localhost:{port}/auth/callback", safe="")
+                import webbrowser
+                webbrowser.open(f"{cfg['server_url'].rstrip('/')}/auth/{prov}?redirect={cb}")
+                return self._send(200, {"ok": True})
+            if self.path.startswith("/auth/callback"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                tok = (q.get("token") or [""])[0]
+                if tok.count(".") == 2:
+                    cfg["auth_token"] = tok
+                    save_config(cfg)
+                    profile._mem.clear()
+                    body = "<h1>Angemeldet ✓</h1><p>Du kannst dieses Fenster schließen und zu Jungle Coach zurückkehren.</p>"
+                else:
+                    body = "<h1>Anmeldung fehlgeschlagen</h1><p>Bitte in der App erneut versuchen.</p>"
+                html = ("<!doctype html><meta charset=utf-8><title>Jungle Coach</title><body style='font:16px -apple-system,"
+                        "Segoe UI,sans-serif;text-align:center;padding:80px;background:#f5f5f7'>" + body)
+                return self._send(200, html.encode("utf-8"), "text/html")
+            if self.path == "/api/account":
+                if not cfg.get("auth_token") or not cfg.get("server_url"):
+                    return self._send(200, {"logged_in": False, "server": bool(cfg.get("server_url"))})
+                try:
+                    req = urllib.request.Request(cfg["server_url"].rstrip("/") + "/api/me",
+                                                 headers={"Authorization": "Bearer " + cfg["auth_token"]})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        me = json.loads(r.read().decode("utf-8"))
+                    return self._send(200, {"logged_in": True, "server": True, **me})
+                except urllib.error.HTTPError as e:
+                    if e.code == 401:
+                        cfg.pop("auth_token", None)
+                        save_config(cfg)
+                    return self._send(200, {"logged_in": False, "server": True, "error": f"Sitzung ungültig ({e.code})"})
+                except Exception:
+                    return self._send(200, {"logged_in": True, "server": True, "offline": True})
             if self.path.startswith("/api/match"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 try:
-                    det = profile.match_detail(cfg["riot_api_key"], cfg.get("platform", "euw1"),
+                    det = profile.match_detail(riot_cred(cfg), cfg.get("platform", "euw1"),
                                                q["id"][0], (q.get("puuid") or [""])[0], gd)
                     return self._send(200, det)
                 except Exception as e:
@@ -236,6 +270,7 @@ def make_handler(gd, cfg, lcu):
                 key = safe.get("riot_api_key") or ""
                 safe["riot_api_key_set"] = key.startswith("RGAPI-") and "xxxx" not in key
                 safe["riot_api_key"] = ""
+                safe["server_url"] = cfg.get("server_url", "")
                 return self._send(200, safe)
             if self.path == "/api/sessions":
                 return self._send(200, recorder.list_sessions())
@@ -247,21 +282,13 @@ def make_handler(gd, cfg, lcu):
                         with open(fp, "rb") as f:
                             return self._send(200, f.read(), "video/mp4")
                 return self._send(404, {"error": "Clip nicht gefunden"})
-            if self.path == "/api/minimap-debug":
-                try:
-                    import cv2
-                    tr = TRACKER["obj"] or minimap.MinimapTracker(gd, cfg)
-                    ok, png = cv2.imencode(".png", tr.grab())
-                    return self._send(200, png.tobytes(), "image/png")
-                except Exception as e:
-                    return self._send(500, {"error": f"Screenshot fehlgeschlagen: {e}"})
             if self.path.startswith("/api/review"):
-                if not cfg.get("riot_api_key") or "xxxx" in cfg["riot_api_key"]:
-                    return self._send(400, {"error": "Riot API Key fehlt – trag ihn in den Einstellungen ein."})
+                if not riot_cred(cfg):
+                    return self._send(400, {"error": NO_CRED})
                 if "#" not in cfg.get("riot_id", ""):
                     return self._send(400, {"error": "Riot ID fehlt – trag sie in den Einstellungen ein (Name#TAG)."})
                 try:
-                    res = review.run(cfg["riot_api_key"], cfg.get("platform", "euw1"), cfg["riot_id"],
+                    res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), cfg["riot_id"],
                                      cfg.get("review_games", 20))
                     attach_clips(res["games"], recorder.list_sessions())
                     with open(REVIEW_CACHE, "w", encoding="utf-8") as f:
@@ -275,7 +302,7 @@ def make_handler(gd, cfg, lcu):
 
         def _test_key(self, new_key):
             steps = []
-            key = (new_key or cfg.get("riot_api_key", "")).strip()
+            key = (new_key or riot_cred(cfg) or "").strip()
             api = review.RiotAPI(key, cfg.get("platform", "euw1"))
             try:
                 api.get_platform("/lol/status/v4/platform-data")
@@ -304,6 +331,18 @@ def make_handler(gd, cfg, lcu):
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
         def do_POST(self):
+            if self.path in ("/api/logout", "/api/delete-account"):
+                if self.path == "/api/delete-account" and cfg.get("auth_token"):
+                    try:
+                        req = urllib.request.Request(cfg["server_url"].rstrip("/") + "/api/me", method="DELETE",
+                                                     headers={"Authorization": "Bearer " + cfg["auth_token"]})
+                        urllib.request.urlopen(req, timeout=10).read()
+                    except Exception as e:
+                        return self._send(500, {"error": f"Konto konnte nicht gelöscht werden: {e}"})
+                cfg.pop("auth_token", None)
+                save_config(cfg)
+                profile._mem.clear()
+                return self._send(200, {"ok": True})
             if self.path == "/api/test-key":
                 return self._test_key(self._body().get("riot_api_key"))
             if self.path == "/api/config":
@@ -316,8 +355,8 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 return self._send(200, {"ok": True})
             if self.path == "/api/meta/crawl":
-                if not cfg.get("riot_api_key") or "xxxx" in cfg["riot_api_key"]:
-                    return self._send(400, {"error": "Erst Riot API Key in den Einstellungen eintragen."})
+                if not (cfg.get("riot_api_key") or "").startswith("RGAPI-"):
+                    return self._send(400, {"error": "Die Daten kommen automatisch aus der Cloud-Datenbank. Eigenes Sammeln nur mit eigenem Entwickler-Key."})
                 cr = META["crawler"] = META["crawler"] or meta.Crawler(cfg)
                 if cr.state["running"]:
                     cr.stop()
@@ -326,10 +365,6 @@ def make_handler(gd, cfg, lcu):
                 cr.start()
                 META["stats"] = None  # reopen after new data
                 return self._send(200, {"running": True})
-            if self.path == "/api/minimap-toggle":
-                with LOCK:
-                    STATE["minimap"]["on"] = not STATE["minimap"]["on"]
-                    return self._send(200, {"on": STATE["minimap"]["on"]})
             if self.path == "/api/apply-runes":
                 with LOCK:
                     cs = STATE.get("champ_select")

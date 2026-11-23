@@ -9,7 +9,7 @@ Lokales Tool für Jungler: Champ-Select-Analyse, Runen und Build gegen das Gegne
 |---|---|
 | **Ranked** | Rang, LP-Verlauf, LP heute/7 Tage, Serie, Ø LP pro Sieg/Niederlage, was besser werden muss (Trend), schlechteste Matchups |
 | **Champ Select** | Gegnerteam-Analyse, Pick-Empfehlung, Runen + Build – automatisch gesetzt und bei jedem neuen Gegner-Pick neu berechnet |
-| **Live** | Live-Build, Gegner-Jungler-Infos, Objectives, Fehler-Liste, Minimap-Tracker (nur Custom) |
+| **Live** | Live-Build, Gegner-Jungler-Infos, Objectives, Fehler-Liste |
 | **Analyse** | Deep-Analyse, Fehler-Clips |
 | **Meta** | Datensammlung, Meta-Builds, Geheimtipps, Tierlist |
 | **Einstellungen** | Riot ID, API Key, Champion-Pool, Elo für Statistiken, Auto-Runen |
@@ -40,6 +40,9 @@ Hinweise:
 - Das App-Fenster braucht die Microsoft-WebView2-Runtime (bei Windows 10/11 meist vorinstalliert).
 - Zum schnellen Testen ohne Installation: `Ohne Installation starten.bat`.
 
+## Konto & Server
+Anmeldung mit Discord oder Google; alle Riot-Daten laufen über den Jungle-Coach-Server (Cloudflare Worker in `server/`), der Riot-Key liegt nur dort. Einrichtung: `server/SETUP.md`. Website mit Datenschutz, Impressum und Nutzungsbedingungen: `server/public/`.
+
 ## Profil – ohne League
 Startseite der App: Rang (Solo/Flex), Level, Mastery, Match-History mit Items, Champion- und Rollen-Statistik – direkt über die Riot API, League muss nicht laufen. Andere Spieler per Riot ID suchbar (z. B. deine Schüler). Dein eigener Rang füttert dabei auch den LP-Tracker.
 
@@ -59,13 +62,6 @@ Tipp: Dashboard auf zweitem Monitor. Mit `"allow_phone": true` auch vom Handy im
 | Champ Select | Gegner-Comp (AD/AP, Tanks, Heiler, CC), Gegner-Jungler-Profil (Early/Scaling), Pick-Empfehlung aus deinem Pool, Runen + Build + Jungle-Pet. Button „Runen in Client übernehmen“ (legt Seite „JC …“ an, löscht nie deine eigenen Seiten). |
 | Im Spiel | Build passt sich an Gegner-Items an (Rüstung/MR-Stacking → Pen, Fed-Gegner → Defensive, Heilung → Anti-Heal), Gegner-Jungler: Level, Items, zuletzt im Killfeed gesehen (welche Lane), Gank-Warnungen, Objective-Respawns, CS/min. |
 | Review | Letzte X Ranked-Jungle-Games: Early-Seite (Vorhersehbarkeit), Gold-Diff @10 vs Gegner-Jungler, Jungle-CS @5, Ganks pro Lane, Objectives vor Min 20, konkrete Tipps. |
-
-## Minimap-Tracker (Coaching, nur Custom Games)
-- Live-Tab → „Einschalten“ / „Ausschalten“. Standard: aus.
-- Erkennt per Screenshot die Icons der Gegner auf der Minimap (Template-Matching mit den offiziellen Champion-Portraits, rote Umrandung = Gegner). Kein Zugriff auf Spielspeicher.
-- **Fest gesperrt außerhalb von Custom Games** – in Ranked/Normals zeigt er nur „gesperrt“.
-- Zeigt im Dashboard und im Overlay, wo der Gegner-Jungler zuletzt gesehen wurde; alle Sichtungen werden nach dem Spiel in `sessions/` gespeichert.
-- Kalibrierung: „Minimap-Ausschnitt prüfen“ zeigt den erfassten Bereich. Passt er nicht, in `config.json` → `minimap_tracker` `x`, `y`, `size` (Pixel) setzen. Erkennt er Icons nicht oder falsch: `icon_ratio` (Icon-Größe relativ zur Minimap) bzw. `threshold` anpassen.
 
 ## Aufnahme & Fehler-Clips
 - Jedes Spiel wird automatisch aufgenommen (Bildschirmaufnahme wie Outplayed/Insights Capture, „● REC“ oben).

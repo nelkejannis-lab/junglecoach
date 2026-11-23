@@ -26,7 +26,7 @@ rem 3) App bauen (Ordner-Variante: startet schneller, weniger Virenscanner-Fehla
 echo [3/4] Baue App...
 python -m PyInstaller --noconfirm --clean --windowed --name JungleCoach --icon assets\icon.ico ^
   --add-data "jc\static;jc\static" --add-data "config.json;." ^
-  --collect-all webview --collect-all imageio_ffmpeg --hidden-import cv2 --hidden-import mss run_app.py
+  --collect-all webview --collect-all imageio_ffmpeg run_app.py
 if errorlevel 1 ( echo Fehler beim Bauen der App. & pause & exit /b 1 )
 
 rem 4) Installer bauen (Inno Setup)

@@ -113,6 +113,7 @@ const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
+  if (v === "settings") loadAccount();
   if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") loadMeta(); if (v === "settings") loadCfg(); if (v === "analyse") loadSessions();
   render();
 }
@@ -164,8 +165,9 @@ function renderProfile() {
     <button class="btn" onclick="searchProfile()">Suchen</button>${own && profQuery && profQuery !== own ? `<button class="btn sec" onclick="profQuery='';loadProfile()">Mein Profil</button>` : ""}</div>`;
   const sub = "Dein Profil und deine Games – direkt von Riot, ohne dass League laufen muss. Du kannst auch andere Spieler suchen.";
   if (profLoading && !profData) return page("Profil", sub, search + card("", "", empty("⏳", "Lade Profil…", "Rang, Mastery und die letzten Games werden geholt."), true));
-  if (profErr && !profData) return page("Profil", sub, search + card("", "", empty("👋", profErr.includes("fehlt") ? "Willkommen bei Jungle Coach" : "Profil nicht geladen",
-    `<p>${esc(profErr)}</p>${profErr.includes("fehlt") ? `<p class="small">1. Riot ID eintragen · 2. kostenlosen API Key holen · 3. Champion-Pool wählen</p><button class="btn" onclick="go('settings')">Einrichtung starten</button>` : ""}`), true));
+  const setup = /anmelden|Riot ID/.test(profErr);
+  if (profErr && !profData) return page("Profil", sub, search + card("", "", empty("👋", setup ? "Willkommen bei Jungle Coach" : "Profil nicht geladen",
+    `<p>${esc(profErr)}</p>${setup ? `<p class="small">1. Mit Discord oder Google anmelden · 2. Riot ID eintragen (Name#TAG)</p><button class="btn" onclick="go('settings')">Einrichtung starten</button>` : ""}`), true));
   if (!profData) return page("Profil", sub, search);
   const p = profData, rc = p.recent;
   const filters = [["all", "Alle"], ["solo", "Solo/Duo"], ["flex", "Flex"], ["ranked", "Ranked gesamt"], ["normal", "Normal"], ["aram", "ARAM"], ["arena", "Arena"]];
@@ -352,19 +354,10 @@ function renderSelect() {
 }
 
 // ------------------------------------------------------------ LIVE
-function trackerCard() {
-  const mm = state.minimap || {}, d = mm.data || {}, seen = d.last_seen || [];
-  return card("Minimap-Tracker", "Nur für Custom Games (Coaching). In Ranked/Normals automatisch gesperrt.",
-    `<div class="row" style="border:0"><span>Status: <b class="${mm.status === "aktiv" ? "green" : "muted"}">${esc(mm.status || "aus")}</b></span>
-      <button class="btn ${mm.on ? "sec" : ""}" onclick="toggleTracker()">${mm.on ? "Ausschalten" : "Einschalten"}</button></div>
-     ${mm.on && mm.status === "aktiv" ? `<div class="two"><div>${mapSvg(seen.map(x => dot(x.x, x.y, x.visible ? "#ff453a" : "#ff9f0a", x.champion + (x.visible ? "" : " " + x.seen))))}</div>
-       <div>${list(seen, x => `<li class="${x.visible ? "red" : "orange"}">${esc(x.champion)}: ${esc(x.area)} – ${x.visible ? "jetzt sichtbar" : "vor " + esc(x.ago)}</li>`)}</div></div>` : ""}
-     <p class="small muted"><a href="/api/minimap-debug" target="_blank">Erfassten Minimap-Ausschnitt prüfen</a></p>`, true);
-}
 function renderLive() {
   const l = state.live;
   if (!l) return page("Live", "Hilfe während des Spiels. Tipp: Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J).",
-    card("", "", empty("🎮", "Kein laufendes Spiel", "Sobald du im Spiel bist, erscheinen hier Build-Anpassungen, Gegner-Jungler-Infos und Objective-Timer."), true) + trackerCard());
+    card("", "", empty("🎮", "Kein laufendes Spiel", "Sobald du im Spiel bist, erscheinen hier Build-Anpassungen, Gegner-Jungler-Infos und Objective-Timer."), true));
   const ej = l.enemy_jungler || {};
   let h = card("", "", `<div class="muted small">Spielzeit</div><div class="huge">${esc(l.game_time)}</div><div class="big" style="font-size:20px">${esc(l.me)}</div>
     <div class="stats"><div class="stat"><b class="${l.cs_per_min >= 6 ? "green" : "orange"}">${l.cs_per_min}</b><span>CS / Min</span></div>
@@ -377,7 +370,7 @@ function renderLive() {
   h += card("Build – live angepasst", "Passt sich an die Items und den Spielstand der Gegner an.", buildList(l.build) +
     (l.enemy.fed.length ? `<p class="red small">Gefüttert: ${l.enemy.fed.map(f => esc(f.name + " " + f.kda)).join(", ")}</p>` : ""));
   h += card("Fehler bisher", "Werden nach dem Spiel automatisch als Clip gespeichert.", list(l.mistakes, m => `<li><b>${esc(m.time)}</b> ${esc(m.title)}<div class="muted small">${esc(m.why)}</div></li>`));
-  return page("Live", "Hilfe während des Spiels. Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J ein/aus).", h + trackerCard());
+  return page("Live", "Hilfe während des Spiels. Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J ein/aus).", h);
 }
 
 // ------------------------------------------------------------ ANALYSE
@@ -473,14 +466,16 @@ function renderSettings() {
   if (!c) return page("Einstellungen", "Lade…", "");
   const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
   return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
-    card("Dein Account", "Für Analyse, LP-Abgleich und Meta-Daten.", `
+    accountCard() +
+    card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
-      <label class="f">Riot API Key ${c.riot_api_key_set ? '<span class="badge team">gespeichert</span>' : '<span class="badge">fehlt</span>'}</label>
+      <details style="margin-top:14px"><summary class="small muted" style="cursor:pointer">Entwickler: eigener Riot API Key (optional)</summary>
+      <label class="f">Riot API Key ${c.riot_api_key_set ? '<span class="badge team">gespeichert</span>' : '<span class="badge">nicht gesetzt</span>'}</label>
       <input class="f" id="s_key" type="password" placeholder="${c.riot_api_key_set ? "Neuen Key eingeben, um zu ersetzen" : "RGAPI-…"}">
       <div class="row" style="border:0"><button class="btn sec" onclick="testKey()">Key testen &amp; speichern</button></div>
       <div class="small">${(msg.test || []).map(s => `<div class="${s.ok ? "green" : "red"}">${s.ok ? "✓" : "✕"} ${esc(s.text)}</div>`).join("")}</div>
-      <p class="small muted">Kostenlos auf <a href="https://developer.riotgames.com" target="_blank">developer.riotgames.com</a>. Dev-Keys laufen nach 24 h ab – für Dauerbetrieb einen Personal Key beantragen.</p>`) +
+      <p class="small muted">Nur nötig, wenn du ohne Konto direkt mit eigenem Key arbeiten willst. Normale Nutzer melden sich einfach oben an.</p></details>`) +
     card("Champions & Empfehlungen", "", `
       <label class="f">Dein Champion-Pool</label><input class="f" id="s_pool" value="${esc((c.champion_pool || []).join(", "))}" placeholder="LeeSin, Viego, Amumu">
       <p class="small muted">Komma-getrennt, Schreibweise wie im Spiel ohne Leerzeichen (Wukong = MonkeyKing).</p>
@@ -489,11 +484,46 @@ function renderSettings() {
       <div class="switch"><span>Runen automatisch setzen<div class="small muted">Bei jedem neuen Gegner-Pick, final wenn alle 5 drin sind.</div></span><input type="checkbox" id="s_auto" ${c.auto_import_runes !== false ? "checked" : ""}></div>
       <label class="f">Games im Profil</label><input class="f" id="s_pgames" type="number" min="5" max="50" value="${c.profile_games || 20}">
       <label class="f">Games pro Analyse</label><input class="f" id="s_games" type="number" min="5" max="50" value="${c.review_games || 20}">`) +
+    card("Rechtliches", "", `<ul class="clean small">
+      <li><a href="${serverUrl()}/datenschutz.html" target="_blank">Datenschutzerklärung</a></li>
+      <li><a href="${serverUrl()}/impressum.html" target="_blank">Impressum</a></li>
+      <li><a href="${serverUrl()}/nutzungsbedingungen.html" target="_blank">Nutzungsbedingungen</a></li></ul>
+      <p class="small muted">Jungle Coach isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.</p>`) +
     card("Kurzbefehle & Infos", "", `<ul class="clean small">
       <li><b>Ctrl+Shift+J</b> Overlay ein/aus</li><li><b>Ctrl+Shift+K</b> Overlay verschieben</li>
       <li>League auf <b>Randlos</b> stellen, damit das Overlay sichtbar ist.</li>
       <li>Aufnahmen: nur die letzten 3 Games werden behalten.</li></ul>`) +
     `<div class="card wide" style="display:flex;justify-content:flex-end;gap:12px;align-items:center"><span class="small muted">${esc(msg.cfg || "")}</span><button class="btn" onclick="saveCfg()">Sichern</button></div>`);
+}
+
+// ------------------------------------------------------------ account
+let accData = null;
+const serverUrl = () => ((cfgData || {}).server_url || "").replace(/\/$/, "");
+function accountCard() {
+  const a = accData;
+  if (!a) return card("Konto", "", '<span class="muted small">Lade…</span>');
+  if (!a.server) return card("Konto", "", '<span class="muted small">Die Anmeldung wird gerade eingerichtet. Bis dahin funktioniert die App mit eigenem Entwickler-Key (unten).</span>');
+  if (!a.logged_in) return card("Konto", "Melde dich an, damit die App Profil, Match-History und Analysen laden kann. Gespeichert werden nur deine Nutzer-ID und dein Anzeigename – keine E-Mail, kein Passwort.",
+    `<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" style="background:#5865F2" onclick="login('discord')">Mit Discord anmelden</button>
+     <button class="btn sec" onclick="login('google')">Mit Google anmelden</button></div>
+     <p class="small muted">Der Browser öffnet sich zur Anmeldung. Danach einfach hierher zurückkehren. ${a.error ? esc(a.error) : ""}</p>
+     <p class="small muted">Mit der Anmeldung akzeptierst du die <a href="${serverUrl()}/nutzungsbedingungen.html" target="_blank">Nutzungsbedingungen</a> und hast die <a href="${serverUrl()}/datenschutz.html" target="_blank">Datenschutzerklärung</a> gelesen.</p>`);
+  return card("Konto", "", `<div class="row" style="border:0"><span>Angemeldet als <b>${esc(a.name || "–")}</b> <span class="badge">${esc(a.provider || "")}</span>${a.offline ? ' <span class="badge">offline</span>' : ""}</span>
+     <button class="btn sec" onclick="logout()">Abmelden</button></div>
+     <details><summary class="small red" style="cursor:pointer">Konto löschen</summary>
+     <p class="small">Löscht dein Konto und alle dazu gespeicherten Daten sofort und endgültig. Lokale Daten auf deinem PC (Einstellungen, Clips) bleiben, bis du die App deinstallierst.</p>
+     <button class="btn" style="background:var(--red)" onclick="deleteAccount()">Konto endgültig löschen</button></details>`);
+}
+async function loadAccount() { try { accData = await getJson("/api/account"); } catch (e) { accData = {server: false}; } if (view === "settings") render(); }
+async function login(p) {
+  const r = await getJson("/api/login?provider=" + p);
+  if (r.error) { alertMsg(r.error); return; }
+  let n = 0; const t = setInterval(async () => { n++; await loadAccount(); if ((accData && accData.logged_in) || n > 60) { clearInterval(t); if (accData.logged_in) { profData = null; profErr = ""; } } }, 3000);
+}
+async function logout() { await fetch("/api/logout", {method: "POST"}); profData = null; await loadAccount(); }
+async function deleteAccount() {
+  const r = await (await fetch("/api/delete-account", {method: "POST"})).json();
+  if (r.error) alertMsg(r.error); profData = null; await loadAccount();
 }
 
 // ------------------------------------------------------------ render + data
@@ -521,7 +551,6 @@ async function loadMeta() { try { metaData = await getJson("/api/meta"); if (vie
 async function loadCfg() { try { cfgData = await getJson("/api/config"); if (view === "settings") render(); } catch (e) {} }
 async function loadSessions() { try { const s = await getJson("/api/sessions"); if (JSON.stringify(s) !== JSON.stringify(sessions)) { sessions = s; if (view === "analyse") render(); } } catch (e) {} }
 async function applyRunes() { const r = await (await fetch("/api/apply-runes", {method: "POST"})).json(); msg.runes = r.error || "Runen gesetzt ✓"; render(); }
-async function toggleTracker() { await fetch("/api/minimap-toggle", {method: "POST"}); lastJson = ""; tick(); }
 async function crawl() { const r = await (await fetch("/api/meta/crawl", {method: "POST"})).json(); if (r.error) alertMsg(r.error); loadMeta(); }
 function alertMsg(t) { state.error = t; render(); }
 async function loadReview() {

@@ -24,7 +24,7 @@ jobs:
       - run: >
           python -m PyInstaller --noconfirm --clean --windowed --name JungleCoach --icon assets\icon.ico
           --add-data "jc\static;jc\static" --add-data "config.json;."
-          --collect-all webview --collect-all imageio_ffmpeg --hidden-import cv2 --hidden-import mss run_app.py
+          --collect-all webview --collect-all imageio_ffmpeg run_app.py
       - name: Inno Setup
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
