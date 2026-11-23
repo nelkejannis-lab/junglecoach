@@ -712,5 +712,16 @@ window.I18N_EN = {
 "Alternativen pro Schritt": "Alternatives per step",
 "Danach häufig": "Common afterwards",
 "Kein Account": "No account",
-"Rolle wählen": "Choose role"
+"Rolle wählen": "Choose role",
+"In-Game-Overlay": "In-game overlay",
+"Anzeigen": "Show",
+"Immer sichtbar": "Always visible",
+"Nur solange Tab gedrückt": "Only while Tab is held",
+"Hintergrund-Deckkraft": "Background opacity",
+"Position": "Position",
+"Position verschieben": "Move position",
+"Fertig – Position speichern": "Done – save position",
+"Auch im Spiel mit Strg+Shift+K.": "In game also with Ctrl+Shift+K.",
+"Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen.": "The overlay can be moved now – drag it with the mouse.",
+"Wann es erscheint, wo es steht und wie durchsichtig es ist. Strg+Shift+J blendet es im Spiel ein/aus.": "When it shows, where it sits and how transparent it is. Ctrl+Shift+J shows/hides it in game."
 };

@@ -20,6 +20,8 @@ STATE = {"phase": "Startet…", "champ_select": None, "live": None, "review": No
 REC = {"obj": None}
 META = {"stats": None, "crawler": None}
 BUILD_CACHE = {}
+GPM_BENCH = {}
+OVERLAY = {"move": False}  # move mode requested from the app (settings button)
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
 EDITABLE = ["language", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
@@ -354,8 +356,20 @@ def poll_loop(gd, cfg, lcu):
                         f = (plan.get("focus") or [None])[0]
                         focus = {"title": f["title"], "target": f["target"]} if f else None
                         step = ((last_cs.get("gameplan") or {}).get("steps") or [None])[0]
+                        role = cfg.get("main_role") or "JUNGLE"
+                        key = (live_state.get("_me_id"), role)
+                        if key not in GPM_BENCH:
+                            GPM_BENCH[key] = None
+                            try:
+                                ms = meta_stats(gd)
+                                b = ms.benchmarks(key[0], role, current_bracket(cfg)) if ms and key[0] else None
+                                g = (b or {}).get("dist", {}).get("gpm")
+                                if g:
+                                    GPM_BENCH[key] = {"p25": meta.quantile(g, 0.25), "p50": meta.quantile(g, 0.5)}
+                            except Exception:  # noqa: BLE001
+                                pass
                         live_state["hud"] = hud.build(live_state, gd, live_state.get("_gold"), live_state.get("_owned") or [],
-                                                      focus, step)
+                                                      focus, step, GPM_BENCH.get(key), role)
                     except Exception as e:  # noqa: BLE001
                         live_state["hud"] = {"error": str(e)}
             # ---- automatic recording + mistake clips
@@ -484,7 +498,10 @@ def make_handler(gd, cfg, lcu):
                 with LOCK:
                     lv = STATE.get("live")
                     small = {"hud": lv.get("hud"), "game_time": lv.get("game_time"), "cs_per_min": lv.get("cs_per_min")} if lv else None
-                return self._send(200, {"live": small, "lang": i18n.LANG["code"]})
+                oc = cfg.get("overlay", {})
+                return self._send(200, {"live": small, "lang": i18n.LANG["code"],
+                                        "ov": {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
+                                               "move": OVERLAY["move"]}})
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()
@@ -737,6 +754,20 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
                 return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
+            if self.path == "/api/overlay-settings":
+                b = self._body()
+                oc = cfg.setdefault("overlay", {})
+                if b.get("mode") in ("always", "tab"):
+                    oc["mode"] = b["mode"]
+                if isinstance(b.get("opacity"), (int, float)):
+                    oc["bg_opacity"] = max(0.2, min(1.0, float(b["opacity"])))
+                if isinstance(b.get("x"), int) and isinstance(b.get("y"), int):
+                    oc["x"], oc["y"], oc["abs"] = b["x"], b["y"], True
+                if "move" in b:
+                    OVERLAY["move"] = bool(b["move"])
+                save_config(cfg)
+                return self._send(200, {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
+                                        "move": OVERLAY["move"]})
             if self.path == "/api/clip-feedback":
                 b = self._body()
                 ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))

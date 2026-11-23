@@ -16,10 +16,10 @@ KEY = "#010203"  # transparent key colour for the rounded corners
 
 L = {"de": {"now": "JETZT", "item": "Nächstes Item", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
             "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
-            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "itemg": "Item-Wert", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
+            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "gpm": "Gold/min", "r_good": "gut", "r_bad": "niedrig", "itemg": "Item-Wert", "move": "Mit der Maus ziehen – Strg+Shift+K oder „Fertig“ in der App speichert die Position"},
      "en": {"now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
             "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
-            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "itemg": "item value", "move": "Move overlay – Ctrl+Shift+K to lock"}}
+            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "gpm": "Gold/min", "r_good": "good", "r_bad": "low", "itemg": "item value", "move": "Drag with the mouse – Ctrl+Shift+K or “Done” in the app saves the position"}}
 
 
 def layout(state):
@@ -87,6 +87,7 @@ def model(state):
         "focus": f"{h['focus']['title']} · {h['focus']['target']}" if h.get("focus") else None,
         "mood": (now or {}).get("tone") or "calm",
         "diff": h.get("gold_diff"),
+        "gpm": h.get("gpm"),
         "focus_t": (h.get("focus") or {}).get("title"),
         "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
@@ -219,7 +220,10 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
     _monster_pil(d, pad + 5 * k, y + 5 * k, av - 10 * k, m["mood"])
     tx = pad + av + 10 * k
     x = Wp - pad
-    for val, cap, col in ((f"{m['gold']:,}".replace(",", ".") if m["gold"] is not None else "–", "Gold", A_YELLOW),
+    gp = m.get("gpm") or {}
+    gcol = {"good": A_GREEN, "ok": A_ORANGE, "bad": A_RED}.get(gp.get("rate"), "#ebebf5")
+    gcap = "GPM" + ({"good": " " + m["t"]["r_good"], "ok": " ok", "bad": " " + m["t"]["r_bad"]}.get(gp.get("rate"), ""))  # word, not only colour
+    for val, cap, col in ((str(gp["value"]) if gp.get("value") is not None else "–", gcap, gcol),
                           (str(m["cs"]), "CS/min", A_GREEN if m["cs_ok"] else A_ORANGE)):
         wv = max(d.textlength(val, font=F["val"]), d.textlength(cap, font=F["cap"]))
         d.text((x, y), val, font=F["val"], fill=_rgb(col), anchor="ra")
@@ -450,12 +454,52 @@ def run(url, cfg):
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     sw = root.winfo_screenwidth()
-    pos = {"x": ocfg["x"] if ocfg["x"] >= 0 else sw + int(ocfg["x"] * scale), "y": int(ocfg["y"] * scale)}
+    if ocfg.get("abs"):  # saved by dragging (physical pixels)
+        pos = {"x": int(ocfg["x"]), "y": int(ocfg["y"])}
+    else:
+        pos = {"x": ocfg["x"] if ocfg["x"] >= 0 else sw + int(ocfg["x"] * scale), "y": int(ocfg["y"] * scale)}
     root.geometry(f"{int(W * scale)}x60+{pos['x']}+{pos['y']}")
     label = None if win else tk.Label(root, bd=0, bg=BG)
     if label:
         label.pack()
-    st = {"visible": True, "move": False, "drag": (0, 0), "shown": False, "last": None, "img": None}
+    st = {"visible": True, "move": False, "drag": (0, 0), "shown": False, "last": None, "img": None,
+          "mode": ocfg.get("mode", "always"), "opacity": ocfg["bg_opacity"], "has": False}
+
+    def save_pos():
+        try:
+            req = urllib.request.Request(url + "/api/overlay-settings", method="POST",
+                                         data=json.dumps({"x": pos["x"], "y": pos["y"], "move": False}).encode(),
+                                         headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2).read()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def set_move(on):
+        if on == st["move"]:
+            return
+        st["move"] = on
+        if win:
+            _set_clickthrough(hwnd, not on)
+        st["last"] = None
+        if not on:
+            st["srv_move"] = False
+            save_pos()
+
+    def apply_visibility():
+        tab = False
+        if win and st["mode"] == "tab":
+            tab = bool(ctypes.windll.user32.GetAsyncKeyState(0x09) & 0x8000)  # Tab held (like the scoreboard)
+        want = st["has"] and st["visible"] and (st["mode"] != "tab" or tab or st["move"])
+        if want and st["img"] is not None and not st["shown"]:
+            root.deiconify()
+            st["shown"] = True
+            if win:
+                _set_clickthrough(hwnd, not st["move"])
+            show(st["img"])
+            root.attributes("-topmost", True)
+        elif not want and st["shown"]:
+            root.withdraw()
+            st["shown"] = False
 
     hwnd = None
     if win:
@@ -506,39 +550,43 @@ def run(url, cfg):
                 if msg.wParam == 1:
                     st["visible"] = not st["visible"]
                 elif msg.wParam == 2:
-                    st["move"] = not st["move"]
-                    _set_clickthrough(hwnd, not st["move"])
-                    st["last"] = None
-        root.after(50, poll_hotkeys)
+                    set_move(not st["move"])
+        apply_visibility()
+        root.after(40, poll_hotkeys)
 
     def refresh():
         try:
             with urllib.request.urlopen(url + "/api/overlay", timeout=2) as r:
                 state = json.loads(r.read().decode("utf-8"))
+            ov = state.get("ov") or {}
+            st["mode"] = ov.get("mode", st["mode"])
+            if ov.get("opacity") is not None and ov["opacity"] != st["opacity"]:
+                st["opacity"], st["last"] = ov["opacity"], None
+            if "move" in ov and bool(ov["move"]) != st.get("srv_move"):  # only react to changes from the app
+                st["srv_move"] = bool(ov["move"])
+                set_move(st["srv_move"])
             m = model(state)
             lang = "en" if state.get("lang") == "en" else "de"
         except Exception:  # noqa: BLE001
             m, lang = None, "de"
-        if st["move"] and not m:
-            m = {"t": L[lang], "time": L[lang]["move"], "cs": "–", "cs_ok": True, "gold": None, "now": None,
-                 "more": [], "item": None, "timers": [], "ej": None, "fed": [], "focus": None, "mood": "info"}
-        if m and st["visible"]:
-            key = (json.dumps(m, sort_keys=True, default=str), st["move"])
+        if st["move"] and not m:  # preview card so it can be placed outside a game
+            m = {"t": L[lang], "time": "", "cs": "–", "cs_ok": True, "gold": None,
+                 "now": {"text": L[lang]["move"], "col": CYAN}, "more": [], "item": None, "timers": [], "ej": None,
+                 "fed": [], "focus": None, "mood": "info", "diff": None, "gpm": None, "focus_t": None, "focus_v": None}
+        st["has"] = bool(m)
+        if m:
+            key = (json.dumps(m, sort_keys=True, default=str), st["move"], st["opacity"])
             if key != st["last"]:
-                show(render_image(m, W, fonts_, icon((m.get("item") or {}).get("id")), ocfg["bg_opacity"],
-                                  st["move"], scale))
+                im = render_image(m, W, fonts_, icon((m.get("item") or {}).get("id")), st["opacity"], st["move"], scale)
+                st["img"] = im
+                if st["shown"]:
+                    show(im)
+                else:
+                    root.geometry(f"{im.size[0]}x{im.size[1]}+{pos['x']}+{pos['y']}")
                 st["last"] = key
-            if not st["shown"]:
-                root.deiconify()
-                st["shown"] = True
-                if win:
-                    _set_clickthrough(hwnd, not st["move"])
-                    if st["img"] is not None:
-                        _ulw(hwnd, st["img"], pos["x"], pos["y"])
-            root.attributes("-topmost", True)  # re-assert above the game
-        elif st["shown"]:
-            root.withdraw()
-            st["shown"] = False
+            if st["shown"]:
+                root.attributes("-topmost", True)  # re-assert above the game
+        apply_visibility()
         root.after(1000, refresh)
 
     root.withdraw()

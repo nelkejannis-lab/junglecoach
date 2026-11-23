@@ -21,7 +21,32 @@ def _sec(txt):
     return int(m) * 60 + int(s)
 
 
-def build(live, gd, gold, owned, focus=None, plan_step=None):
+DEFAULT_GPM = {"UTILITY": 290}  # median gold/min at game end if no comparison data; others ~400
+
+
+def gold_per_min(live, gold, bench=None, role=None):
+    """Your gold/min = (value of your items + unspent gold) / minutes – the Live Client API has no
+    'total gold earned'. Rated against real games of your champion (median / 25 % at game end),
+    scaled down for the early game because gold/min grows over a match."""
+    t = live.get("_t", 0)
+    if t < 60 or gold is None:
+        return None
+    gpm = round((live.get("_item_gold", 0) + gold) / (t / 60))
+    p50 = (bench or {}).get("p50") or DEFAULT_GPM.get(role, 400)
+    p25 = (bench or {}).get("p25") or p50 * 0.85
+    f = 0.8 + 0.2 * min(1.0, t / 1800)
+    if t < 360:
+        rate = "neutral"  # first minutes: starting gold distorts the number
+    elif gpm >= p50 * f:
+        rate = "good"
+    elif gpm >= p25 * f:
+        rate = "ok"
+    else:
+        rate = "bad"
+    return {"value": gpm, "rate": rate, "target": round(p50 * f)}
+
+
+def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
     prompts = []  # (priority, text, color)
@@ -99,4 +124,5 @@ def build(live, gd, gold, owned, focus=None, plan_step=None):
                          "seen": (f"{POS.get(seen[0]['where'], seen[0]['where'])} {seen[0]['time']}" if seen else None)}
             if ej else None,
             "fed": [f"{f['name']} {f['kda']}" for f in (live.get("enemy", {}).get("fed") or [])[:2]],
-            "gold_diff": live.get("gold_diff")}
+            "gold_diff": live.get("gold_diff"),
+            "gpm": gold_per_min(live, gold, gpm_bench, role)}

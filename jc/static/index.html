@@ -122,6 +122,8 @@
   .switch input:checked { background:var(--green); }
   .switch input::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.25s var(--ease); box-shadow:0 1px 3px rgba(0,0,0,.3); }
   .switch input:checked::after { left:22px; }
+  .switch input[type=range] { appearance:auto; -webkit-appearance:auto; width:200px; height:auto; background:none; border:0; accent-color:var(--acc); }
+  .switch input[type=range]::after { display:none; }
   .err { background:rgba(251,113,133,.12); color:var(--red); border:1px solid rgba(251,113,133,.3); border-radius:14px; padding:11px 15px; margin-bottom:18px; display:none; }
   video { width:100%; border-radius:14px; background:#000; display:block; max-height:72vh; }
   .vwrap { position:relative; }
@@ -339,7 +341,7 @@ const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
-  if (v === "settings") loadAccount();
+  if (v === "settings") { loadAccount(); ovSet({}); }
   if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") { loadSessions(); loadReviewData(); }
   if (v === "coach") loadCoach();
   if (v === "friends") { loadFriends(); if (friendView) friendCoachLoad(friendView); }
@@ -1092,12 +1094,26 @@ function METAEXTRA() {
 }
 
 // ------------------------------------------------------------ SETTINGS
+let ovData = {mode: "always", opacity: 0.72, move: false};
+async function ovSet(patch) {
+  try { ovData = await (await fetch("/api/overlay-settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(patch || {})})).json(); } catch (e) {}
+  if (view === "settings") render();
+}
+function overlayCard() {
+  const o = ovData, seg = (v, l) => `<button class="chip ${o.mode === v ? "on" : ""}" onclick="ovSet({mode:'${v}'})">${l}</button>`;
+  return card("In-Game-Overlay", "Wann es erscheint, wo es steht und wie durchsichtig es ist. Strg+Shift+J blendet es im Spiel ein/aus.", `
+    <div class="switch" style="border:0"><span>Anzeigen</span><div class="chips">${seg("always", "Immer sichtbar")}${seg("tab", "Nur solange Tab gedrückt")}</div></div>
+    <div class="switch"><span>Hintergrund-Deckkraft <b>${Math.round(o.opacity * 100)}%</b></span>
+      <input type="range" min="0.3" max="1" step="0.02" value="${o.opacity}" onchange="ovSet({opacity:+this.value})"></div>
+    <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
+      <button class="btn ${o.move ? "" : "sec"}" onclick="ovSet({move:${!o.move}})">${o.move ? "Fertig – Position speichern" : "Position verschieben"}</button></div>`);
+}
 function renderSettings() {
   const c = cfgData;
   if (!c) return page("Einstellungen", "Lade…", "");
   const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
   return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
-    accountCard() +
+    accountCard() + overlayCard() +
     card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>

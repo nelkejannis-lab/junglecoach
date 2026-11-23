@@ -48,3 +48,13 @@ class GoldDiffTests(unittest.TestCase):
         d = live._gold_diff(G(), allies, enemies)
         self.assertEqual(d["team"], 3100 - 1000)
         self.assertEqual(d["jungle"], 2000)
+
+
+class GpmTests(unittest.TestCase):
+    def test_rating(self):
+        from jc import hud
+        live = {"_t": 1200, "_item_gold": 7000}
+        self.assertEqual(hud.gold_per_min(live, 600, {"p25": 330, "p50": 390})["value"], 380)
+        self.assertEqual(hud.gold_per_min(live, 600, {"p25": 330, "p50": 390})["rate"], "good")
+        self.assertEqual(hud.gold_per_min({"_t": 1200, "_item_gold": 5000}, 0, {"p25": 330, "p50": 390})["rate"], "bad")
+        self.assertEqual(hud.gold_per_min({"_t": 200, "_item_gold": 900}, 300)["rate"], "neutral")
