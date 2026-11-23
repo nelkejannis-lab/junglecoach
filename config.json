@@ -5,7 +5,8 @@
   "review_games": 20,
   "profile_games": 20,
 
-  "champion_pool": [],
+  "champion_pool": ["Gwen", "Graves"],
+  "meta_focus": ["Gwen", "Graves"],
 
   "champion_presets": {
     "LeeSin": { "keystone": "Conqueror", "core": ["Eclipse", "Black Cleaver", "Sterak"] }

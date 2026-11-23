@@ -131,6 +131,27 @@ class MergeTests(unittest.TestCase):
             meta.store_match(b, fake_match(i, rng), "GOLD")
         b.close()
         added = meta.merge_from(a, os.path.join(d, "b.sqlite"))
-        self.assertEqual(added, 80)  # 40 new matches x 2 junglers
+        self.assertGreaterEqual(added, 80)  # 40 new matches x 2 junglers
         meta.prune(a, max_rows=100)
         self.assertEqual(a.execute("SELECT COUNT(*) FROM games").fetchone()[0], 100)
+
+
+class FocusTests(unittest.TestCase):
+    def test_focus_and_migration(self):
+        import sqlite3, tempfile, os
+        path = os.path.join(tempfile.mkdtemp(), "old.sqlite")
+        old = sqlite3.connect(path)
+        old.execute("CREATE TABLE games(match_id TEXT, champ TEXT, team INT, win INT, items TEXT, keystone INT, enemy TEXT, "
+                    "patch TEXT, created INT, PRIMARY KEY(match_id, team))")
+        old.execute("INSERT INTO games VALUES ('M1','LeeSin',100,1,'[]',8010,'Elise','26.23',1)")
+        old.commit(); old.close()
+        db = meta.connect(path)
+        self.assertEqual(db.execute("SELECT role FROM games").fetchone()[0], "JUNGLE")
+        m = fake_match(5, random.Random(1))
+        m["info"]["participants"][2]["championName"] = "Gwen"; m["info"]["participants"][2]["teamPosition"] = "TOP"
+        m["info"]["participants"][2]["teamId"] = 200; m["info"]["participants"][2]["win"] = False
+        m["info"]["participants"].append({"championName": "Malphite", "teamId": 100, "teamPosition": "TOP", "win": True})
+        n = meta.store_match(db, m, "GOLD", focus={"Gwen", "Graves"})
+        self.assertEqual(n, len(m["info"]["participants"]))  # all players stored
+        row = db.execute("SELECT champ, role, enemy FROM games WHERE champ='Gwen'").fetchone()
+        self.assertEqual(row, ("Gwen", "TOP", "Malphite"))

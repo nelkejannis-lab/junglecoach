@@ -119,8 +119,20 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
             if 11 in (m.get("spell1Id"), m.get("spell2Id")):
                 enemy_jg = c
 
+    # lane opponent: enemy in my position (Gwen top -> enemy top laner), else the enemy jungler
+    my_pos = (me.get("assignedPosition") or "").lower()
+    lane_enemy = None
+    for m, c in zip([m for m in their if m.get("championId")], enemies):
+        if my_pos and (m.get("assignedPosition") or "").lower() == my_pos:
+            lane_enemy = c
+    lane_enemy = lane_enemy or enemy_jg
+    role = {"top": "TOP", "jungle": "JUNGLE", "middle": "MIDDLE", "bottom": "BOTTOM", "utility": "UTILITY"}.get(my_pos)
+    if meta_stats is not None:
+        meta_stats.role = role
+
     out = {
         "my_position": me.get("assignedPosition") or "unbekannt",
+        "lane_enemy": gd.champ_name(lane_enemy) if lane_enemy else None,
         "my_champion": gd.champ_name(my_champ) if my_champ else None,
         "allies": [gd.champ_name(c) for c in allies],
         "enemies": [gd.champ_name(c) for c in enemies],
@@ -136,20 +148,22 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
         out["build"] = analyzer.recommend_build(gd, my_champ, prof, preset=preset)
         if meta_stats and not (preset and (preset.get("core") or preset.get("keystone"))):
             try:
-                apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, [c["id"] for c in enemies if c])
+                apply_meta(gd, out, my_champ, lane_enemy, meta_stats, bracket, [c["id"] for c in enemies if c])
             except Exception as e:  # never break champ select because of stats
                 out["meta_error"] = str(e)
     # meta-aware pick suggestions: matchup winrate vs the enemy jungler
-    if meta_stats and enemy_jg:
+    if meta_stats and lane_enemy:
         for p in out["pick_suggestions"]:
             try:
-                mu = meta_stats.matchup(p["id"], enemy_jg["id"], bracket)
+                mu = meta_stats.matchup(p["id"], lane_enemy["id"], bracket)
             except Exception:
                 continue
             if mu.get("enough"):
                 p["score"] += round((mu["winrate"] - 50) * 1.5)
-                p["why"].append(f"vs {gd.champ_name(enemy_jg)}: {mu['winrate']}% WR ({mu['games']} Games)")
+                p["why"].append(f"vs {gd.champ_name(lane_enemy)}: {mu['winrate']}% WR ({mu['games']} Games)")
         out["pick_suggestions"].sort(key=lambda x: -x["score"])
     out["enemy_jungler_id"] = enemy_jg["id"] if enemy_jg else None
+    if meta_stats is not None:
+        meta_stats.role = None
     out["enemies_locked"] = sum(1 for m in their if m.get("championId"))
     return out

@@ -34,9 +34,16 @@ def ensure_config():
             default = json.load(f)
         with open(path, encoding="utf-8") as f:
             user = json.load(f)
+        changed = False
+        for k, v in default.items():  # new settings from updates
+            if k not in user or (k == "champion_pool" and not user.get(k)):
+                user[k] = v
+                changed = True
         built_in = default.get("riot_api_key", "")
         if built_in and (not user.get("riot_api_key") or user.get("_key_from_build") and user["riot_api_key"] != built_in):
             user["riot_api_key"], user["_key_from_build"] = built_in, True
+            changed = True
+        if changed:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(user, f, ensure_ascii=False, indent=2)
     except (OSError, ValueError):
