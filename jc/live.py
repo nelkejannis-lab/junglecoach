@@ -33,6 +33,15 @@ def _names(p):
     return {x for x in (p.get("summonerName"), p.get("riotIdGameName"), p.get("riotId")) if x}
 
 
+def item_gold(gd, p):
+    """Value of a player's items (what you see on the scoreboard). The Live Client API gives gold only
+    for yourself, so team/jungle gold differences are compared on item value – like Porofessor/Blitz."""
+    total = 0
+    for it in p.get("items", []) or []:
+        total += (((gd.items.get(it.get("itemID")) or {}).get("gold") or {}).get("total") or 0) * max(1, it.get("count", 1) or 1)
+    return total
+
+
 def _is_jungler(p):
     if (p.get("position") or "").upper() == "JUNGLE":
         return True
@@ -51,6 +60,13 @@ def _champ(gd, p):
 def _fmt(sec):
     sec = max(0, int(sec))
     return f"{sec // 60}:{sec % 60:02d}"
+
+
+def _gold_diff(gd, allies, enemies):
+    team = sum(item_gold(gd, p) for p in allies) - sum(item_gold(gd, p) for p in enemies)
+    aj = next((p for p in allies if _is_jungler(p)), None)
+    ej = next((p for p in enemies if _is_jungler(p)), None)
+    return {"team": team, "jungle": item_gold(gd, aj) - item_gold(gd, ej) if aj and ej else None}
 
 
 def analyze(gd, data, timers=None, preset_lookup=None):
@@ -154,6 +170,7 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             "enemy": {"profile": prof, "fed": fed, "armor_stackers": armor_st, "mr_stackers": mr_st},
             "build": build, "sim": sim_res, "enemy_jungler": jungle, "objectives": objectives,
             "allies": [gd.champ_name(_champ(gd, p)) for p in allies],
+            "gold_diff": _gold_diff(gd, allies, enemies),
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,
             "_owned": [i for i in owned if i], "_gold": (data.get("activePlayer") or {}).get("currentGold"),

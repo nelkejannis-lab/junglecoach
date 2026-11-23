@@ -16,10 +16,10 @@ KEY = "#010203"  # transparent key colour for the rounded corners
 
 L = {"de": {"now": "JETZT", "item": "Nächstes Item", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
             "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
-            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
+            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "itemg": "Item-Wert", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
      "en": {"now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
             "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
-            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "move": "Move overlay – Ctrl+Shift+K to lock"}}
+            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "itemg": "item value", "move": "Move overlay – Ctrl+Shift+K to lock"}}
 
 
 def layout(state):
@@ -86,6 +86,7 @@ def model(state):
         "fed": h.get("fed") or [],
         "focus": f"{h['focus']['title']} · {h['focus']['target']}" if h.get("focus") else None,
         "mood": (now or {}).get("tone") or "calm",
+        "diff": h.get("gold_diff"),
     }
 
 
@@ -225,6 +226,31 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         d.text((x, y + lh(F["val"])), cap, font=F["cap"], fill=SEC, anchor="ra")
         x -= wv + 16 * k
     y += av + 12 * k
+
+    # ---- gold differences (team / jungle, item value): value + small centred bar
+    df = m.get("diff") or {}
+    cols = [(m["t"]["team"], df.get("team")), (m["t"]["jg"], df.get("jungle"))]
+    cols = [c for c in cols if c[1] is not None]
+    if cols:
+        gap = 8 * k
+        cw = (Wp - 2 * pad - gap * (len(cols) - 1)) / len(cols)
+        ch = 50 * k
+        for i, (lab, v) in enumerate(cols):
+            x0 = pad + i * (cw + gap)
+            u.rounded_rectangle([x0, y, x0 + cw, y + ch], 12 * k, fill=fill2)
+            col = A_GREEN if v > 150 else A_RED if v < -150 else "#ebebf5"
+            d.text((x0 + 11 * k, y + 7 * k), lab, font=F["cap"], fill=SEC)
+            txt = ("+" if v > 0 else "−" if v < 0 else "±") + f"{abs(v):,}".replace(",", ".")
+            d.text((x0 + 11 * k, y + 7 * k + lh(F["cap"])), txt, font=F["val"], fill=_rgb(col))
+            # bar: centre = even, fills to the side of the leader (±3000 g = full)
+            bx0, bx1, by = x0 + 11 * k, x0 + cw - 11 * k, y + ch - 10 * k
+            mid = (bx0 + bx1) / 2
+            u.rounded_rectangle([bx0, by, bx1, by + 4 * k], 2 * k, fill=_rgb("#ffffff", 30))
+            ext = max(-1.0, min(1.0, v / 3000)) * (bx1 - bx0) / 2
+            if abs(ext) > 2 * k:
+                u.rounded_rectangle([min(mid, mid + ext), by, max(mid, mid + ext), by + 4 * k], 2 * k, fill=_rgb(col))
+            u.rectangle([mid - 0.5 * k, by - 2 * k, mid + 0.5 * k, by + 6 * k], fill=_rgb("#ffffff", 120))
+        y += ch + 12 * k
 
     # ---- NOW: tinted card with a symbol (colour + shape)
     if m["now"]:

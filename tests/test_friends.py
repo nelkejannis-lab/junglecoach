@@ -34,3 +34,17 @@ class FriendTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GoldDiffTests(unittest.TestCase):
+    def test_item_gold_diff(self):
+        from jc import live
+
+        class G:
+            items = {1: {"gold": {"total": 3000}}, 2: {"gold": {"total": 1000}}, 3: {"gold": {"total": 50}}}
+        smite = {"summonerSpellOne": {"displayName": "Smite"}}
+        allies = [{"items": [{"itemID": 1}], "summonerSpells": smite}, {"items": [{"itemID": 3, "count": 2}]}]
+        enemies = [{"items": [{"itemID": 2}], "summonerSpells": smite}, {"items": []}]
+        d = live._gold_diff(G(), allies, enemies)
+        self.assertEqual(d["team"], 3100 - 1000)
+        self.assertEqual(d["jungle"], 2000)

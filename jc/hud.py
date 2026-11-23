@@ -98,4 +98,5 @@ def build(live, gd, gold, owned, focus=None, plan_step=None):
             "enemy_jg": {"champion": ej.get("champion"), "level": ej.get("level"),
                          "seen": (f"{POS.get(seen[0]['where'], seen[0]['where'])} {seen[0]['time']}" if seen else None)}
             if ej else None,
-            "fed": [f"{f['name']} {f['kda']}" for f in (live.get("enemy", {}).get("fed") or [])[:2]]}
+            "fed": [f"{f['name']} {f['kda']}" for f in (live.get("enemy", {}).get("fed") or [])[:2]],
+            "gold_diff": live.get("gold_diff")}
