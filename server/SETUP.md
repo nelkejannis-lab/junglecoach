@@ -39,7 +39,7 @@ Worker → **Settings → Variables and Secrets → Add** (Typ **Secret**):
 Worker-Adresse in `config.json` bei `server_url` eintragen und neues Release bauen.
 
 ## 6. Vor der Veröffentlichung
-- Platzhalter in `public/impressum.html` und `public/datenschutz.html` (orange markiert) mit echten Angaben füllen.
+- Angaben in Impressum und Datenschutz sind eingetragen – bei Umzug oder neuer Mail dort anpassen.
 - Rechtstexte prüfen lassen – sie sind sorgfältige Vorlagen, aber keine Rechtsberatung.
 - Riot-Produktregistrierung: developer.riotgames.com → Register Product → Production API Key,
   Produkt-URL = Worker-Adresse (oder eigene Domain).
