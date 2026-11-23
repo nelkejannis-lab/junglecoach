@@ -185,26 +185,8 @@ def make_handler(gd, cfg, lcu):
                                     "leaguePoints": solo["lp"], "wins": solo["wins"], "losses": solo["losses"]}}}
                     ranked.snapshot(_FromApi())
                 return self._send(200, {k: v for k, v in prof.items() if not k.startswith("_")})
-            if self.path == "/api/test-key":
-                steps = []
-                key = cfg.get("riot_api_key", "")
-                api = review.RiotAPI(key, cfg.get("platform", "euw1"))
-                try:
-                    api.get_platform("/lol/status/v4/platform-data")
-                    steps.append({"ok": True, "text": f"API Key gültig, Server {cfg.get('platform', 'euw1')} erreichbar"})
-                    rid = cfg.get("riot_id", "")
-                    if "#" in rid:
-                        n, t = rid.split("#", 1)
-                        try:
-                            api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(n)}/{urllib.parse.quote(t)}")
-                            steps.append({"ok": True, "text": f"Account {rid} gefunden"})
-                        except review.RiotNotFound:
-                            steps.append({"ok": False, "text": f"Account {rid} nicht gefunden – Schreibweise/TAG prüfen"})
-                    else:
-                        steps.append({"ok": False, "text": "Riot ID fehlt (Format Name#TAG)"})
-                except Exception as e:
-                    steps.append({"ok": False, "text": str(e)})
-                return self._send(200, {"steps": steps})
+            if self.path.startswith("/api/test-key"):
+                return self._test_key(None)
             if self.path == "/api/ranked":
                 with LOCK:
                     rev = STATE.get("review") or {}
@@ -279,11 +261,39 @@ def make_handler(gd, cfg, lcu):
                     return self._send(500, {"error": str(e)})
             self._send(404, {"error": "not found"})
 
+        def _test_key(self, new_key):
+            steps = []
+            key = (new_key or cfg.get("riot_api_key", "")).strip()
+            api = review.RiotAPI(key, cfg.get("platform", "euw1"))
+            try:
+                api.get_platform("/lol/status/v4/platform-data")
+                steps.append({"ok": True, "text": f"API Key gültig, Server {cfg.get('platform', 'euw1')} erreichbar"})
+                if new_key and new_key != cfg.get("riot_api_key"):
+                    cfg["riot_api_key"] = new_key
+                    cfg.pop("_key_from_build", None)
+                    save_config(cfg)
+                    steps.append({"ok": True, "text": "Neuer Key gespeichert"})
+                rid = cfg.get("riot_id", "")
+                if "#" in rid:
+                    n, t = rid.split("#", 1)
+                    try:
+                        api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(n)}/{urllib.parse.quote(t)}")
+                        steps.append({"ok": True, "text": f"Account {rid} gefunden"})
+                    except review.RiotNotFound:
+                        steps.append({"ok": False, "text": f"Account {rid} nicht gefunden – Schreibweise/TAG prüfen"})
+                else:
+                    steps.append({"ok": False, "text": "Riot ID fehlt (Format Name#TAG)"})
+            except Exception as e:
+                steps.append({"ok": False, "text": str(e)})
+            return self._send(200, {"steps": steps})
+
         def _body(self):
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
         def do_POST(self):
+            if self.path == "/api/test-key":
+                return self._test_key(self._body().get("riot_api_key"))
             if self.path == "/api/config":
                 body = self._body()
                 for k in EDITABLE:
