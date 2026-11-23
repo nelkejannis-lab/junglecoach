@@ -123,7 +123,11 @@
   .switch input::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.25s var(--ease); box-shadow:0 1px 3px rgba(0,0,0,.3); }
   .switch input:checked::after { left:22px; }
   .err { background:rgba(251,113,133,.12); color:var(--red); border:1px solid rgba(251,113,133,.3); border-radius:14px; padding:11px 15px; margin-bottom:18px; display:none; }
-  video { width:100%; max-width:820px; border-radius:14px; background:#000; display:block; }
+  video { width:100%; border-radius:14px; background:#000; display:block; max-height:72vh; }
+  .vwrap { position:relative; }
+  .vwrap .fsbtn { position:absolute; top:10px; right:10px; z-index:2; opacity:.85; }
+  .cinema { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.94); display:flex; flex-direction:column; padding:18px; gap:10px; }
+  .cinema video { flex:1; max-height:none; height:100%; object-fit:contain; border-radius:10px; }
   details summary { cursor:pointer; color:var(--sec); font-weight:600; }
   img { image-rendering:auto; }
 
@@ -543,16 +547,75 @@ function renderLive() {
 }
 
 // ------------------------------------------------------------ ANALYSE
+let clipFilter = "all";
+const vidId = sid => "v_" + String(sid).replace(/[^\w]/g, "_");
+function bigVideo(id) {
+  const v = document.getElementById(id);
+  if (!v) return;
+  const t = v.currentTime, src = v.getAttribute("src");
+  v.pause();
+  const box = document.createElement("div");
+  box.className = "cinema";
+  box.innerHTML = `<div class="row" style="border:0;padding:0"><span class="muted small">${tr("Esc oder Schließen beendet die Vollbild-Ansicht")} · ← → 5 s · J/L 10 s · K ⏯ · , . Einzelbild</span><button class="btn sec">${tr("Schließen")}</button></div><video id="${id}_big" src="${src}" controls autoplay></video>`;
+  const close = () => { const nv = box.querySelector("video"); v.currentTime = nv.currentTime; box.remove(); document.removeEventListener("keydown", esc); };
+  const esc = e => { if (e.key === "Escape") close(); };
+  box.querySelector("button").onclick = close;
+  document.addEventListener("keydown", esc);
+  document.body.appendChild(box);
+  const nv = box.querySelector("video");
+  nv.addEventListener("loadedmetadata", () => { nv.currentTime = t; }, {once: true});
+  activeVid = nv.id;
+  try { box.requestFullscreen && box.requestFullscreen().catch(() => {}); } catch (e) {}
+}
+let activeVid = null;
+function vctl(id, op, val) {
+  const v = document.getElementById(id); if (!v) return;
+  activeVid = id;
+  if (op === "seek") v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + val));
+  else if (op === "rate") { v.playbackRate = val; document.querySelectorAll(`[data-rate-for="${id}"]`).forEach(b => b.classList.toggle("on", +b.dataset.rate === val)); }
+  else if (op === "toggle") v.paused ? v.play() : v.pause();
+  else if (op === "frame") { v.pause(); v.currentTime = Math.max(0, v.currentTime + val / 30); }
+}
+document.addEventListener("keydown", e => {  // YouTube-like shortcuts for the clip player
+  if (/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).nodeName || "")) return;
+  const id = activeVid && document.getElementById(activeVid) ? activeVid : (document.querySelector("video") || {}).id;
+  if (!id) return;
+  const map = {ArrowLeft: ["seek", -5], ArrowRight: ["seek", 5], j: ["seek", -10], l: ["seek", 10], k: ["toggle"], " ": ["toggle"], ",": ["frame", -1], ".": ["frame", 1]};
+  const m = map[e.key]; if (!m) return;
+  e.preventDefault(); vctl(id, m[0], m[1]);
+});
 function clipPlayer(sid, clips) {
   if (!clips || !clips.length) return '<span class="muted small">Keine Clips für dieses Game.</span>';
   const cur = selClip && selClip.sid === sid ? selClip.file : clips[0].file;
-  return `<video src="/clips/${encodeURIComponent(sid)}/${encodeURIComponent(cur)}" controls></video>` +
-    list(clips, c => `<li class="click ${c.file === cur ? "sel" : ""}" onclick='selClip={sid:${JSON.stringify(sid)},file:${JSON.stringify(c.file)}};render()'>
-      <b>${esc(c.time)}</b> ${esc(c.title)} <span class="muted small">– ${esc(c.why)}</span></li>`);
+  const c0 = clips.find(c => c.file === cur) || clips[0], id = vidId(sid), base = `/clips/${encodeURIComponent(sid)}/`;
+  const shown = clips.filter(c => clipFilter === "all" || (c.kind || "mistake") === clipFilter);
+  const champs = c => [c.killer, ...(c.assisters || []), c.victim].filter(Boolean);
+  const icons = c => champs(c).map(x => cImg(x, 26, 7)).join("");
+  return `<div class="two" style="grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:20px">
+    <div><div class="vwrap"><video id="${id}" src="${base}${encodeURIComponent(cur)}" controls preload="auto" onplay="activeVid='${id}'"></video>
+      <button class="btn sec fsbtn" onclick="bigVideo('${id}')">⛶ Vollbild</button></div>
+      <div class="row" style="border:0;flex-wrap:wrap;gap:6px;padding-top:12px">
+        <div class="chips">${[[-10, "⏪ 10s"], [-5, "‹ 5s"], [5, "5s ›"], [10, "10s ⏩"]].map(([d, l]) => `<button class="chip" onclick="vctl('${id}','seek',${d})">${l}</button>`).join("")}
+          <button class="chip" onclick="vctl('${id}','frame',-1)">◀ Bild</button><button class="chip" onclick="vctl('${id}','frame',1)">Bild ▶</button></div>
+        <div class="chips">${[0.25, 0.5, 1, 1.5, 2].map(r => `<button class="chip ${r === 1 ? "on" : ""}" data-rate-for="${id}" data-rate="${r}" onclick="vctl('${id}','rate',${r})">${r}×</button>`).join("")}</div></div>
+      <div class="fcard" style="margin-top:12px"><div class="k">${(c0.kind || "mistake") === "highlight" ? "Highlight" : "Fehler"} · ${esc(c0.time)}</div>
+        <h4>${esc(c0.title)}</h4><div class="small muted">${esc(c0.why || "")}</div>
+        ${champs(c0).length ? `<div class="chips" style="margin-top:10px">${champs(c0).map(x => `<span class="chip">${cImg(x, 20, 6)} ${esc(x)}</span>`).join("")}</div>` : ""}
+        ${c0.tip ? `<div class="drill">💡 ${esc(c0.tip)}</div>` : ""}</div></div>
+    <div><div class="chips" style="margin-bottom:10px">${[["all", "Alle"], ["mistake", "Fehler"], ["highlight", "Highlights"]].map(([k, l]) => `<button class="chip ${clipFilter === k ? "on" : ""}" onclick="clipFilter='${k}';render()">${l} · ${k === "all" ? clips.length : clips.filter(c => (c.kind || "mistake") === k).length}</button>`).join("")}</div>
+      <div style="display:grid;gap:10px;max-height:620px;overflow:auto;padding-right:4px">${shown.map(c => `
+        <div class="click" style="display:grid;grid-template-columns:132px 1fr;gap:12px;align-items:center;padding:8px;border-radius:14px;border:1px solid ${c.file === cur ? "rgba(34,211,238,.6)" : "var(--sep)"};background:${c.file === cur ? "rgba(34,211,238,.08)" : "var(--card2)"}"
+          onclick='selClip={sid:${JSON.stringify(sid)},file:${JSON.stringify(c.file)}};activeVid="${id}";render()'>
+          <div style="position:relative;width:132px;height:74px;border-radius:10px;overflow:hidden;background:#000">
+            ${c.thumb ? `<img src="${base}${encodeURIComponent(c.thumb)}" style="width:100%;height:100%;object-fit:cover" loading="lazy">` : ""}
+            <span class="badge ${(c.kind || "mistake") === "highlight" ? "team" : "mu"}" style="position:absolute;left:6px;top:6px">${(c.kind || "mistake") === "highlight" ? "Highlight" : "Fehler"}</span>
+            <span style="position:absolute;right:6px;bottom:5px;font-size:11px;font-weight:800;background:rgba(0,0,0,.65);padding:1px 6px;border-radius:6px">${esc(c.time)}</span></div>
+          <div><div style="font-weight:700">${esc(c.title)}</div><div class="small muted">${esc(c.why || "")}</div><div style="display:flex;gap:3px;margin-top:5px">${icons(c)}</div></div></div>`).join("")}</div></div></div>`;
 }
 function sessionsCards() {
-  if (!sessions.length) return card("Fehler-Clips", "Die letzten 3 Games werden automatisch aufgenommen und geschnitten.", empty("🎬", "Noch keine Clips", "Spiel ein Game – Tode, verlorene Objectives und Gegner-Ganks landen danach hier."), true);
-  return sessions.map(se => card(`Clips · ${se.champion || "Game"}`, new Date(se.start_wall * 1000).toLocaleString("de-DE"), clipPlayer(se.id, se.clips), true)).join("");
+  if (!sessions.length) return card("Clips", "Die letzten 3 Games werden automatisch aufgenommen und geschnitten – Fehler und Highlights.", empty("🎬", "Noch keine Clips", "Spiel ein Game – Tode, verlorene Objectives, Gegner-Ganks und deine Kills landen danach hier."), true);
+  return sessions.map(se => card(`Clips · ${se.champion || "Game"}`, new Date(se.start_wall * 1000).toLocaleString("de-DE") +
+    ` · ${(se.clips || []).filter(c => (c.kind || "mistake") === "mistake").length} Fehler · ${(se.clips || []).filter(c => c.kind === "highlight").length} Highlights`, clipPlayer(se.id, se.clips), true)).join("");
 }
 function deepCard(g) {
   const D = g.deep, clipFor = t => (g.clips || []).find(c => Math.abs(c.t - t) < 6);

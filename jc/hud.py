@@ -77,7 +77,7 @@ def build(live, gd, gold, owned, focus=None, plan_step=None):
         prompts.append((5, T("Gegner-Jungler hat Ult – Duelle nur mit Vorteil", "Enemy jungler has ult – duel only with an edge"), "info"))
 
     # ---- recent mistake -> what to learn from it
-    ms = live.get("mistakes") or []
+    ms = [m for m in (live.get("mistakes") or []) if m.get("kind", "mistake") == "mistake"]
     if ms and t - ms[-1].get("t", 0) <= 30:
         prompts.append((1, T(f"Fehler: {ms[-1]['title']} – {ms[-1]['why']}", f"Mistake: {ms[-1]['title']} – {ms[-1]['why']}"), "bad"))
 

@@ -43,7 +43,8 @@
     "crf": 30,
     "encoder": "auto",
     "keep_full": true,
-    "keep_games": 3
+    "keep_games": 3,
+    "audio": true
   },
   "timers": {
     "Dragon": 300,

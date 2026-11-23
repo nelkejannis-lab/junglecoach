@@ -138,8 +138,13 @@ def analyze(gd, data, timers=None, preset_lookup=None):
 
     name_team = {n: p["team"] for p in players for n in _names(p)}
     name_pos = {n: p.get("position") for p in players for n in _names(p)}
+    name_champ = {}
+    for p in players:
+        c = _champ(gd, p)
+        for n in _names(p):
+            name_champ[n] = c["id"] if c else p.get("championName")
     mistakes = detect_mistakes(data, _names(me) | {me_name}, my_team, _names(ej) if ej else set(),
-                               name_team, name_pos)
+                               name_team, name_pos, name_champ)
     my_cs = me.get("scores", {}).get("creepScore", 0)
     cs_min = round(my_cs / max(1, t / 60), 1) if t > 60 else 0
     return {"game_time": _fmt(t), "me": gd.champ_name(my_champ) if my_champ else "?",

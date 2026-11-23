@@ -16,8 +16,16 @@ class RecorderTests(unittest.TestCase):
             {"EventName": "DragonKill", "EventTime": 900, "KillerName": "me", "DragonType": "Air"}]}}
         team = {"me": "ORDER", "ally": "ORDER", "ej": "CHAOS", "e2": "CHAOS"}
         m = recorder.detect_mistakes(data, {"me"}, "ORDER", {"ej"}, team, {"ally": "TOP"})
-        self.assertEqual([x["type"] for x in m], ["death", "enemy_gank", "objective_lost"])
+        self.assertEqual([x["type"] for x in m], ["death", "enemy_gank", "objective_lost", "objective_taken"])
         self.assertIn("2 Gegner", m[0]["why"]); self.assertIn("Fire", m[2]["title"])
+        self.assertEqual(m[3]["kind"], "highlight"); self.assertTrue(m[0]["tip"])
+        # own kills + multikill become highlight clips with the champions involved
+        data2 = {"events": {"Events": [
+            {"EventName": "ChampionKill", "EventTime": 500, "KillerName": "me", "VictimName": "e2", "Assisters": ["ally"]},
+            {"EventName": "ChampionKill", "EventTime": 504, "KillerName": "me", "VictimName": "ej", "Assisters": []},
+            {"EventName": "Multikill", "EventTime": 504, "KillerName": "me", "KillStreak": 2}]}}
+        m2 = recorder.detect_mistakes(data2, {"me"}, "ORDER", {"ej"}, team, {}, {"e2": "Zed", "ej": "Viego", "ally": "Jinx"})
+        self.assertEqual([x["title"] for x in m2], ["Double Kill"])
 
     def test_cut_and_prune(self):
         exe = recorder.ffmpeg_exe()
@@ -29,6 +37,7 @@ class RecorderTests(unittest.TestCase):
             self.assertEqual(len(clips), 1)
             out = subprocess.run([exe, "-i", os.path.join(d, clips[0]["file"])], capture_output=True, text=True).stderr
             self.assertIn("Duration: 00:00:15", out)
+            self.assertTrue(clips[0]["thumb"])
             rec_dir = os.path.join(d, "rec")
             for i in range(5):
                 os.makedirs(os.path.join(rec_dir, f"2026-11-2{i}_10-00-00"))

@@ -329,6 +329,50 @@ def make_handler(gd, cfg, lcu):
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_file(self, fp, ctype):
+            """Streams a file with HTTP range support – the video player can jump anywhere instantly
+            instead of downloading the whole recording first."""
+            size = os.path.getsize(fp)
+            start, end = 0, size - 1
+            rng = self.headers.get("Range")
+            if rng and rng.startswith("bytes="):
+                a, _, b = rng[6:].split(",")[0].partition("-")
+                try:
+                    if a:
+                        start = int(a)
+                        end = int(b) if b else end
+                    elif b:
+                        start = max(0, size - int(b))
+                except ValueError:
+                    start, end = 0, size - 1
+                end = min(end, size - 1)
+                if start > end:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.end_headers()
+                    return
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Cache-Control", "max-age=3600")
+            self.end_headers()
+            try:
+                with open(fp, "rb") as f:
+                    f.seek(start)
+                    left = end - start + 1
+                    while left > 0:
+                        chunk = f.read(min(1 << 20, left))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        left -= len(chunk)
+            except (ConnectionResetError, BrokenPipeError):
+                pass  # the player cancelled this request (normal while seeking)
+
         def do_GET(self):
             if self.path == "/i18n_en.js":
                 with open(os.path.join(STATIC, "i18n_en.js"), "rb") as f:
@@ -516,12 +560,11 @@ def make_handler(gd, cfg, lcu):
             if self.path == "/api/sessions":
                 return self._send(200, recorder.list_sessions())
             if self.path.startswith("/clips/"):
-                parts = self.path.split("/")
-                if len(parts) == 4 and ".." not in parts[2] + parts[3] and parts[3].endswith(".mp4"):
+                parts = urllib.parse.unquote(self.path.split("?")[0]).split("/")
+                if len(parts) == 4 and ".." not in parts[2] + parts[3] and parts[3].endswith((".mp4", ".jpg")):
                     fp = os.path.join(recorder.REC_DIR, parts[2], parts[3])
                     if os.path.exists(fp):
-                        with open(fp, "rb") as f:
-                            return self._send(200, f.read(), "video/mp4")
+                        return self._send_file(fp, "video/mp4" if fp.endswith(".mp4") else "image/jpeg")
                 return self._send(404, {"error": "Clip nicht gefunden"})
             if self.path.startswith("/api/review"):
                 if not riot_cred(cfg):
