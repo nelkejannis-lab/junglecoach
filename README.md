@@ -10,7 +10,7 @@ Lokales Tool für Jungler: Champ-Select-Analyse, Runen und Build gegen das Gegne
 | **Ranked** | Rang, LP-Verlauf, LP heute/7 Tage, Serie, Ø LP pro Sieg/Niederlage, was besser werden muss (Trend), schlechteste Matchups |
 | **Champ Select** | Gegnerteam-Analyse, Pick-Empfehlung, Runen + Build – automatisch gesetzt und bei jedem neuen Gegner-Pick neu berechnet |
 | **Live** | Live-Build, Gegner-Jungler-Infos, Objectives, Fehler-Liste, Minimap-Tracker (nur Custom) |
-| **Analyse** | Deep-Analyse, Map-Replay, Fehler-Clips |
+| **Analyse** | Deep-Analyse, Fehler-Clips |
 | **Meta** | Datensammlung, Meta-Builds, Geheimtipps, Tierlist |
 | **Einstellungen** | Riot ID, API Key, Champion-Pool, Elo für Statistiken, Auto-Runen |
 
@@ -59,9 +59,6 @@ Tipp: Dashboard auf zweitem Monitor. Mit `"allow_phone": true` auch vom Handy im
 | Champ Select | Gegner-Comp (AD/AP, Tanks, Heiler, CC), Gegner-Jungler-Profil (Early/Scaling), Pick-Empfehlung aus deinem Pool, Runen + Build + Jungle-Pet. Button „Runen in Client übernehmen“ (legt Seite „JC …“ an, löscht nie deine eigenen Seiten). |
 | Im Spiel | Build passt sich an Gegner-Items an (Rüstung/MR-Stacking → Pen, Fed-Gegner → Defensive, Heilung → Anti-Heal), Gegner-Jungler: Level, Items, zuletzt im Killfeed gesehen (welche Lane), Gank-Warnungen, Objective-Respawns, CS/min. |
 | Review | Letzte X Ranked-Jungle-Games: Early-Seite (Vorhersehbarkeit), Gold-Diff @10 vs Gegner-Jungler, Jungle-CS @5, Ganks pro Lane, Objectives vor Min 20, konkrete Tipps. |
-
-## Map-Replay (Review-Tab)
-Game antippen → Karte mit den Wegen von dir (grün) und dem Gegner-Jungler (rot) über die ersten 15 Minuten, Minute für Minute abspielbar, Kills/Tode als ✕. Daneben: Bereich des Gegner-Junglers pro Minute und wo er bei Kills aufgetaucht ist. Datenquelle: offizielle match-v5-Timeline.
 
 ## Minimap-Tracker (Coaching, nur Custom Games)
 - Live-Tab → „Einschalten“ / „Ausschalten“. Standard: aus.

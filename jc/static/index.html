@@ -265,9 +265,9 @@ function matchModal() {
   let inner = `<h2 class="title" style="font-size:26px">${esc(d.queue)} · ${d.duration} Min</h2><p class="subtitle" style="margin-bottom:0">${new Date(d.ended * 1000).toLocaleString("de-DE")}</p>` + d.teams.map(teamHtml).join("");
   if (d.analysis) {
     const g = Object.assign({}, d.analysis, {clips: null});
-    inner += `<div class="grid" style="margin-top:20px">${deepCard(g)}${replayCard(g)}</div>`;
+    inner += `<div class="grid" style="margin-top:20px">${deepCard(g)}</div>`;
   } else if (d.analysis_error) inner += `<p class="small red">Analyse nicht möglich: ${esc(d.analysis_error)}</p>`;
-  else inner += `<p class="small muted" style="margin-top:16px">Deep-Analyse und Map-Replay gibt es für deine eigenen Jungle-Games.</p>`;
+  else inner += `<p class="small muted" style="margin-top:16px">Die Deep-Analyse gibt es für deine eigenen Jungle-Games.</p>`;
   return wrap(inner);
 }
 function searchProfile() { profQuery = $("#p_q").value.trim(); profQueue = ""; profData = null; loadProfile(); }
@@ -422,20 +422,19 @@ function replayCard(g) {
 function renderAnalyse() {
   const r = state.review;
   const loadBtn = `<button class="btn" onclick="loadReview()">${r ? "Neu laden" : "Letzte Games analysieren"}</button> <span class="small muted">${esc(msg.review || "")}</span>`;
-  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler, Map-Replay und Clips.",
+  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.",
     card("", "", empty("🔍", "Noch nichts analysiert", `<p>Lädt deine letzten Ranked-Games über die Riot API.<br>Voraussetzung: Riot ID und API Key in den <a href="#" onclick="go('settings');return false">Einstellungen</a>.</p>${loadBtn}`), true) + sessionsCards());
   const s = r.summary;
   let h = card("Überblick", `${s.games || 0} Jungle-Games`, (s.games ? `
     <div class="stats"><div class="stat"><b>${s.winrate}%</b><span>Winrate</span></div><div class="stat"><b class="${col(s.avg_gold_diff_10)}">${sign(s.avg_gold_diff_10)}</b><span>Ø Gold @10 vs JG</span></div>
     <div class="stat"><b>${s.avg_jungle_cs_5}</b><span>Ø Jungle-CS @5</span></div><div class="stat"><b>${esc(s.objectives_pre20)}</b><span>Objectives vor 20'</span></div></div>` : "") + `<div style="margin-top:14px">${loadBtn}</div>`);
   h += card("Was du ändern musst", "Muster über alle analysierten Games.", list(s.tips, t => `<li class="small">${esc(t)}</li>`));
-  h += card("Games", "Antippen für Deep-Analyse, Replay und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
+  h += card("Games", "Antippen für Deep-Analyse und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
     <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · Note " + g.deep.overall : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
   const g = r.games[selGame];
   if (g && g.deep) h += deepCard(g);
-  if (g && g.replay) h += replayCard(g);
   if (!r.games.some(x => x.clips)) h += sessionsCards();
-  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler, Map-Replay und Clips.", h);
+  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.", h);
 }
 
 // ------------------------------------------------------------ META
