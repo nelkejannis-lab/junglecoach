@@ -480,6 +480,17 @@ function renderMeta() {
      <input id="lab-enemies" style="margin-top:10px;width:100%" placeholder="Gegner (optional), z. B. Ornn, Viego, Ahri, Jinx, Thresh" value="${esc(L.enemies)}" oninput="labForm.enemies=this.value">
      <div class="row" style="border:0;margin-top:10px"><span class="small muted">${esc(L.msg || "")}</span><button class="btn" onclick="runLab()">Simulieren</button></div>
      ${labData ? simBody(labData) : ""}`, true);
+  const w = m.websites || {};
+  h += card("Builds, Runen & Matchups � Websites", "Nur aktueller Patch � Jungle � automatischer Abruf alle 6 Stunden",
+    '<p class="small">' + esc(w.status || "Noch nicht geladen") + ' � Patch ' + esc(w.patch || "-") + '</p>' +
+    '<p class="small muted">Fallback auf Patch-Statistiken: separat verifizierte Tages-Matchdaten sind hier nicht verfügbar. Quellen und ihre Rang-/Regionsfilter getrennt betrachten. Abrufe �lter als 24 Stunden werden ausgeblendet.</p>' +
+    (w.results || []).map(r => '<details style="margin:12px 0"><summary>' +
+      esc(r.champion) + ' � ' + esc(r.source) + ' � ' + esc(new Date(r.fetched_at).toLocaleString("de-DE")) +
+      '</summary>' + (r.sections || []).map(s => '<div style="margin:12px 0"><b>' + esc(s.heading) +
+        '</b><p class="small" style="white-space:pre-wrap">' + esc(s.text || "") + '</p><p class="small muted">' +
+        esc((s.images || []).map(i => i.label).filter(Boolean).join(" � ")) + '</p></div>').join("") +
+      '</details>').join(""));
+
   h += card("So funktionieren Geheimtipps", "",
     `<p class="small">Seltene Items und Runen werden per <b>Simulation</b> gegen den Rest verglichen: 4.000 Mal werden aus den echten Ergebnissen plausible Winrates gezogen (Bayes). Empfohlen wird nur, was in ≥ 90 % der Durchläufe besser ist und ≥ 2 % mehr Winrate bringt – und nicht nur gegen einen einzelnen Gegner gut ist.</p>
      <p class="small"><b>Simulations-Build:</b> Zusätzlich rechnet die App jeden Champion mit den Werten des aktuellen Patches durch – Skill-Schaden und -Skalierung, Passive, Ult, Cooldowns, Item-Effekte, Rüstung/MR der Gegner und deren Schadensmix. Echte Games legen nur die Item-Klasse fest (z. B. Gwen = AP) und streichen Items, die nachweislich verlieren.</p>`);

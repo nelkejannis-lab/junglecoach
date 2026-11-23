@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import website_meta
 from . import champselect, deep, live, meta, meta_cloud, profile, ranked, recorder, review
 from .ddragon import GameData
 from .lcu import LCU
@@ -274,7 +275,7 @@ def make_handler(gd, cfg, lcu):
                 cr = META["crawler"]
                 out = {"crawler": cr.state if cr else {"running": False, "message": "bereit", "matches": 0},
                        "total": ms.total() if ms else 0, "patch": ms.current_patch() if ms else None,
-                       "bracket": current_bracket(cfg), "champions": [], "tierlist": [], "cloud": meta_cloud.STATE}
+                       "bracket": current_bracket(cfg), "champions": [], "tierlist": [], "cloud": meta_cloud.STATE, "websites": website_meta.snapshot()}
                 if ms:
                     b = current_bracket(cfg)
                     out["tierlist"] = [dict(t, name=gd.champ_name(gd.champ(t["champion"])))
@@ -411,6 +412,12 @@ def start(cfg=None):
         except (OSError, ValueError):
             pass
     threading.Thread(target=poll_loop, args=(gd, cfg, lcu), daemon=True).start()
+
+    def website_loop():
+        while True:
+            website_meta.update()
+            time.sleep(1800)
+    threading.Thread(target=website_loop, daemon=True).start()
 
     def cloud_loop():
         from jc import sim
