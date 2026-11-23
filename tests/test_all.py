@@ -159,7 +159,7 @@ class Tests(unittest.TestCase):
         lines = [t for t, _ in overlay.format_lines({"live": out})]
         self.assertTrue(lines[0].startswith("10:00"))
         self.assertTrue(any("Elise" in t and "Bot" in t for t in lines))
-        self.assertTrue(any(t.startswith("NÄCHSTES ITEM") for t in lines))
+        self.assertTrue(any(t.upper().startswith("NÄCHSTES ITEM") for t in lines))
         self.assertTrue(any("Clear-Tempo" in t for t in lines))
         self.assertTrue(out["hud"]["now"]["text"])
         self.assertEqual(overlay.format_lines({"live": None}), [])
