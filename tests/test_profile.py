@@ -26,6 +26,11 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(roles[0], {"role": "Jungle", "share": 100})
 
     def test_fetch(self):
+        import tempfile
+        profile._mem.clear()
+        patcher = mock.patch.object(profile, "PROFILES", tempfile.mkdtemp())
+        patcher.start()
+        self.addCleanup(patcher.stop)
         class FakeAPI:
             def __init__(self, *a): pass
             def get(self, path, params=None, host=None):
@@ -43,6 +48,11 @@ class ProfileTests(unittest.TestCase):
         with mock.patch.object(profile, "RiotAPI", FakeAPI), mock.patch.object(profile, "_match", lambda api, mid: match(int(mid[-1]), mid.endswith("1"))):
             p2 = profile.fetch("k", "euw1", "Jannis#EUW", GD, more=True)
         self.assertEqual(len(p2["games"]), 3); self.assertTrue(p2["has_more"])
+        # next app start: profile comes instantly from disk (marked stale, refreshed in the background)
+        profile._mem.clear()
+        with mock.patch.object(profile, "RiotAPI", FakeAPI), mock.patch.object(profile, "_match", lambda api, mid: match(int(mid[-1]), mid.endswith("1"))):
+            p3 = profile.fetch("k", "euw1", "Jannis#EUW", GD, max_age=0)
+        self.assertTrue(p3.get("stale")); self.assertEqual(len(p3["games"]), 3)
 
     def test_match_detail(self):
         m = match(1, True)

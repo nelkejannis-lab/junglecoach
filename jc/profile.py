@@ -5,6 +5,7 @@ Works for any Riot ID (own account, friends, students). Match details are cached
 """
 import json
 import os
+import threading
 import time
 import urllib.parse
 
@@ -102,11 +103,66 @@ def _ids(api, puuid, flt, start, count):
     return out[:count] if allowed is None else out, offset
 
 
-def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False):
-    """queue: filter key (all/solo/flex/ranked/normal/aram/arena). more=True appends the next page."""
+PROFILES = os.path.join(DATA_DIR, "cache", "profiles")
+_refreshing = set()
+
+
+def _disk_file(key):
+    safe = "".join(ch if ch.isalnum() else "_" for ch in f"{key[0]}_{key[1]}")
+    return os.path.join(PROFILES, safe + ".json")
+
+
+def _save_disk(key, out):
+    try:
+        os.makedirs(PROFILES, exist_ok=True)
+        data = dict(out, _seen=sorted(out.get("_seen", [])))
+        with open(_disk_file(key) + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(_disk_file(key) + ".tmp", _disk_file(key))
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _load_disk(key):
+    try:
+        with open(_disk_file(key), encoding="utf-8") as f:
+            out = json.load(f)
+        out["_seen"] = set(out.get("_seen", []))
+        return out
+    except (OSError, ValueError):
+        return None
+
+
+def _summaries(api, ids, puuid, gd):
+    """Match summaries in parallel (disk cache first) – the slow part of loading a profile."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return list(ex.map(lambda mid: summarize_match(_match(api, mid), puuid, gd), ids))
+
+
+def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False, allow_stale=True):
+    """queue: filter key (all/solo/flex/ranked/normal/aram/arena). more=True appends the next page.
+    allow_stale: show the last saved profile instantly and refresh it in the background."""
     flt = queue if queue in FILTERS else "all"
     key = (riot_id.lower(), flt)
     cached = _mem.get(key)
+    if cached is None and not more:
+        disk = _load_disk(key)
+        if disk:
+            _mem[key] = cached = disk
+    if cached and not more and allow_stale and time.time() - cached.get("_t", 0) >= max_age:
+        if key not in _refreshing:  # stale-while-revalidate
+            _refreshing.add(key)
+
+            def bg():
+                try:
+                    fetch(api_key, platform, riot_id, gd, count, queue, max_age, allow_stale=False)
+                except Exception:  # noqa: BLE001
+                    pass
+                finally:
+                    _refreshing.discard(key)
+            threading.Thread(target=bg, daemon=True).start()
+        return dict(cached, stale=True)
     if cached and not more and (time.time() - cached["_t"] < max_age or LOAD_ALL.get(key, {}).get("running")):
         return cached
     api = RiotAPI(api_key, platform)
@@ -114,7 +170,7 @@ def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120
         out = cached
         ids, nxt = _ids(api, out["puuid"], flt, out["_next"], count)
         allowed = FILTERS[flt][1]
-        new = [summarize_match(_match(api, mid), out["puuid"], gd) for mid in ids if mid not in out["_seen"]]
+        new = _summaries(api, [mid for mid in ids if mid not in out["_seen"]], out["puuid"], gd)
         if allowed:
             new = [g for g in new if g["queue_id"] in allowed]
         out["games"] += new
@@ -122,27 +178,37 @@ def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120
         out["_next"] = nxt
         out["has_more"] = bool(ids)
     else:
+        from concurrent.futures import ThreadPoolExecutor
         name, tag = riot_id.split("#", 1)
-        acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
+        if cached and cached.get("puuid"):  # Riot ID -> PUUID never changes: skip the lookup
+            acct = {"puuid": cached["puuid"], "gameName": cached["riot_id"].split("#")[0],
+                    "tagLine": cached["riot_id"].split("#")[-1]}
+        else:
+            acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
         puuid = acct["puuid"]
-        summ = api.get_platform(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
-        leagues = api.get_platform(f"/lol/league/v4/entries/by-puuid/{puuid}")
-        try:
-            mastery = api.get_platform(f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", {"count": 5})
-        except Exception:
-            mastery = []
-        ids, nxt = _ids(api, puuid, flt, 0, count)
+
+        def mastery_top():
+            try:
+                return api.get_platform(f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", {"count": 5})
+            except Exception:  # noqa: BLE001
+                return []
+        with ThreadPoolExecutor(max_workers=4) as ex:  # the four lookups at the same time
+            f_s = ex.submit(api.get_platform, f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
+            f_l = ex.submit(api.get_platform, f"/lol/league/v4/entries/by-puuid/{puuid}")
+            f_m = ex.submit(mastery_top)
+            f_i = ex.submit(_ids, api, puuid, flt, 0, count)
+            summ, leagues, mastery, (ids, nxt) = f_s.result(), f_l.result(), f_m.result(), f_i.result()
         allowed = FILTERS[flt][1]
         if cached and cached.get("puuid") == puuid:  # refresh: keep everything loaded, add only new games on top
             new_ids = [i for i in ids if i not in cached["_seen"]]
-            games = [summarize_match(_match(api, mid), puuid, gd) for mid in new_ids]
+            games = _summaries(api, new_ids, puuid, gd)
             if allowed:
                 games = [g for g in games if g["queue_id"] in allowed]
             games += cached["games"]
             ids, nxt = list(cached["_seen"] | set(ids)), cached["_next"] + len(new_ids)
             has_more = cached.get("has_more", True)
         else:
-            games = [summarize_match(_match(api, mid), puuid, gd) for mid in ids]
+            games = _summaries(api, ids, puuid, gd)
             if allowed:
                 games = [g for g in games if g["queue_id"] in allowed]
             has_more = bool(ids)
@@ -170,7 +236,9 @@ def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120
                recent={"games": len(valid), "wins": sum(g["win"] for g in valid),
                        "kda": round(sum(g["kills"] + g["assists"] for g in valid) / max(1, sum(g["deaths"] for g in valid)), 2),
                        "kp": round(sum(g["kp"] for g in valid) / max(1, len(valid)))})
+    out.pop("stale", None)
     _mem[key] = out
+    _save_disk(key, out)
     return out
 
 

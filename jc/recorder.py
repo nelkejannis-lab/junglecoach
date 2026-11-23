@@ -55,27 +55,54 @@ def detect_mistakes(data, me_names, my_team, ej_names, name_team, name_pos):
     return out
 
 
-_ENCODER = {}
+_PIPE = {}
 
 
-def pick_encoder(exe):
-    """Hardware encoder of the graphics card if there is one (NVIDIA / AMD / Intel): almost no CPU load,
-    so the game stays smooth. Falls back to x264 'ultrafast'."""
-    if "enc" in _ENCODER:
-        return _ENCODER["enc"]
+def _probe(exe, args):
     flags = 0x08000000 if sys.platform == "win32" else 0
-    for enc in ("h264_nvenc", "h264_amf", "h264_qsv"):
-        try:
-            r = subprocess.run([exe, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
-                                "color=black:s=320x240:d=0.2", "-c:v", enc, "-f", "null", "-"],
-                               capture_output=True, timeout=15, creationflags=flags)
-            if r.returncode == 0:
-                _ENCODER["enc"] = enc
-                return enc
-        except (OSError, subprocess.SubprocessError):
-            pass
-    _ENCODER["enc"] = "libx264"
-    return "libx264"
+    try:
+        r = subprocess.run([exe, "-hide_banner", "-loglevel", "error"] + args + ["-t", "0.6", "-f", "null", "-"],
+                           capture_output=True, timeout=20, creationflags=flags)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def pick_pipeline(exe, fps, width):
+    """Like Mobalytics/Overwolf: capture the screen on the GPU (Desktop Duplication, 'ddagrab') and
+    encode on the GPU (NVENC / AMF / QuickSync) – the frames never touch the CPU, so the game does not lag.
+    Falls back step by step to classic capture + x264 if the graphics card / driver can't do it."""
+    key = (fps, width)
+    if key in _PIPE:
+        return _PIPE[key]
+    if sys.platform != "win32":
+        _PIPE[key] = (["-f", "x11grab", "-framerate", str(fps), "-i", os.environ.get("DISPLAY", ":0")],
+                      ["-vf", f"scale={width}:-2"], "libx264", "yuv420p")
+        return _PIPE[key]
+    dda = f"ddagrab=output_idx=0:framerate={fps}"
+    candidates = [
+        # zero-copy: GPU capture -> GPU encoder
+        (["-filter_complex", dda], [], "h264_nvenc", None),
+        (["-filter_complex", dda], [], "h264_amf", None),
+        (["-filter_complex", dda + ",hwmap=derive_device=qsv,format=qsv"], [], "h264_qsv", None),
+        # GPU capture, frames copied once, GPU or CPU encoder
+        (["-filter_complex", dda + f",hwdownload,format=bgra,scale={width}:-2"], [], "h264_nvenc", "yuv420p"),
+        (["-filter_complex", dda + f",hwdownload,format=bgra,scale={width}:-2"], [], "h264_amf", "yuv420p"),
+        (["-filter_complex", dda + f",hwdownload,format=bgra,scale={width}:-2"], [], "libx264", "yuv420p"),
+    ]
+    for inp, vf, enc, pix in candidates:
+        if _probe(exe, inp + ["-c:v", enc] + (["-pix_fmt", pix] if pix else [])):
+            _PIPE[key] = (inp, vf, enc, pix)
+            return _PIPE[key]
+    # classic GDI capture (slowest, works everywhere)
+    enc = "libx264"
+    for e in ("h264_nvenc", "h264_amf", "h264_qsv"):
+        if _probe(exe, ["-f", "lavfi", "-i", "color=black:s=320x240"] + ["-c:v", e]):
+            enc = e
+            break
+    _PIPE[key] = (["-f", "gdigrab", "-framerate", str(fps), "-draw_mouse", "1", "-i", "desktop"],
+                  ["-vf", f"scale={width}:-2"], enc, "nv12" if enc == "h264_qsv" else "yuv420p")
+    return _PIPE[key]
 
 
 class Recorder:
@@ -100,20 +127,16 @@ class Recorder:
         d = os.path.join(REC_DIR, sid)
         os.makedirs(d, exist_ok=True)
         full = os.path.join(d, "full.mp4")
-        if sys.platform == "win32":
-            src = ["-f", "gdigrab", "-framerate", str(self.cfg["fps"]), "-draw_mouse", "1", "-i", "desktop"]
-        else:  # dev/testing on Linux
-            src = ["-f", "x11grab", "-framerate", str(self.cfg["fps"]), "-i", os.environ.get("DISPLAY", ":0")]
-        enc = self.cfg["encoder"]
-        if enc == "auto":
-            enc = pick_encoder(exe)
+        inp, vf, enc, pix = pick_pipeline(exe, int(self.cfg["fps"]), int(self.cfg.get("width") or 1280))
+        if self.cfg["encoder"] not in ("auto", enc) and not inp[0] == "-filter_complex":
+            enc = self.cfg["encoder"]
         q = str(self.cfg["crf"])
         venc = {"libx264": ["-preset", "ultrafast", "-tune", "zerolatency", "-crf", q, "-threads", "2"],
-                "h264_nvenc": ["-preset", "p1", "-cq", q], "h264_amf": ["-quality", "speed", "-rc", "cqp", "-qp_i", q, "-qp_p", q],
+                "h264_nvenc": ["-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", q],
+                "h264_amf": ["-usage", "lowlatency", "-quality", "speed", "-rc", "cqp", "-qp_i", q, "-qp_p", q],
                 "h264_qsv": ["-preset", "veryfast", "-global_quality", q]}.get(enc, [])
-        scale = ["-vf", f"scale={int(self.cfg['width'])}:-2"] if self.cfg.get("width") else []
-        cmd = [exe, "-hide_banner", "-loglevel", "error", "-y"] + src + scale + ["-c:v", enc] + venc + \
-              ["-g", str(self.cfg["fps"] * 2), "-pix_fmt", "nv12" if enc == "h264_qsv" else "yuv420p", full]
+        cmd = [exe, "-hide_banner", "-loglevel", "error", "-y"] + inp + vf + ["-c:v", enc] + venc + \
+              ["-g", str(int(self.cfg["fps"]) * 2)] + (["-pix_fmt", pix] if pix else []) + [full]
         # no console window + below-normal priority: the game always wins the CPU
         flags = (0x08000000 | 0x00004000) if sys.platform == "win32" else 0
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, creationflags=flags)

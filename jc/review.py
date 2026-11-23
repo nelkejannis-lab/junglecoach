@@ -194,9 +194,10 @@ def review_match(match, timeline, puuid):
     }
 
 
-def run(api_key, platform, riot_id, count=30, queue=420, progress=None):
+def run(api_key, platform, riot_id, count=30, queue=420, progress=None, prev=None):
     """Analyses the recent ranked games: jungle games in depth (timeline), games in other roles
-    with their detail values – so the coach sees everything you play."""
+    with their detail values – so the coach sees everything you play.
+    prev: the last result – games analysed before are reused, only new games are loaded."""
     from .deep import deep_analyze
     from .meta import metrics_of
     api = RiotAPI(api_key, platform)
@@ -204,10 +205,24 @@ def run(api_key, platform, riot_id, count=30, queue=420, progress=None):
     acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
     puuid = acct["puuid"]
     ids = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", {"queue": queue, "count": count})
+    known = {}
+    for g in (prev or {}).get("games", []):
+        if g.get("match_id") and g.get("stats"):
+            known[g["match_id"]] = ("jg", g)
+    for g in (prev or {}).get("other_games", []):
+        if g.get("match_id"):
+            known[g["match_id"]] = ("other", g)
     games, others = [], []
-    for n, mid in enumerate(ids):
+    new_ids = [m for m in ids if m not in known]
+    done = 0
+    for mid in ids:
+        if mid in known:  # already analysed earlier – nothing to download
+            kind, g = known[mid]
+            (games if kind == "jg" else others).append(g)
+            continue
         if progress:
-            progress(n, len(ids))
+            progress(done, len(new_ids))
+        done += 1
         m = api.get(f"/lol/match/v5/matches/{mid}")
         info = m["info"]
         if info.get("gameDuration", 0) < 15 * 60:

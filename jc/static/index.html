@@ -340,12 +340,20 @@ function renderProfile() {
   return page("Profil", sub, h);
 }
 async function loadProfile(extra) {
-  profLoading = true; profErr = ""; if (view === "profile") render();
+  profLoading = !profData; profErr = ""; if (view === "profile") render();
   if (!cfgData) await loadCfg();
   const q = new URLSearchParams(); if (profQuery) q.set("riot_id", profQuery); q.set("queue", profQueue || "all");
   if (extra) for (const [k, v] of Object.entries(extra)) q.set(k, v);
   try { const r = await getJson("/api/profile?" + q); if (r.error) profErr = r.error; else profData = r; } catch (e) { profErr = "App-Server nicht erreichbar"; }
   profLoading = false; if (view === "profile") render();
+  if (profData && profData.stale && !extra) {  // shown instantly from disk – pick up the fresh version quietly
+    clearTimeout(loadProfile._t);
+    let tries = 0;
+    const again = async () => {
+      try { const r = await getJson("/api/profile?" + q); if (!r.error) { profData = r; if (view === "profile") render(); } if (r.stale && ++tries < 10) loadProfile._t = setTimeout(again, 3000); } catch (e) {}
+    };
+    loadProfile._t = setTimeout(again, 3000);
+  }
 }
 function setQueue(q) { profQueue = q; histChamp = histRole = histResult = ""; loadProfile(); }
 async function moreGames() { await loadProfile({more: 1}); }

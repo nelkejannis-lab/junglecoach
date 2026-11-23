@@ -63,8 +63,12 @@ def run_review(cfg):
         with LOCK:
             STATE["review_status"] = {"running": True, "done": done, "total": total, "account": rid}
     try:
+        with LOCK:
+            prev = STATE.get("review") or {}
+        if (prev.get("account") or "").lower() != (rid or "").lower():
+            prev = None
         res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), rid, max(30, int(cfg.get("review_games", 30))),
-                         progress=progress)
+                         progress=progress, prev=prev)
     except Exception as e:
         with LOCK:
             STATE["review_status"] = {"running": False, "error": str(e), "account": rid}
@@ -90,7 +94,7 @@ def auto_review_loop(cfg):
                 rev = STATE.get("review") or {}
                 running = (STATE.get("review_status") or {}).get("running")
             rid = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
-            stale = time.time() - rev.get("analysed_at", 0) > 6 * 3600
+            stale = time.time() - rev.get("analysed_at", 0) > 30 * 60  # cheap: only new games are loaded
             other = (rev.get("account") or "").lower() != (rid or "").lower()
             if riot_cred(cfg) and "#" in (rid or "") and not running and (stale or other or not rev.get("games")):
                 run_review(cfg)
