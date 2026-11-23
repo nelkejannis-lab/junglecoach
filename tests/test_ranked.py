@@ -25,6 +25,31 @@ class RankedTests(unittest.TestCase):
         self.assertEqual(s["avg_loss_lp"], -16)
         self.assertEqual(s["winrate"], 54)
 
+    def test_accounts_are_separate(self):
+        import os, tempfile
+        old = ranked.LP_FILE
+        ranked.LP_FILE = os.path.join(tempfile.mkdtemp(), "lp.json")
+        try:
+            class Client(FakeLCU):
+                def __init__(self, name, q):
+                    super().__init__(); self.name = name; self.q = q
+                def get(self, p):
+                    if p.endswith("current-summoner"):
+                        n, t = self.name.split("#"); return {"gameName": n, "tagLine": t}
+                    return super().get(p)
+            ranked.snapshot(Client("Main#EUW", {"tier": "EMERALD", "division": "II", "leaguePoints": 50, "wins": 30, "losses": 20}))
+            ranked.snapshot(Client("Smurf#EUW", {"tier": "GOLD", "division": "IV", "leaguePoints": 5, "wins": 3, "losses": 2}))
+            ranked.snapshot(Client("Main#EUW", {"tier": "EMERALD", "division": "II", "leaguePoints": 70, "wins": 31, "losses": 20}))
+            self.assertEqual(ranked.accounts(), ["main#euw", "smurf#euw"])
+            main = ranked.summary(ranked.load_history("Main#EUW"))
+            self.assertEqual((main["tier"], main["lp"], [g["lp"] for g in main["recent"]]), ("EMERALD", 70, [20]))
+            self.assertEqual(ranked.summary(ranked.load_history("smurf#euw"))["tier"], "GOLD")
+            self.assertEqual(ranked.active_account(), "main#euw")
+            ranked.snapshot(FakeLCU())  # account unknown -> nothing written
+            self.assertEqual(ranked.accounts(), ["main#euw", "smurf#euw"])
+        finally:
+            ranked.LP_FILE = old
+
     def test_improvements_matchups(self):
         def g(enemy, win, gd, scores):
             return {"enemy_jungler": enemy, "win": win, "gold_diff_10": gd,

@@ -19,17 +19,58 @@ def abs_lp(tier, div, lp):
     return None
 
 
-def load_history():
+ACTIVE = {"account": None}  # account currently logged in to the League client
+
+
+def _norm(account):
+    return (account or "").strip().lower()
+
+
+def load_all():
+    """{account (riot id, lower case): [snapshots]}. Older versions stored one mixed list for every
+    account – it cannot be split reliably, so it is kept aside and no longer shown."""
     try:
         with open(LP_FILE, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, ValueError):
-        return []
+        return {}
+    if isinstance(data, list):
+        return {"_vor_kontotrennung": data} if data else {}
+    return data if isinstance(data, dict) else {}
 
 
-def snapshot(lcu, history=None, now=None, persist=True):
-    """Reads Solo/Duo rank from the client; appends to history if anything changed. Returns history."""
-    history = load_history() if history is None else history
+def accounts():
+    return sorted(k for k in load_all() if not k.startswith("_"))
+
+
+def active_account(fallback=None):
+    return _norm(ACTIVE["account"] or fallback) or None
+
+
+def load_history(account=None):
+    account = _norm(account) or active_account()
+    return list(load_all().get(account, [])) if account else []
+
+
+def _client_account(lcu):
+    try:
+        me = lcu.get("/lol-summoner/v1/current-summoner") or {}
+    except Exception:  # noqa: BLE001
+        return None
+    name, tag = me.get("gameName"), me.get("tagLine")
+    return f"{name}#{tag}" if name and tag else None
+
+
+def snapshot(lcu, history=None, now=None, persist=True, account=None):
+    """Reads the Solo/Duo rank; appends to that account's history if anything changed. Returns the history.
+    Every Riot account has its own history, so switching accounts never mixes LP."""
+    if account is None and persist:
+        account = _client_account(lcu) if lcu else None
+        if not account:
+            return history or []  # unknown account: never write into someone else's history
+        ACTIVE["account"] = account
+    account = _norm(account)
+    history = load_history(account) if history is None else history
     stats = lcu.get("/lol-ranked/v1/current-ranked-stats") if lcu else None
     if not stats:
         return history
@@ -43,10 +84,13 @@ def snapshot(lcu, history=None, now=None, persist=True):
     last = history[-1] if history else None
     if not last or any(last[k] != entry[k] for k in ("tier", "division", "lp", "wins", "losses")):
         history.append(entry)
-        if persist:
+        if persist and account:
+            data = load_all()
+            data[account] = history[-2000:]
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(LP_FILE, "w", encoding="utf-8") as f:
-                json.dump(history[-2000:], f)
+            with open(LP_FILE + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(LP_FILE + ".tmp", LP_FILE)
     return history
 
 

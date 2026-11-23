@@ -97,7 +97,7 @@
 let view = "profile", profData = null, profQuery = "", profQueue = "all", profLoading = false, profErr = "",
     histChamp = "", histRole = "", histResult = "", matchData = null, matchLoading = false, allTimer = null, state = {}, rankedData = null, metaData = null, cfgData = null, sessions = [];
 let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null, selClip = null, msg = {};
-let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null;
+let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null, rankedAccount = "";
 async function runLab() {
   labForm = {champ: $("#lab-champ").value.trim(), role: $("#lab-role").value, enemies: $("#lab-enemies").value, msg: "Rechne …"};
   labData = null; render();
@@ -291,6 +291,8 @@ function renderRanked() {
   if (!r) return page("Ranked", "Lade…", "");
   const s = r.summary;
   let h = "";
+  if ((r.accounts || []).length > 1) h += card("", "", `<div class="row" style="border:0;padding:0"><span class="muted small">Account</span>
+    <select onchange="rankedAccount=this.value;loadRanked()">${r.accounts.map(a => `<option value="${esc(a)}"${a === r.account ? " selected" : ""}>${esc(a)}</option>`).join("")}</select></div>`, true);
   if (!s) {
     h += card("", "", empty("🏆", "Noch kein Rang erfasst", "Starte den League Client. Dein Solo/Duo-Rang und jede LP-Änderung werden ab jetzt automatisch mitgeschrieben."), true);
   } else {
@@ -585,7 +587,7 @@ async function tick() {
   if (view !== "settings") render();
 }
 const getJson = async u => (await fetch(u)).json();
-async function loadRanked() { try { rankedData = await getJson("/api/ranked"); if (view === "ranked") render(); } catch (e) {} }
+async function loadRanked() { try { rankedData = await getJson("/api/ranked" + (rankedAccount ? "?account=" + encodeURIComponent(rankedAccount) : "")); if (view === "ranked") render(); } catch (e) {} }
 async function loadMeta() { try { metaData = await getJson("/api/meta"); if (view === "meta") render(); } catch (e) {} }
 async function loadCfg() { try { cfgData = await getJson("/api/config"); if (view === "settings") render(); } catch (e) {} }
 async function loadSessions() { try { const s = await getJson("/api/sessions"); if (JSON.stringify(s) !== JSON.stringify(sessions)) { sessions = s; if (view === "analyse") render(); } } catch (e) {} }

@@ -45,7 +45,7 @@ def save_config(cfg):
 def current_bracket(cfg):
     b = cfg.get("meta_bracket", "auto")
     if b == "auto":
-        h = ranked.load_history()
+        h = ranked.load_history(ranked.active_account(cfg.get("riot_id")))
         return meta.bracket_of(h[-1]["tier"]) if h else None
     return None if b in ("all", "", None) else b
 
@@ -175,12 +175,12 @@ def make_handler(gd, cfg, lcu):
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
                 solo = prof["ranks"].get("solo")
-                if solo and rid.lower() == cfg.get("riot_id", "").lower():  # feed LP tracker without client
+                if solo:  # feed this account's LP tracker without client (each account has its own history)
                     class _FromApi:
                         def get(self, _p):
                             return {"queueMap": {"RANKED_SOLO_5x5": {"tier": solo["tier"], "division": solo["division"],
                                     "leaguePoints": solo["lp"], "wins": solo["wins"], "losses": solo["losses"]}}}
-                    ranked.snapshot(_FromApi())
+                    ranked.snapshot(_FromApi(), account=rid)
                 res = {k: v for k, v in prof.items() if not k.startswith("_")}
                 res["load_all"] = profile.LOAD_ALL.get((rid.lower(), queue if queue in profile.FILTERS else "all"))
                 return self._send(200, res)
@@ -233,7 +233,11 @@ def make_handler(gd, cfg, lcu):
                     return self._send(500, {"error": str(e)})
             if self.path.startswith("/api/test-key"):
                 return self._test_key(None)
-            if self.path == "/api/ranked":
+            if self.path.startswith("/api/ranked"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                accs = ranked.accounts()
+                acc = ((q.get("account") or [""])[0] or ranked.active_account(cfg.get("riot_id")) or
+                       (accs[0] if accs else "")).lower()
                 with LOCK:
                     rev = STATE.get("review") or {}
                 games = rev.get("games", [])
@@ -246,7 +250,8 @@ def make_handler(gd, cfg, lcu):
                             st = ms.champion(c["id"], bracket=current_bracket(cfg))
                             if st.get("enough"):
                                 pool_worst.append({"champion": gd.champ_name(c), "worst": st["worst_matchups"][:3]})
-                return self._send(200, {"summary": ranked.summary(ranked.load_history()),
+                return self._send(200, {"summary": ranked.summary(ranked.load_history(acc)),
+                                        "account": acc, "accounts": accs,
                                         "improvements": ranked.improvements(games),
                                         "own_matchups": ranked.own_matchups(games), "games": len(games),
                                         "pool_worst": pool_worst})
