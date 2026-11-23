@@ -1,0 +1,10 @@
+__pycache__/
+cache/
+recordings/
+sessions/
+dist/
+build/
+*.spec
+meta.sqlite
+lp_history.json
+review_cache.json

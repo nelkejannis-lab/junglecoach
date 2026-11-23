@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jungle Coach</title>
+<style>
+  :root {
+    --bg:#f5f5f7; --card:#ffffff; --card2:#f2f2f7; --txt:#1d1d1f; --sec:#6e6e73; --sep:rgba(60,60,67,.12);
+    --acc:#0071e3; --green:#34c759; --orange:#ff9f0a; --red:#ff3b30; --purple:#af52de;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.06); --blur:rgba(245,245,247,.72);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#000; --card:#1c1c1e; --card2:#2c2c2e; --txt:#f5f5f7; --sec:#98989d; --sep:rgba(84,84,88,.45);
+      --acc:#0a84ff; --green:#30d158; --orange:#ff9f0a; --red:#ff453a; --purple:#bf5af2; --shadow:none; --blur:rgba(0,0,0,.72); }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--txt);
+    font:15px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  header { position:sticky; top:0; z-index:10; backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px);
+    background:var(--blur); border-bottom:1px solid var(--sep); }
+  .bar-top { max-width:1180px; margin:auto; display:flex; align-items:center; gap:14px; padding:10px 24px; flex-wrap:wrap; }
+  .logo { font-weight:700; font-size:17px; letter-spacing:-.2px; }
+  .status { font-size:13px; color:var(--sec); display:flex; align-items:center; gap:6px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--sec); display:inline-block; }
+  .dot.on { background:var(--green); } .dot.rec { background:var(--red); animation:pulse 1.4s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .seg { margin-left:auto; display:flex; background:var(--card2); border-radius:10px; padding:2px; gap:2px; overflow-x:auto; }
+  .seg button { border:0; background:none; color:var(--txt); font:inherit; font-size:13px; font-weight:500; padding:6px 13px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  .seg button.act { background:var(--card); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  main { max-width:1180px; margin:auto; padding:28px 24px 60px; }
+  .title { font-size:32px; font-weight:700; letter-spacing:-.5px; margin:0; }
+  .subtitle { color:var(--sec); margin:4px 0 22px; max-width:720px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+  .card { background:var(--card); border-radius:18px; padding:20px 22px; box-shadow:var(--shadow); }
+  .card.wide { grid-column:1/-1; }
+  .card h3 { margin:0 0 2px; font-size:17px; font-weight:600; letter-spacing:-.2px; }
+  .card .hint { color:var(--sec); font-size:13px; margin:0 0 14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--sep); }
+  .row:last-child { border-bottom:0; }
+  .muted { color:var(--sec); } .small { font-size:13px; }
+  .green { color:var(--green); } .red { color:var(--red); } .orange { color:var(--orange); } .acc { color:var(--acc); }
+  .big { font-size:28px; font-weight:700; letter-spacing:-.4px; }
+  .huge { font-size:40px; font-weight:700; letter-spacing:-.8px; line-height:1.1; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin-top:14px; }
+  .stat { background:var(--card2); border-radius:12px; padding:10px 12px; }
+  .stat b { display:block; font-size:20px; letter-spacing:-.3px; } .stat span { font-size:12px; color:var(--sec); }
+  .badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:99px; background:var(--card2); color:var(--sec); vertical-align:middle; }
+  .badge.meta { background:rgba(0,113,227,.12); color:var(--acc); } .badge.gem { background:rgba(175,82,222,.14); color:var(--purple); }
+  .badge.mu { background:rgba(255,159,10,.15); color:var(--orange); } .badge.team { background:rgba(52,199,89,.15); color:var(--green); }
+  .item { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--sep); }
+  .item:last-child { border:0; } .item .n { font-weight:600; } .item .w { color:var(--sec); font-size:13px; }
+  .num { width:24px; height:24px; flex:none; border-radius:50%; background:var(--card2); display:grid; place-items:center; font-size:12px; font-weight:600; color:var(--sec); }
+  .btn { white-space:nowrap; border:0; background:var(--acc); color:#fff; font:inherit; font-weight:600; font-size:14px; padding:9px 18px; border-radius:99px; cursor:pointer; }
+  .btn.sec { background:var(--card2); color:var(--acc); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .meter { height:6px; border-radius:3px; background:var(--card2); overflow:hidden; margin-top:6px; }
+  .meter i { display:block; height:100%; border-radius:3px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-size:13px; font-weight:600; padding:4px 10px; border-radius:99px; background:var(--card2); }
+  .empty { text-align:center; padding:36px 20px; color:var(--sec); }
+  .empty .ico { font-size:34px; margin-bottom:8px; }
+  .empty b { color:var(--txt); display:block; font-size:17px; margin-bottom:4px; }
+  ul.clean { list-style:none; padding:0; margin:0; }
+  ul.clean li { padding:7px 0; border-bottom:1px solid var(--sep); } ul.clean li:last-child { border:0; }
+  .click { cursor:pointer; } .click:hover { opacity:.75; }
+  .sel { color:var(--acc); font-weight:600; }
+  .two { display:grid; grid-template-columns:minmax(260px,360px) 1fr; gap:22px; align-items:start; }
+  @media (max-width:760px) { .two { grid-template-columns:1fr; } .title { font-size:26px; } main { padding:20px 16px 50px; } }
+  label.f { display:block; margin:14px 0 4px; font-weight:600; font-size:14px; }
+  input.f, select.f { width:100%; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--sep); background:var(--card2); color:var(--txt); }
+  .switch { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--sep); }
+  .switch input { width:44px; height:26px; appearance:none; background:var(--card2); border-radius:99px; position:relative; cursor:pointer; transition:.2s; border:1px solid var(--sep); }
+  .switch input:checked { background:var(--green); }
+  .switch input::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .switch input:checked::after { left:20px; }
+  .err { background:rgba(255,59,48,.1); color:var(--red); border-radius:12px; padding:10px 14px; margin-bottom:16px; display:none; }
+  video { width:100%; max-width:760px; border-radius:12px; background:#000; display:block; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<header><div class="bar-top">
+  <div class="logo">Jungle Coach</div>
+  <div class="status"><span id="sdot" class="dot"></span><span id="stxt">Verbinde…</span></div>
+  <div class="status" id="rec" style="display:none"><span class="dot rec"></span>Aufnahme</div>
+  <nav class="seg" id="nav">
+    <button data-v="profile">Profil</button><button data-v="ranked">Ranked</button><button data-v="select">Champ Select</button><button data-v="live">Live</button>
+    <button data-v="analyse">Analyse</button><button data-v="meta">Meta</button><button data-v="settings">Einstellungen</button>
+  </nav>
+</div></header>
+<main><div id="err" class="err"></div><div id="main"></div></main>
+
+<script>
+// ------------------------------------------------------------ state
+let view = "profile", profData = null, profQuery = "", profQueue = "", profLoading = false, profErr = "", state = {}, rankedData = null, metaData = null, cfgData = null, sessions = [];
+let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null, selClip = null, msg = {};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sign = v => v == null ? "–" : (v > 0 ? "+" : "") + v;
+const col = v => v > 0 ? "green" : v < 0 ? "red" : "muted";
+const gradeCol = g => g === "A" ? "green" : g === "B" ? "acc" : g === "C" ? "orange" : "red";
+const scoreCol = s => s >= 65 ? "var(--green)" : s >= 50 ? "var(--orange)" : "var(--red)";
+const card = (title, hint, body, wide) => `<div class="card${wide ? " wide" : ""}">${title ? `<h3>${esc(title)}</h3>` : ""}${hint ? `<p class="hint">${hint}</p>` : ""}${body}</div>`;
+const empty = (ico, t, d) => `<div class="empty"><div class="ico">${ico}</div><b>${esc(t)}</b>${d}</div>`;
+const list = (arr, f) => arr && arr.length ? `<ul class="clean">${arr.map((x, i) => f(x, i)).join("")}</ul>` : '<span class="muted small">Noch keine Daten.</span>';
+const page = (title, sub, body) => `<h1 class="title">${esc(title)}</h1><p class="subtitle">${sub}</p><div class="grid">${body}</div>`;
+const BADGE = {Meta: "meta", Geheimtipp: "gem", Matchup: "mu", "Team-Fit": "team"};
+const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` : "";
+
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
+function go(v) {
+  view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
+  if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") loadMeta(); if (v === "settings") loadCfg(); if (v === "analyse") loadSessions();
+  render();
+}
+
+// ------------------------------------------------------------ map helpers (own schematic drawing)
+const S = 15000, sx = x => x / S * 300, sy = y => 300 - y / S * 300;
+const LANE_POS = {TOP: [2600, 12200], MIDDLE: [7400, 7400], BOTTOM: [12200, 2600], UTILITY: [11600, 3200]};
+function mapSvg(layers) {
+  return `<svg viewBox="0 0 300 300" style="width:100%;max-width:360px;display:block;background:#17301f;border-radius:14px">
+    <path d="M18 282 L18 18 L282 18" stroke="#41544a" stroke-width="10" fill="none" stroke-linecap="round"/>
+    <path d="M18 282 L282 282 L282 18" stroke="#41544a" stroke-width="10" fill="none" stroke-linecap="round"/>
+    <path d="M18 282 L282 18" stroke="#41544a" stroke-width="10" stroke-linecap="round"/>
+    <path d="M40 40 L260 260" stroke="#1f5577" stroke-width="12" opacity=".8" stroke-linecap="round"/>
+    <circle cx="22" cy="278" r="26" fill="#24467f"/><circle cx="278" cy="22" r="26" fill="#7a2532"/>${layers.join("")}</svg>`;
+}
+const trail = (pts, c) => pts.length > 1 ? `<polyline points="${pts.map(p => sx(p.x) + "," + sy(p.y)).join(" ")}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="4 3" opacity=".85"/>` : "";
+const dot = (x, y, c, label) => `<circle cx="${sx(x)}" cy="${sy(y)}" r="7" fill="${c}" stroke="#fff" stroke-width="1.5"/>` +
+  (label ? `<text x="${sx(x) + 10}" y="${sy(y) + 4}" fill="#fff" font-size="11" font-weight="600" font-family="-apple-system,Segoe UI">${esc(label)}</text>` : "");
+const cross = (x, y, c) => `<path d="M${sx(x)-5} ${sy(y)-5}L${sx(x)+5} ${sy(y)+5}M${sx(x)+5} ${sy(y)-5}L${sx(x)-5} ${sy(y)+5}" stroke="${c}" stroke-width="2.5"/>`;
+function lineChart(vals, labels, opts = {}) {
+  if (!vals || vals.length < 2) return '<span class="muted small">Noch zu wenige Datenpunkte – kommt nach ein paar Games.</span>';
+  const W = 560, H = opts.h || 150, lo = Math.min(...vals, opts.zero ? -Math.max(...vals.map(Math.abs)) : Infinity), hi = Math.max(...vals, opts.zero ? Math.max(...vals.map(Math.abs)) : -Infinity);
+  const span = hi - lo || 1, x = i => i / (vals.length - 1) * W, y = v => H - 6 - (v - lo) / span * (H - 12);
+  const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const base = opts.zero ? y(0) : H;
+  return `<svg viewBox="0 0 ${W} ${H + 18}" style="width:100%">
+    ${opts.zero ? `<line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--sep)"/>` : ""}
+    <polygon points="0,${base} ${pts} ${W},${base}" fill="var(--acc)" opacity=".10"/>
+    <polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linejoin="round"/>
+    ${(labels || []).map(([i, t]) => `<text x="${x(i)}" y="${H + 15}" fill="var(--sec)" font-size="11" text-anchor="middle">${esc(t)}</text>`).join("")}
+  </svg>`;
+}
+
+// ------------------------------------------------------------ PROFILE (works without League)
+const DD = () => `https://ddragon.leagueoflegends.com/cdn/${profData && profData.version}`;
+const img = (src, size, round) => `<img src="${src}" width="${size}" height="${size}" loading="lazy" style="border-radius:${round ? "50%" : "8px"};background:var(--card2);flex:none" onerror="this.style.visibility='hidden'">`;
+const champImg = (c, s = 36) => img(`${DD()}/img/champion/${encodeURIComponent(c)}.png`, s);
+const itemImg = i => i ? img(`${DD()}/img/item/${i}.png`, 24) : `<span style="width:24px;height:24px;border-radius:6px;background:var(--card2);display:inline-block"></span>`;
+const ago = ts => { const d = (Date.now() / 1000 - ts) / 3600; return d < 1 ? "gerade eben" : d < 24 ? `vor ${Math.round(d)} Std.` : `vor ${Math.round(d / 24)} Tg.`; };
+function rankBlock(label, r) {
+  if (!r) return `<div class="stat"><span>${label}</span><b class="muted" style="font-size:17px">Unranked</b></div>`;
+  return `<div class="stat"><span>${label}</span><b style="font-size:19px">${esc(cap(r.tier))} ${esc(r.division)} · ${r.lp} LP</b>
+    <span>${r.wins}S ${r.losses}N · <span class="${r.winrate >= 50 ? "green" : "red"}">${r.winrate}%</span>${r.hot_streak ? " · 🔥 Serie" : ""}</span></div>`;
+}
+function renderProfile() {
+  const own = (cfgData || {}).riot_id;
+  const search = `<div class="card wide" style="display:flex;gap:10px;align-items:center;padding:14px 16px">
+    <input class="f" id="p_q" placeholder="Riot ID suchen, z. B. Name#EUW" value="${esc(profQuery)}" onkeydown="if(event.key==='Enter')searchProfile()" style="flex:1">
+    <button class="btn" onclick="searchProfile()">Suchen</button>${own && profQuery && profQuery !== own ? `<button class="btn sec" onclick="profQuery='';loadProfile()">Mein Profil</button>` : ""}</div>`;
+  const sub = "Dein Profil und deine Games – direkt von Riot, ohne dass League laufen muss. Du kannst auch andere Spieler suchen.";
+  if (profLoading && !profData) return page("Profil", sub, search + card("", "", empty("⏳", "Lade Profil…", "Rang, Mastery und die letzten Games werden geholt."), true));
+  if (profErr && !profData) return page("Profil", sub, search + card("", "", empty("👋", profErr.includes("fehlt") ? "Willkommen bei Jungle Coach" : "Profil nicht geladen",
+    `<p>${esc(profErr)}</p>${profErr.includes("fehlt") ? `<p class="small">1. Riot ID eintragen · 2. kostenlosen API Key holen · 3. Champion-Pool wählen</p><button class="btn" onclick="go('settings')">Einrichtung starten</button>` : ""}`), true));
+  if (!profData) return page("Profil", sub, search);
+  const p = profData, rc = p.recent;
+  const filters = [["", "Alle"], ["420", "Solo/Duo"], ["440", "Flex"], ["400", "Normal"], ["450", "ARAM"]];
+  let h = search;
+  if (profErr) h += card("", "", `<span class="red small">${esc(profErr)}</span>`, true);
+  h += card("", "", `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative">${img(`${DD()}/img/profileicon/${p.icon}.png`, 84, true)}
+        <span class="chip" style="position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font-size:11px;padding:1px 8px;background:var(--card)">${p.level}</span></div>
+      <div style="flex:1;min-width:200px"><div class="huge" style="font-size:32px">${esc(p.riot_id.split("#")[0])} <span class="muted" style="font-size:22px">#${esc(p.riot_id.split("#")[1])}</span></div>
+        <div class="muted small">Letzte ${rc.games} Games: <b class="${rc.wins / Math.max(1, rc.games) >= .5 ? "green" : "red"}">${rc.wins}S ${rc.games - rc.wins}N</b> · KDA ${rc.kda} · Kill-Beteiligung ${rc.kp}%</div></div></div>
+    <div class="stats" style="margin-top:18px">${rankBlock("Solo/Duo", p.ranks.solo)}${rankBlock("Flex", p.ranks.flex)}
+      ${p.roles.slice(0, 2).map(r => `<div class="stat"><span>Rolle</span><b style="font-size:19px">${esc(r.role)}</b><span>${r.share}% der Games</span></div>`).join("")}</div>`, true);
+  h += card("Champions", `Aus den letzten ${rc.games} Games.`, list(p.champions.slice(0, 7), c => `<li style="display:flex;gap:12px;align-items:center">${champImg(c.champion)}
+      <div style="flex:1"><b>${esc(c.name || c.champion)}</b><div class="muted small">${c.games} ${c.games === 1 ? "Game" : "Games"} · ${c.avg} · ${c.cs_min} CS/Min</div></div>
+      <div style="text-align:right"><b class="${c.winrate >= 50 ? "green" : "red"}">${c.winrate}%</b><div class="muted small">KDA ${c.kda}</div></div></li>`));
+  h += card("Höchste Mastery", "", list(p.masteries, m => `<li style="display:flex;gap:12px;align-items:center">${champImg(m.champion)}
+      <div style="flex:1"><b>${esc(m.name)}</b><div class="muted small">Stufe ${m.level}</div></div><b>${(m.points || 0).toLocaleString("de-DE")}</b></li>`));
+  h += card("Match-History", `<span class="chips" style="margin-top:6px">${filters.map(([q, t]) => `<span class="chip click" style="${q === profQueue ? "background:var(--acc);color:#fff" : ""}" onclick="profQueue='${q}';loadProfile()">${t}</span>`).join("")}</span>`,
+    list(p.games, g => `<li style="display:flex;gap:12px;align-items:center;border-left:3px solid ${g.remake ? "var(--sec)" : g.win ? "var(--green)" : "var(--red)"};padding-left:10px">
+      <div style="width:44px;flex:none;text-align:center">${champImg(g.champion, 44)}<div class="muted" style="font-size:11px;white-space:nowrap;overflow:hidden">${esc(g.name || "")}</div></div>
+      <div style="width:150px;flex:none"><b class="${g.remake ? "muted" : g.win ? "green" : "red"}">${g.remake ? "Remake" : g.win ? "Sieg" : "Niederlage"}</b>
+        <div class="muted small">${esc(g.queue)}${g.role ? " · " + esc(g.role) : ""} · ${g.duration} Min</div><div class="muted small">${ago(g.ended)}</div></div>
+      <div style="width:150px;flex:none"><b>${g.kills} / <span class="red">${g.deaths}</span> / ${g.assists}</b><div class="muted small">KDA ${g.kda} · KP ${g.kp}%</div><div class="muted small">${g.cs} CS (${g.cs_min}/Min)</div></div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-left:auto">${g.items.map(itemImg).join("")}</div></li>`), true);
+  return page("Profil", sub, h);
+}
+async function loadProfile() {
+  profLoading = true; profErr = ""; if (view === "profile") render();
+  if (!cfgData) await loadCfg();
+  const q = new URLSearchParams(); if (profQuery) q.set("riot_id", profQuery); if (profQueue) q.set("queue", profQueue);
+  try { const r = await getJson("/api/profile?" + q); if (r.error) profErr = r.error; else profData = r; } catch (e) { profErr = "App-Server nicht erreichbar"; }
+  profLoading = false; if (view === "profile") render();
+}
+function searchProfile() { profQuery = $("#p_q").value.trim(); profQueue = ""; profData = null; loadProfile(); }
+
+// ------------------------------------------------------------ RANKED
+function renderRanked() {
+  const r = rankedData;
+  if (!r) return page("Ranked", "Lade…", "");
+  const s = r.summary;
+  let h = "";
+  if (!s) {
+    h += card("", "", empty("🏆", "Noch kein Rang erfasst", "Starte den League Client. Dein Solo/Duo-Rang und jede LP-Änderung werden ab jetzt automatisch mitgeschrieben."), true);
+  } else {
+    const chart = s.chart.map(c => c.abs);
+    h += card("", "", `<div class="two" style="grid-template-columns:minmax(240px,320px) 1fr">
+      <div><div class="muted small">Solo/Duo</div><div class="huge">${esc(cap(s.tier))} ${esc(s.division)}</div>
+        <div class="big" style="font-size:22px">${s.lp} LP</div>
+        <div class="stats">
+          <div class="stat"><b class="${col(s.today)}">${sign(s.today)}</b><span>LP heute</span></div>
+          <div class="stat"><b class="${col(s.week)}">${sign(s.week)}</b><span>LP 7 Tage</span></div>
+          <div class="stat"><b>${s.winrate}%</b><span>${s.wins}S / ${s.losses}N</span></div>
+          <div class="stat"><b class="${col(s.streak)}">${s.streak > 0 ? s.streak + " S" : s.streak < 0 ? -s.streak + " N" : "–"}</b><span>Serie</span></div>
+          <div class="stat"><b class="green">${sign(s.avg_win_lp)}</b><span>Ø LP pro Sieg</span></div>
+          <div class="stat"><b class="red">${sign(s.avg_loss_lp)}</b><span>Ø LP pro Niederlage</span></div>
+        </div></div>
+      <div><div class="muted small" style="margin-bottom:6px">LP-Verlauf</div>${lineChart(chart)}
+        <div class="muted small" style="margin:10px 0 6px">Letzte Games</div>
+        <div class="chips">${s.recent.map(g => `<span class="chip ${g.win ? "green" : "red"}">${sign(g.lp)}</span>`).join("") || '<span class="muted small">Kommt nach dem nächsten Game.</span>'}</div>
+        ${s.avg_win_lp != null && s.avg_loss_lp != null && s.avg_win_lp < -s.avg_loss_lp ? `<p class="small orange" style="margin-top:10px">Du bekommst weniger LP pro Sieg als du pro Niederlage verlierst – dein MMR liegt unter deinem Rang. Konstant gewinnen gleicht das aus.</p>` : ""}
+      </div></div>`, true);
+  }
+  const imp = r.improvements || [];
+  h += card("Was besser werden muss", `Durchschnitt aus ${r.games} analysierten Games. Pfeil = Trend deiner neuesten Games.`,
+    imp.length ? imp.map((c, i) => `<div style="padding:8px 0;${i < imp.length - 1 ? "border-bottom:1px solid var(--sep)" : ""}">
+      <div class="row" style="border:0;padding:0"><span>${i < 2 ? "<b>" + esc(c.name) + "</b>" : esc(c.name)}</span>
+      <span><b>${c.score}</b> <span class="small ${col(c.trend)}">${c.trend > 0 ? "▲" : c.trend < 0 ? "▼" : ""}${c.trend ? Math.abs(c.trend) : ""}</span></span></div>
+      <div class="meter"><i style="width:${c.score}%;background:${scoreCol(c.score)}"></i></div></div>`).join("")
+      : empty("📊", "Noch keine Analysen", 'Öffne <a href="#" onclick="go(\'analyse\');return false">Analyse</a> und lade deine letzten Games.'));
+  h += card("Deine schlechtesten Matchups", "Gegen diese Jungler verlierst du in deinen eigenen Games am meisten.",
+    list((r.own_matchups || []).slice(0, 6), m => `<li class="row"><span><b>${esc(m.enemy)}</b> <span class="muted small">${m.games} ${m.games === 1 ? "Game" : "Games"}</span></span>
+      <span><span class="${m.winrate < 50 ? "red" : "green"}">${m.winrate}%</span> <span class="muted small">GD@10 ${sign(m.avg_gd10)}</span></span></li>`));
+  if ((r.pool_worst || []).length) h += card("Schwerste Matchups laut Daten", "Aus allen gesammelten Games, für deine Champions (Meta-Tab füllt die Daten).",
+    r.pool_worst.map(p => `<div style="margin-bottom:10px"><b>${esc(p.champion)}</b>${list(p.worst, m => `<li class="row"><span>vs ${esc(m.enemy)}</span><span class="${m.adj_winrate < 50 ? "red" : "orange"}">${m.adj_winrate}% <span class="muted small">${m.games} G</span></span></li>`)}</div>`).join(""));
+  return page("Ranked", "Dein Rang, LP-Verlauf und woran du arbeiten solltest – automatisch aus dem Client und deinen analysierten Games.", h);
+}
+const cap = s => s ? s[0] + s.slice(1).toLowerCase() : "";
+
+// ------------------------------------------------------------ CHAMP SELECT
+function buildList(b) {
+  if (!b) return '<span class="muted small">Wähle einen Champion.</span>';
+  let h = b.core.map((i, n) => `<div class="item"><div class="num">${n + 1}</div><div><div class="n">${esc(i.name)} ${badge(i.badge)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("");
+  if (b.boots) h += `<div class="item"><div class="num">👟</div><div><div class="n">${esc(b.boots.name)}</div><div class="w">${esc(b.boots.why)}</div></div></div>`;
+  if (b.companion) h += `<div class="item"><div class="num">🐾</div><div><div class="n">${esc(b.companion.name)}</div><div class="w">${esc(b.companion.why)}</div></div></div>`;
+  if (b.situational.length) h += `<div class="muted small" style="margin-top:12px">Situativ</div>` + b.situational.map(i => `<div class="item"><div class="num">!</div><div><div class="n">${esc(i.name)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("");
+  return h;
+}
+function renderSelect() {
+  const cs = state.champ_select;
+  if (!cs) return page("Champ Select", "Hier erscheint automatisch deine Analyse, sobald Champ Select startet.",
+    card("", "", empty("⚔️", "Kein Champ Select aktiv", "Starte eine Lobby. Die App erkennt Gegner, empfiehlt Picks und setzt deine Runen automatisch."), true));
+  const p = cs.enemy_profile;
+  let h = card("Gegnerteam", `${cs.enemies_locked || cs.enemies.length}/5 sichtbar · Gegner-Jungler: <b>${esc(cs.enemy_jungler || "?")}</b>`,
+    `<div class="chips" style="margin-bottom:12px">${cs.enemies.map(e => `<span class="chip">${esc(e)}</span>`).join("") || '<span class="muted small">Noch versteckt</span>'}</div>
+     ${p.count ? `<div class="row small"><span>AD ${p.ad_share}%</span><span>AP ${p.ap_share}%</span></div>
+       <div class="meter" style="height:8px;display:flex"><i style="width:${p.ad_share}%;background:var(--orange)"></i><i style="width:${p.ap_share}%;background:var(--acc)"></i></div>` : ""}
+     <div style="margin-top:12px">${list(cs.notes, n => `<li class="small">${esc(n)}</li>`)}</div>`);
+  h += card("Pick-Empfehlung", "Aus deinem Champion-Pool, bewertet gegen diese Comp" + (cs.enemy_jungler ? " und den Gegner-Jungler." : "."),
+    list(cs.pick_suggestions.slice(0, 5), (s, i) => `<li><div class="row" style="border:0;padding:0"><b>${i === 0 ? "★ " : ""}${esc(s.champion)}</b><span class="muted">${s.score}</span></div>
+      <div class="muted small">${esc(s.why.join(" · "))}</div></li>`));
+  if (cs.runes) {
+    const r = cs.runes, data = r.source === "data";
+    h += card("Runen · " + cs.my_champion, data ? "Aus echten Games berechnet." : "Regelbasiert – sammle Meta-Daten für datenbasierte Runen.",
+      `<div class="big" style="font-size:22px">${esc(r.display.primary)} <span class="muted">+</span> ${esc(r.display.secondary)}</div>
+       <div class="chips" style="margin:10px 0">${r.display.runes.map((x, i) => `<span class="chip"${i === 0 ? ' style="background:var(--acc);color:#fff"' : ""}>${esc(x)}</span>`).join("")}</div>
+       <p class="small muted">${esc(r.why.join(" · "))}</p>
+       <div class="row" style="border:0"><span class="small ${cs.runes_imported ? "green" : "muted"}">${esc(cs.runes_import_msg || msg.runes || "Automatisch setzen ist in den Einstellungen aus.")}</span>
+       <button class="btn sec" onclick="applyRunes()">Jetzt setzen</button></div>`);
+    h += card("Build", "Reihenfolge der Kern-Items. Abzeichen zeigen, woher die Empfehlung kommt.", buildList(cs.build) +
+      `<p class="small muted" style="margin-top:12px">${badge("Team-Fit")} gegen dieses Team ${badge("Matchup")} gegen den Jungler ${badge("Geheimtipp")} selten, aber besser ${badge("Meta")} meistgespielt</p>`);
+  }
+  return page("Champ Select", "Analyse des Gegnerteams, beste Picks aus deinem Pool, Runen und Build – wird bei jedem neuen Gegner-Pick neu berechnet.", h);
+}
+
+// ------------------------------------------------------------ LIVE
+function trackerCard() {
+  const mm = state.minimap || {}, d = mm.data || {}, seen = d.last_seen || [];
+  return card("Minimap-Tracker", "Nur für Custom Games (Coaching). In Ranked/Normals automatisch gesperrt.",
+    `<div class="row" style="border:0"><span>Status: <b class="${mm.status === "aktiv" ? "green" : "muted"}">${esc(mm.status || "aus")}</b></span>
+      <button class="btn ${mm.on ? "sec" : ""}" onclick="toggleTracker()">${mm.on ? "Ausschalten" : "Einschalten"}</button></div>
+     ${mm.on && mm.status === "aktiv" ? `<div class="two"><div>${mapSvg(seen.map(x => dot(x.x, x.y, x.visible ? "#ff453a" : "#ff9f0a", x.champion + (x.visible ? "" : " " + x.seen))))}</div>
+       <div>${list(seen, x => `<li class="${x.visible ? "red" : "orange"}">${esc(x.champion)}: ${esc(x.area)} – ${x.visible ? "jetzt sichtbar" : "vor " + esc(x.ago)}</li>`)}</div></div>` : ""}
+     <p class="small muted"><a href="/api/minimap-debug" target="_blank">Erfassten Minimap-Ausschnitt prüfen</a></p>`, true);
+}
+function renderLive() {
+  const l = state.live;
+  if (!l) return page("Live", "Hilfe während des Spiels. Tipp: Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J).",
+    card("", "", empty("🎮", "Kein laufendes Spiel", "Sobald du im Spiel bist, erscheinen hier Build-Anpassungen, Gegner-Jungler-Infos und Objective-Timer."), true) + trackerCard());
+  const ej = l.enemy_jungler || {};
+  let h = card("", "", `<div class="muted small">Spielzeit</div><div class="huge">${esc(l.game_time)}</div><div class="big" style="font-size:20px">${esc(l.me)}</div>
+    <div class="stats"><div class="stat"><b class="${l.cs_per_min >= 6 ? "green" : "orange"}">${l.cs_per_min}</b><span>CS / Min</span></div>
+    ${l.objectives.map(o => `<div class="stat"><b>${esc(o.respawn_in)}</b><span>${esc(o.name)}</span></div>`).join("")}</div>
+    <p class="small muted">${esc(l.cs_hint)}</p>`);
+  h += card("Gegner-Jungler · " + (ej.champion || "?"), "Aus Scoreboard und Killfeed.", ej.champion ? `
+    <div class="stats"><div class="stat"><b>${ej.level}</b><span>Level</span></div><div class="stat"><b>${esc(ej.kda)}</b><span>KDA</span></div></div>
+    ${(ej.warnings || []).map(w => `<p class="orange small">⚠︎ ${esc(w)}</p>`).join("")}
+    <div class="muted small" style="margin-top:10px">Zuletzt im Killfeed</div>${list(ej.last_seen, s => `<li class="small">${esc(s.time)} · ${esc(s.where)}</li>`)}` : '<span class="muted">Nicht erkannt.</span>');
+  h += card("Build – live angepasst", "Passt sich an die Items und den Spielstand der Gegner an.", buildList(l.build) +
+    (l.enemy.fed.length ? `<p class="red small">Gefüttert: ${l.enemy.fed.map(f => esc(f.name + " " + f.kda)).join(", ")}</p>` : ""));
+  h += card("Fehler bisher", "Werden nach dem Spiel automatisch als Clip gespeichert.", list(l.mistakes, m => `<li><b>${esc(m.time)}</b> ${esc(m.title)}<div class="muted small">${esc(m.why)}</div></li>`));
+  return page("Live", "Hilfe während des Spiels. Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J ein/aus).", h + trackerCard());
+}
+
+// ------------------------------------------------------------ ANALYSE
+function clipPlayer(sid, clips) {
+  if (!clips || !clips.length) return '<span class="muted small">Keine Clips für dieses Game.</span>';
+  const cur = selClip && selClip.sid === sid ? selClip.file : clips[0].file;
+  return `<video src="/clips/${encodeURIComponent(sid)}/${encodeURIComponent(cur)}" controls></video>` +
+    list(clips, c => `<li class="click ${c.file === cur ? "sel" : ""}" onclick='selClip={sid:${JSON.stringify(sid)},file:${JSON.stringify(c.file)}};render()'>
+      <b>${esc(c.time)}</b> ${esc(c.title)} <span class="muted small">– ${esc(c.why)}</span></li>`);
+}
+function sessionsCards() {
+  if (!sessions.length) return card("Fehler-Clips", "Die letzten 3 Games werden automatisch aufgenommen und geschnitten.", empty("🎬", "Noch keine Clips", "Spiel ein Game – Tode, verlorene Objectives und Gegner-Ganks landen danach hier."), true);
+  return sessions.map(se => card(`Clips · ${se.champion || "Game"}`, new Date(se.start_wall * 1000).toLocaleString("de-DE"), clipPlayer(se.id, se.clips), true)).join("");
+}
+function deepCard(g) {
+  const D = g.deep, clipFor = t => (g.clips || []).find(c => Math.abs(c.t - t) < 6);
+  return card(`Deep-Analyse · ${g.champion} vs ${g.enemy_jungler}`, "Noten A–D je Bereich, verglichen mit Richtwerten für Jungler.", `
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px">
+      <div><div class="muted small">Gesamtnote</div><div class="huge ${gradeCol(D.overall)}">${D.overall}</div>
+        ${D.categories.map(c => `<div style="padding:7px 0"><div class="row" style="border:0;padding:0"><span>${esc(c.name)}</span><b class="${gradeCol(c.grade)}">${c.grade}</b></div>
+          <div class="meter"><i style="width:${c.score}%;background:${scoreCol(c.score)}"></i></div></div>`).join("")}</div>
+      <div><b>Deine 3 Prioritäten</b>${D.priorities.map((p, i) => `<div class="item"><div class="num">${i + 1}</div><div><div class="n">${esc(p.name)} <span class="${gradeCol(p.grade)}">${p.grade}</span></div><div class="w">${esc(p.advice)}</div></div></div>`).join("")}</div>
+      <div><b>Gold vs Gegner-Jungler</b>${lineChart(D.curve.map(c => c.gold_diff), [0, 5, 10, 15, 20, 25, 30].filter(m => m < D.curve.length).map(m => [m, m + "'"]), {zero: true, h: 130})}
+        <div class="stats"><div class="stat"><b>${D.stats.kp}%</b><span>Kill-Beteiligung</span></div><div class="stat"><b>${D.stats.vision_per_min}</b><span>Vision / Min</span></div><div class="stat"><b>${D.stats.jungle_cs_10}</b><span>Jungle-CS @10</span></div></div></div>
+      <div><b>Tode im Detail</b>${list(D.deaths, d => { const c = clipFor(d.t);
+        return `<li><b>${d.min}'</b> · ${esc(d.area)} ${c ? `<a href="#" onclick='selClip={sid:${JSON.stringify(g.session_id)},file:${JSON.stringify(c.file)}};render();return false'>▶ Clip</a>` : ""}<div class="muted small">${esc(d.tags.join(" · "))}</div></li>`; })}
+        <b style="display:block;margin-top:12px">Objectives</b>${list(D.objectives, o => `<li class="small"><span class="${o.ours ? "green" : "red"}">${o.min}' ${esc(o.type)} ${o.ours ? "geholt" : "verloren"}</span> <span class="muted">${o.present ? "· du warst da" : "· du warst weg"}</span></li>`)}</div>
+    </div>${g.clips ? `<div style="margin-top:18px"><b>Fehler-Clips dieses Games</b><div style="margin-top:8px">${clipPlayer(g.session_id, g.clips)}</div></div>` : ""}`, true);
+}
+function replayCard(g) {
+  const R = g.replay, m = replayMin, me = R.me.filter(p => p.min <= m), ej = R.enemy_jg.filter(p => p.min <= m), ev = R.events.filter(e => e.min <= m);
+  const L = [trail(me, "#30d158"), trail(ej, "#ff453a"), ...ev.map(e => cross(e.x, e.y, e.who === "me" ? "#30d158" : "#ff453a"))];
+  if (me.length) L.push(dot(me[me.length - 1].x, me[me.length - 1].y, "#30d158", "Du"));
+  if (ej.length) L.push(dot(ej[ej.length - 1].x, ej[ej.length - 1].y, "#ff453a", g.enemy_jungler));
+  const cur = ej.find(p => p.min === m);
+  return card("Map-Replay", "Wege von dir (grün) und dem Gegner-Jungler (rot), Minute für Minute. ✕ = Kill/Tod.", `<div class="two"><div>${mapSvg(L)}
+    <div class="row" style="border:0"><button class="btn sec" onclick="togglePlay()">${playTimer ? "Pause" : "Abspielen"}</button>
+      <input type="range" min="0" max="15" value="${m}" style="flex:1" oninput="replayMin=+this.value;render()"><b>${m}'</b></div>
+    <div class="small muted">${cur ? "Gegner-Jungler: " + esc(cur.area) : ""}</div></div>
+    <div><b>Gegner-Jungler pro Minute</b>${list(R.enemy_jg.filter(p => p.min >= 1), p => `<li class="small ${p.min === m ? "sel" : ""}">${p.min}' · ${esc(p.area)}</li>`)}</div></div>`, true);
+}
+function renderAnalyse() {
+  const r = state.review;
+  const loadBtn = `<button class="btn" onclick="loadReview()">${r ? "Neu laden" : "Letzte Games analysieren"}</button> <span class="small muted">${esc(msg.review || "")}</span>`;
+  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler, Map-Replay und Clips.",
+    card("", "", empty("🔍", "Noch nichts analysiert", `<p>Lädt deine letzten Ranked-Games über die Riot API.<br>Voraussetzung: Riot ID und API Key in den <a href="#" onclick="go('settings');return false">Einstellungen</a>.</p>${loadBtn}`), true) + sessionsCards());
+  const s = r.summary;
+  let h = card("Überblick", `${s.games || 0} Jungle-Games`, (s.games ? `
+    <div class="stats"><div class="stat"><b>${s.winrate}%</b><span>Winrate</span></div><div class="stat"><b class="${col(s.avg_gold_diff_10)}">${sign(s.avg_gold_diff_10)}</b><span>Ø Gold @10 vs JG</span></div>
+    <div class="stat"><b>${s.avg_jungle_cs_5}</b><span>Ø Jungle-CS @5</span></div><div class="stat"><b>${esc(s.objectives_pre20)}</b><span>Objectives vor 20'</span></div></div>` : "") + `<div style="margin-top:14px">${loadBtn}</div>`);
+  h += card("Was du ändern musst", "Muster über alle analysierten Games.", list(s.tips, t => `<li class="small">${esc(t)}</li>`));
+  h += card("Games", "Antippen für Deep-Analyse, Replay und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
+    <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · Note " + g.deep.overall : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
+  const g = r.games[selGame];
+  if (g && g.deep) h += deepCard(g);
+  if (g && g.replay) h += replayCard(g);
+  if (!r.games.some(x => x.clips)) h += sessionsCards();
+  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler, Map-Replay und Clips.", h);
+}
+
+// ------------------------------------------------------------ META
+function renderMeta() {
+  const m = metaData;
+  if (!m) return page("Meta", "Lade…", "");
+  const cr = m.crawler || {};
+  let h = card("Datenbasis", `Ranked-Games aus allen Elos (Iron bis Challenger), gleichmäßig verteilt. Ausgewertet für: <b>${esc(m.bracket ? {low: "Iron–Silver", mid: "Gold–Platin", high: "Emerald–Diamond", apex: "Master+"}[m.bracket] : "alle Elos")}</b>`,
+    `<div class="stats"><div class="stat"><b>${m.total}</b><span>Jungler-Datensätze</span></div><div class="stat"><b>${esc(m.patch || "–")}</b><span>Aktueller Patch</span></div></div>
+     <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
+     <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Daten sammeln"}</button></div>
+     <p class="small muted">Dauert mit Dev-Key ca. 1 Std. pro 1.500 Games (Riot-Limit). Läuft im Hintergrund weiter.</p>`);
+  h += card("So funktionieren Geheimtipps", "",
+    `<p class="small">Seltene Items und Runen werden per <b>Simulation</b> gegen den Rest verglichen: 4.000 Mal werden aus den echten Ergebnissen plausible Winrates gezogen (Bayes). Empfohlen wird nur, was in ≥ 90 % der Durchläufe besser ist und ≥ 2 % mehr Winrate bringt – und nicht nur gegen einen einzelnen Gegner gut ist.</p>
+     <p class="small muted">Das ist Statistik auf echten Games, kein Kampf-Simulator. Je mehr Daten, desto sicherer.</p>`);
+  if (!m.champions.length) h += card("", "", empty("🧪", "Noch keine Champions", 'Trage deinen Champion-Pool in den <a href="#" onclick="go(\'settings\');return false">Einstellungen</a> ein.'), true);
+  for (const c of m.champions) {
+    if (!c.enough) { h += card(c.name, `${c.games} Games – zu wenig Daten. Sammle mehr.`, ""); continue; }
+    h += card(c.name, `${c.games} Games · ${c.winrate}% Winrate · ${esc(c.scope)}`, `
+      <div class="muted small">Meta-Build</div>${c.meta_core.map((i, n) => `<div class="item"><div class="num">${n + 1}</div><div><div class="n">${esc(i.name)}</div><div class="w">${i.pickrate}% gespielt · ${i.winrate}% WR</div></div></div>`).join("")}
+      ${c.meta_keystone ? `<div class="row"><span>Keystone</span><b>${esc(c.meta_keystone.name)} <span class="muted small">${c.meta_keystone.winrate}%</span></b></div>` : ""}
+      ${c.hidden_items.concat(c.hidden_keystones).length ? `<div class="muted small" style="margin-top:12px">Geheimtipps</div>` +
+        c.hidden_items.concat(c.hidden_keystones).map(g => `<div class="item"><div class="num">💎</div><div><div class="n">${esc(g.name)} ${badge("Geheimtipp")}</div><div class="w">${esc(g.verdict)}</div></div></div>`).join("")
+        : '<p class="small muted">Kein seltener Build schlägt aktuell die Meta.</p>'}
+      <div class="muted small" style="margin-top:12px">Schwerste Matchups</div>${list(c.worst_matchups.slice(0, 3), x => `<li class="row small"><span>vs ${esc(x.enemy)}</span><span class="${x.adj_winrate < 50 ? "red" : "orange"}">${x.adj_winrate}%</span></li>`)}`);
+  }
+  if (m.tierlist.length) h += card("Jungle-Tierlist", "Beste Jungler dieses Patches in deinem Elo (bereinigt um kleine Stichproben).",
+    list(m.tierlist, (t, i) => `<li class="row small"><span><span class="muted">${i + 1}.</span> <b>${esc(t.name)}</b></span><span>${t.adj_winrate}% <span class="muted">· ${t.pickrate}% Pick</span></span></li>`));
+  return page("Meta", "Was gerade funktioniert – und seltene Builds, die nachweislich besser sind als die Meta.", h);
+}
+
+// ------------------------------------------------------------ SETTINGS
+function renderSettings() {
+  const c = cfgData;
+  if (!c) return page("Einstellungen", "Lade…", "");
+  const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
+  return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
+    card("Dein Account", "Für Analyse, LP-Abgleich und Meta-Daten.", `
+      <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
+      <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
+      <label class="f">Riot API Key ${c.riot_api_key_set ? '<span class="badge team">gespeichert</span>' : '<span class="badge">fehlt</span>'}</label>
+      <input class="f" id="s_key" type="password" placeholder="${c.riot_api_key_set ? "Neuen Key eingeben, um zu ersetzen" : "RGAPI-…"}">
+      <p class="small muted">Kostenlos auf <a href="https://developer.riotgames.com" target="_blank">developer.riotgames.com</a>. Dev-Keys laufen nach 24 h ab – für Dauerbetrieb einen Personal Key beantragen.</p>`) +
+    card("Champions & Empfehlungen", "", `
+      <label class="f">Dein Champion-Pool</label><input class="f" id="s_pool" value="${esc((c.champion_pool || []).join(", "))}" placeholder="LeeSin, Viego, Amumu">
+      <p class="small muted">Komma-getrennt, Schreibweise wie im Spiel ohne Leerzeichen (Wukong = MonkeyKing).</p>
+      <label class="f">Statistiken aus welchem Elo?</label><select class="f" id="s_bracket">
+        ${[["auto", "Automatisch (mein Rang)"], ["all", "Alle Elos"], ["low", "Iron–Silver"], ["mid", "Gold–Platin"], ["high", "Emerald–Diamond"], ["apex", "Master+"]].map(([v, t]) => `<option value="${v}" ${v === c.meta_bracket ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <div class="switch"><span>Runen automatisch setzen<div class="small muted">Bei jedem neuen Gegner-Pick, final wenn alle 5 drin sind.</div></span><input type="checkbox" id="s_auto" ${c.auto_import_runes !== false ? "checked" : ""}></div>
+      <label class="f">Games im Profil</label><input class="f" id="s_pgames" type="number" min="5" max="50" value="${c.profile_games || 20}">
+      <label class="f">Games pro Analyse</label><input class="f" id="s_games" type="number" min="5" max="50" value="${c.review_games || 20}">`) +
+    card("Kurzbefehle & Infos", "", `<ul class="clean small">
+      <li><b>Ctrl+Shift+J</b> Overlay ein/aus</li><li><b>Ctrl+Shift+K</b> Overlay verschieben</li>
+      <li>League auf <b>Randlos</b> stellen, damit das Overlay sichtbar ist.</li>
+      <li>Aufnahmen: nur die letzten 3 Games werden behalten.</li></ul>`) +
+    `<div class="card wide" style="display:flex;justify-content:flex-end;gap:12px;align-items:center"><span class="small muted">${esc(msg.cfg || "")}</span><button class="btn" onclick="saveCfg()">Sichern</button></div>`);
+}
+
+// ------------------------------------------------------------ render + data
+function render() {
+  const ph = state.phase || "…";
+  const label = {InGame: "Im Spiel", ChampSelect: "Champ Select", Lobby: "Lobby", None: "Client bereit", Matchmaking: "Suche läuft", ReadyCheck: "Match gefunden", EndOfGame: "Spielende"}[ph] || ph;
+  $("#stxt").textContent = label; $("#sdot").classList.toggle("on", !/nicht gefunden|Startet/.test(ph));
+  $("#rec").style.display = state.recording ? "flex" : "none";
+  $("#err").style.display = state.error ? "block" : "none"; $("#err").textContent = state.error || "";
+  const R = {profile: renderProfile, ranked: renderRanked, select: renderSelect, live: renderLive, analyse: renderAnalyse, meta: renderMeta, settings: renderSettings};
+  $("#main").innerHTML = R[view]();
+}
+async function tick() {
+  let txt;
+  try { txt = await (await fetch("/api/state")).text(); } catch (e) { txt = JSON.stringify({...state, error: "App-Server nicht erreichbar"}); }
+  if (txt === lastJson) return;
+  lastJson = txt; state = JSON.parse(txt);
+  const ph = state.live ? "InGame" : state.phase;          // auto-switch on phase change only
+  if (ph !== lastPhase) { if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live"); lastPhase = ph; }
+  if (view !== "settings") render();
+}
+const getJson = async u => (await fetch(u)).json();
+async function loadRanked() { try { rankedData = await getJson("/api/ranked"); if (view === "ranked") render(); } catch (e) {} }
+async function loadMeta() { try { metaData = await getJson("/api/meta"); if (view === "meta") render(); } catch (e) {} }
+async function loadCfg() { try { cfgData = await getJson("/api/config"); if (view === "settings") render(); } catch (e) {} }
+async function loadSessions() { try { const s = await getJson("/api/sessions"); if (JSON.stringify(s) !== JSON.stringify(sessions)) { sessions = s; if (view === "analyse") render(); } } catch (e) {} }
+async function applyRunes() { const r = await (await fetch("/api/apply-runes", {method: "POST"})).json(); msg.runes = r.error || "Runen gesetzt ✓"; render(); }
+async function toggleTracker() { await fetch("/api/minimap-toggle", {method: "POST"}); lastJson = ""; tick(); }
+async function crawl() { const r = await (await fetch("/api/meta/crawl", {method: "POST"})).json(); if (r.error) alertMsg(r.error); loadMeta(); }
+function alertMsg(t) { state.error = t; render(); }
+async function loadReview() {
+  msg.review = "Lade Games… (ca. 1 Minute)"; render();
+  const r = await getJson("/api/review"); msg.review = r.error || "";
+  if (!r.error) { state.review = r; selGame = 0; loadRanked(); }
+  render();
+}
+async function saveCfg() {
+  const body = {riot_id: $("#s_riot").value.trim(), platform: $("#s_platform").value, champion_pool: $("#s_pool").value.split(",").map(s => s.trim()).filter(Boolean),
+    meta_bracket: $("#s_bracket").value, auto_import_runes: $("#s_auto").checked, review_games: +$("#s_games").value || 20, profile_games: +$("#s_pgames").value || 20};
+  if ($("#s_key").value.trim()) body.riot_api_key = $("#s_key").value.trim();
+  const r = await (await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
+  msg.cfg = r.ok ? "Gespeichert ✓" : "Fehler beim Speichern"; await loadCfg(); profData = null; profErr = "";
+}
+function togglePlay() {
+  if (playTimer) { clearInterval(playTimer); playTimer = null; render(); return; }
+  if (replayMin >= 15) replayMin = 0;
+  playTimer = setInterval(() => { replayMin++; if (replayMin >= 15) { clearInterval(playTimer); playTimer = null; } render(); }, 700);
+  render();
+}
+go("profile"); tick();
+setInterval(tick, 2000); setInterval(loadSessions, 20000);
+setInterval(() => { if (view === "ranked") loadRanked(); if (view === "meta") loadMeta(); }, 8000);
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Baut JungleCoach-Setup.exe (Windows) und veröffentlicht sie als GitHub-Release.
+# Läuft automatisch bei jedem Tag "v*" (z. B. v0.7.0) oder manuell über Actions -> Run workflow.
+name: Build installer
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: python -m unittest discover tests
+      - run: >
+          python -m PyInstaller --noconfirm --clean --windowed --name JungleCoach --icon assets\icon.ico
+          --add-data "jc\static;jc\static" --add-data "config.json;."
+          --collect-all webview --collect-all imageio_ffmpeg --hidden-import cv2 --hidden-import mss run_app.py
+      - name: Inno Setup
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q installer\JungleCoach.iss
+      - uses: actions/upload-artifact@v4
+        with: { name: JungleCoach-Setup, path: dist/JungleCoach-Setup.exe }
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/JungleCoach-Setup.exe
+          name: Jungle Coach ${{ github.ref_name }}
+          body: "Installer herunterladen, ausführen, fertig. SmartScreen-Warnung: Weitere Informationen → Trotzdem ausführen."

@@ -1,0 +1,27 @@
+{
+  "riot_id": "",
+  "platform": "euw1",
+  "riot_api_key": "",
+  "review_games": 20,
+  "profile_games": 20,
+
+  "champion_pool": [],
+
+  "champion_presets": {
+    "LeeSin": { "keystone": "Conqueror", "core": ["Eclipse", "Black Cleaver", "Sterak"] }
+  },
+
+  "auto_import_runes": true,
+  "meta_bracket": "auto",
+  "meta_max_matches": 1500,
+  "meta_players_per_tier": 40,
+  "meta_matches_per_player": 5,
+  "display_language": "de_DE",
+  "league_path": "C:\\Riot Games\\League of Legends",
+  "port": 8765,
+  "allow_phone": false,
+  "overlay": { "enabled": true, "x": -470, "y": 60, "width": 450, "alpha": 0.85, "font_size": 11 },
+  "minimap_tracker": { "x": null, "y": null, "size": null, "icon_ratio": 0.085, "threshold": 0.62, "track": "jungler" },
+  "recording": { "enabled": true, "fps": 30, "crf": 28, "encoder": "libx264", "keep_full": true, "keep_games": 3 },
+  "timers": { "Dragon": 300, "Baron": 360, "Elder": 360 }
+}
