@@ -19,4 +19,4 @@ DISCORD_CLIENT_ID = "1574356683478671401"
 GOOGLE_CLIENT_ID = "171693678354-bd344bgd6pis5dqrdbscboseiap95j7l.apps.googleusercontent.com"
 
 # Secrets (Cloudflare dashboard -> Worker -> Settings -> Variables and Secrets, type "Secret"):
-#   RIOT_API_KEY, JWT_SECRET, DISCORD_CLIENT_SECRET, GOOGLE_CLIENT_SECRET
+#   RIOT_API_KEY, DISCORD_CLIENT_SECRET, GOOGLE_CLIENT_SECRET  (JWT_SECRET optional, auto-generated)

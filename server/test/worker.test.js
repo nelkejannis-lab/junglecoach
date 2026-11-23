@@ -12,6 +12,8 @@ function mockDB() {
       return {
         bind(...a) { args = a; return this; },
         async run() {
+          if (sql.startsWith("CREATE TABLE")) return {};
+          if (sql.includes("INTO config")) { globalThis.__cfg = globalThis.__cfg || args[0]; return {}; }
           if (sql.startsWith("INSERT INTO users")) {
             const [provider, pid, name, c, l] = args;
             const ex = users.find((u) => u.provider === provider && u.provider_id === pid);
@@ -24,6 +26,7 @@ function mockDB() {
           return {};
         },
         async first() {
+          if (sql.includes("FROM config")) return this.cfg ?? (globalThis.__cfg ? { value: globalThis.__cfg } : null);
           if (sql.includes("WHERE id = ?")) return users.find((u) => u.id === args[0]) || null;
           return users.find((u) => u.provider === args[0] && u.provider_id === args[1]) || null;
         },
@@ -32,7 +35,7 @@ function mockDB() {
   };
 }
 
-const env = { JWT_SECRET: "test-secret", RIOT_API_KEY: "RGAPI-test", DISCORD_CLIENT_ID: "cid", DISCORD_CLIENT_SECRET: "cs",
+const env = { RIOT_API_KEY: "RGAPI-test", DISCORD_CLIENT_ID: "cid", DISCORD_CLIENT_SECRET: "cs",
   GOOGLE_CLIENT_ID: "gid", GOOGLE_CLIENT_SECRET: "gs", DB: mockDB() };
 const ctx = { waitUntil() {} };
 globalThis.caches = { default: { store: new Map(), async match(r) { return this.store.get(r.url)?.clone(); }, async put(r, res) { this.store.set(r.url, res); } } };

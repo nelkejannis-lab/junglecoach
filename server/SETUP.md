@@ -31,7 +31,7 @@ Worker → **Settings → Variables and Secrets → Add** (Typ **Secret**):
 | Name | Wert |
 |---|---|
 | `RIOT_API_KEY` | Riot API Key (Production/Personal Key) |
-| `JWT_SECRET` | beliebige lange Zufallszeichenkette (mind. 40 Zeichen) |
+| `JWT_SECRET` | optional – wird sonst automatisch erzeugt und in D1 gespeichert |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | aus Schritt 2 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | aus Schritt 3 |
 

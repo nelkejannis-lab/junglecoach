@@ -82,9 +82,25 @@ const page = (title, text) => new Response(`<!doctype html><html lang="de"><meta
 <title>${title}</title><link rel="stylesheet" href="/style.css"><main class="narrow"><h1>${title}</h1><p>${text}</p></main></html>`,
   { headers: { "content-type": "text/html; charset=utf-8" } });
 
+// Signing secret: JWT_SECRET if set, otherwise generated once and kept in D1 (no manual setup needed)
+let cachedSecret = null;
+async function secret(env) {
+  if (env.JWT_SECRET) return env.JWT_SECRET;
+  if (cachedSecret) return cachedSecret;
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)").run();
+  let row = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  if (!row) {
+    const bytes = crypto.getRandomValues(new Uint8Array(48));
+    await env.DB.prepare("INSERT OR IGNORE INTO config (key, value) VALUES ('jwt_secret', ?)").bind(b64url(bytes)).run();
+    row = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  }
+  cachedSecret = row.value;
+  return cachedSecret;
+}
+
 async function authUser(req, env) {
   const h = req.headers.get("authorization") || "";
-  const p = await verify(h.replace(/^Bearer\s+/i, ""), env.JWT_SECRET);
+  const p = await verify(h.replace(/^Bearer\s+/i, ""), await secret(env));
   if (!p) return null;
   return env.DB.prepare("SELECT id, provider, name, riot_id, created_at FROM users WHERE id = ?").bind(p.uid).first();
 }
@@ -94,7 +110,7 @@ async function startLogin(provider, url, env) {
   const P = PROVIDERS[provider];
   const redirect = url.searchParams.get("redirect") || "";
   if (!APP_REDIRECTS.some((r) => r.test(redirect))) return json({ error: "invalid redirect" }, 400);
-  const state = await sign({ r: redirect, n: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + 600 }, env.JWT_SECRET);
+  const state = await sign({ r: redirect, n: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + 600 }, await secret(env));
   const q = new URLSearchParams({
     client_id: P.id(env), redirect_uri: `${url.origin}/auth/${provider}/callback`, response_type: "code",
     scope: P.scope, state, prompt: provider === "google" ? "select_account" : "consent",
@@ -104,7 +120,7 @@ async function startLogin(provider, url, env) {
 
 async function finishLogin(provider, url, env) {
   const P = PROVIDERS[provider];
-  const state = await verify(url.searchParams.get("state"), env.JWT_SECRET);
+  const state = await verify(url.searchParams.get("state"), await secret(env));
   const code = url.searchParams.get("code");
   if (!state || !code) return page("Anmeldung fehlgeschlagen", "Der Anmeldelink ist abgelaufen. Bitte starte die Anmeldung in der App erneut.");
   const tok = await fetch(P.token, {
@@ -120,7 +136,7 @@ async function finishLogin(provider, url, env) {
       ON CONFLICT(provider, provider_id) DO UPDATE SET name = excluded.name, last_login = excluded.last_login`)
     .bind(provider, u.id, u.name, now, now).run();
   const row = await env.DB.prepare("SELECT id FROM users WHERE provider = ? AND provider_id = ?").bind(provider, u.id).first();
-  const session = await sign({ uid: row.id, exp: now + SESSION_DAYS * 86400 }, env.JWT_SECRET);
+  const session = await sign({ uid: row.id, exp: now + SESSION_DAYS * 86400 }, await secret(env));
   return Response.redirect(`${state.r}?token=${encodeURIComponent(session)}`, 302);
 }
 
