@@ -13,5 +13,10 @@ database_name = "junglecoach"
 database_id = "63a5fac8-eb9d-47b6-86ef-1b706ed14715"
 migrations_dir = "migrations"
 
+# Public OAuth client ids (not secret)
+[vars]
+DISCORD_CLIENT_ID = "1574356683478671401"
+GOOGLE_CLIENT_ID = "171693678354-bd344bgd6pis5dqrdbscboseiap95j7l.apps.googleusercontent.com"
+
 # Secrets (Cloudflare dashboard -> Worker -> Settings -> Variables and Secrets, type "Secret"):
-#   RIOT_API_KEY, JWT_SECRET, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+#   RIOT_API_KEY, JWT_SECRET, DISCORD_CLIENT_SECRET, GOOGLE_CLIENT_SECRET
