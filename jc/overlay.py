@@ -87,6 +87,8 @@ def model(state):
         "focus": f"{h['focus']['title']} · {h['focus']['target']}" if h.get("focus") else None,
         "mood": (now or {}).get("tone") or "calm",
         "diff": h.get("gold_diff"),
+        "focus_t": (h.get("focus") or {}).get("title"),
+        "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
 
 
@@ -216,8 +218,6 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
     u.ellipse([pad, y, pad + av, y + av], fill=fill2)
     _monster_pil(d, pad + 5 * k, y + 5 * k, av - 10 * k, m["mood"])
     tx = pad + av + 10 * k
-    d.text((tx, y - 1 * k), str(m["time"]), font=F["title"], fill=W1)
-    d.text((tx, y + lh(F["title"]) - 1 * k), m["t"]["game"].capitalize(), font=F["cap"], fill=SEC)
     x = Wp - pad
     for val, cap, col in ((f"{m['gold']:,}".replace(",", ".") if m["gold"] is not None else "–", "Gold", A_YELLOW),
                           (str(m["cs"]), "CS/min", A_GREEN if m["cs_ok"] else A_ORANGE)):
@@ -225,6 +225,18 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         d.text((x, y), val, font=F["val"], fill=_rgb(col), anchor="ra")
         d.text((x, y + lh(F["val"])), cap, font=F["cap"], fill=SEC, anchor="ra")
         x -= wv + 16 * k
+    # your coaching focus at the very top (what to train this game), next to Moosi
+    if m.get("focus_t"):
+        d.text((tx, y - 1 * k), m["t"]["focus_s"], font=F["capb"], fill=_rgb(A_PURPLE))
+        yy = y - 1 * k + lh(F["capb"])
+        lines = _wrap(d, m["focus_t"], F["bodyb"], x - tx)
+        for ln in lines[:2]:
+            d.text((tx, yy), ln, font=F["bodyb"], fill=W1)
+            yy += lh(F["bodyb"])
+        if m.get("focus_v"):
+            d.text((tx, yy), m["focus_v"], font=F["cap"], fill=SEC)
+            yy += lh(F["cap"])
+        y = max(y + av, yy) - av
     y += av + 12 * k
 
     # ---- gold differences (team / jungle, item value): value + small centred bar
@@ -323,8 +335,7 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         y += hgt + 12 * k
 
     # ---- grouped rows: label left, value right, hairline separators (only rows that have content)
-    rows = [(m["t"]["ejg_s"], m["ej"], W1), (m["t"]["fed_s"], ", ".join(m["fed"]) if m["fed"] else None, _rgb(A_RED)),
-            (m["t"]["focus_s"], m["focus"], _rgb(A_PURPLE))]
+    rows = [(m["t"]["ejg_s"], m["ej"], W1), (m["t"]["fed_s"], ", ".join(m["fed"]) if m["fed"] else None, _rgb(A_RED))]
     rows = [r for r in rows if r[1]]
     if rows:
         top = y
