@@ -3,6 +3,11 @@
 name: Build installer
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release-Tag (z. B. v1.4.1) – leer = nur bauen"
+        required: false
+        default: ""
   push:
     tags: ["v*"]
 permissions:
@@ -34,9 +39,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: JungleCoach-Setup, path: dist/JungleCoach-Setup.exe }
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
           files: dist/JungleCoach-Setup.exe
-          name: Jungle Coach ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Jungle Coach ${{ inputs.tag || github.ref_name }}
           body: "Installer herunterladen, ausführen, fertig. SmartScreen-Warnung: Weitere Informationen → Trotzdem ausführen."
