@@ -134,7 +134,8 @@ def build(my_id, enemy_jg_id, allies, enemies, meta_stats=None, bracket=None):
         if rec.get("available"):
             spikes = []
             for i, it in enumerate(rec["items"][:3]):
-                spikes.append({"item": it["name_de"] or it["name"], "id": it["id"], "dmg": it.get("dmg"),
+                from jc import i18n
+                spikes.append({"item": (it["name_de"] if i18n.LANG["code"] == "de" else it["name"]) or it["name"], "id": it["id"], "dmg": it.get("dmg"),
                                "when": ["1. Item", "2. Items", "3. Items"][i]})
             plan["spikes"] = spikes
             plan["skill_order"] = rec.get("skill_order")

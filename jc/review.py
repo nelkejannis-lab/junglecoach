@@ -194,29 +194,45 @@ def review_match(match, timeline, puuid):
     }
 
 
-def run(api_key, platform, riot_id, count=30, queue=420):
+def run(api_key, platform, riot_id, count=30, queue=420, progress=None):
+    """Analyses the recent ranked games: jungle games in depth (timeline), games in other roles
+    with their detail values – so the coach sees everything you play."""
+    from .deep import deep_analyze
+    from .meta import metrics_of
     api = RiotAPI(api_key, platform)
     name, tag = riot_id.split("#", 1)
     acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
     puuid = acct["puuid"]
     ids = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", {"queue": queue, "count": count})
-    games = []
-    for mid in ids:
+    games, others = [], []
+    for n, mid in enumerate(ids):
+        if progress:
+            progress(n, len(ids))
         m = api.get(f"/lol/match/v5/matches/{mid}")
-        me = next(p for p in m["info"]["participants"] if p["puuid"] == puuid)
-        if me.get("teamPosition") != "JUNGLE":
+        info = m["info"]
+        if info.get("gameDuration", 0) < 15 * 60:
+            continue  # remake
+        me = next(p for p in info["participants"] if p["puuid"] == puuid)
+        role = me.get("teamPosition") or ""
+        start = info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000
+        stats = metrics_of(me, info.get("gameDuration", 0))
+        if role != "JUNGLE":
+            opp = next((o for o in info["participants"] if o["teamId"] != me["teamId"] and o.get("teamPosition") == role), None)
+            others.append({"match_id": mid, "champion": me["championName"], "role": role, "win": me["win"],
+                           "kda": f"{me['kills']}/{me['deaths']}/{me['assists']}", "game_start": start,
+                           "duration": info.get("gameDuration", 0), "stats": stats,
+                           "enemy": opp["championName"] if opp else "?"})
             continue
         tl = api.get(f"/lol/match/v5/matches/{mid}/timeline")
         r = review_match(m, tl, puuid)
         if r:
-            from .deep import deep_analyze
-            from .meta import metrics_of
             r["deep"] = deep_analyze(m, tl, puuid)
             r["game_start"] = r["deep"]["game_start"]
-            r["duration"] = m["info"].get("gameDuration", 0)
-            r["stats"] = metrics_of(me, r["duration"])
+            r["duration"] = info.get("gameDuration", 0)
+            r["stats"] = stats
+            r["role"] = "JUNGLE"
             games.append(r)
-    return {"games": games, "summary": summarize(games)}
+    return {"games": games, "other_games": others, "summary": summarize(games)}
 
 
 def summarize(games):

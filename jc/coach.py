@@ -15,6 +15,8 @@ from .meta import METRICS, percentile, quantile
 DRILLS = {
     "jcs10": ("Clear-Tempo", "Übungstool: Full Clear unter 3:15 (Ziel ~{t} Jungle-CS bei 10 Min). Nach jedem Gank sofort "
                              "die nächsten 2 Camps nachholen statt in der Lane zu bleiben."),
+    "cs10": ("Lane-Farm", "Übungstool: 10 Min nur last-hitten, Ziel {t} CS. Im Spiel: Waves vor dem Back fertig farmen, "
+                          "nach dem Back zuerst die Wave holen."),
     "kp": ("Präsenz an Kämpfen", "Vor jedem Camp kurz auf die Map: Wo kämpft gleich jemand? Bei Prio auf einer Lane "
                                   "hingehen. Ziel: ~{t} Kill-Beteiligung."),
     "vpm": ("Vision", "Trinket nie voll liegen lassen, bei jedem Back eine Control Ward, ab Min 14 Sweeper. "
@@ -34,7 +36,7 @@ DRILLS = {
     "dmg_share": ("Schadensanteil", "Mehr Zeit in Teamfights statt beim Farmen zu verbringen. Ziel: {t}."),
     "cc": ("CC einsetzen", "CC auf den gefährlichsten Gegner, nicht den nächsten. Ziel: {t} s CC."),
 }
-CORE = ["jcs10", "kp", "vpm", "deaths", "gpm", "dpm", "early_kills", "drag", "cw", "scuttles", "dead_share"]
+CORE = ["jcs10", "cs10", "kp", "vpm", "deaths", "gpm", "dpm", "early_kills", "drag", "cw", "scuttles", "dead_share"]
 
 
 def _good(metric, p):
@@ -95,8 +97,8 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     by = bench_by_champ or {}
     n = len(games)
 
-    def dist_of(g):
-        b = by.get(g.get("champion"))
+    def dist_of(g):  # compare with players of the same champion in the same role
+        b = by.get((g.get("champion"), g.get("role") or "JUNGLE")) or by.get(g.get("champion"))
         return b["dist"] if b else dist
     for g in games:
         g["score"] = game_score(g["stats"], dist_of(g))

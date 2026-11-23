@@ -20,7 +20,7 @@ STATE = {"phase": "Startet…", "champ_select": None, "live": None, "review": No
 REC = {"obj": None}
 META = {"stats": None, "crawler": None}
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
-EDITABLE = ["riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
+EDITABLE = ["language", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
 
 
@@ -56,20 +56,53 @@ COACH = {}
 def run_review(cfg):
     """Loads + analyses the recent ranked games of the active account (or the configured Riot ID)."""
     rid = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
-    res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), rid, cfg.get("review_games", 30))
+    with LOCK:
+        STATE["review_status"] = {"running": True, "done": 0, "total": 0, "account": rid}
+
+    def progress(done, total):
+        with LOCK:
+            STATE["review_status"] = {"running": True, "done": done, "total": total, "account": rid}
+    try:
+        res = review.run(riot_cred(cfg), cfg.get("platform", "euw1"), rid, max(30, int(cfg.get("review_games", 30))),
+                         progress=progress)
+    except Exception as e:
+        with LOCK:
+            STATE["review_status"] = {"running": False, "error": str(e), "account": rid}
+        raise
     res["account"] = rid
+    res["analysed_at"] = time.time()
     attach_clips(res["games"], recorder.list_sessions())
     with open(REVIEW_CACHE, "w", encoding="utf-8") as f:
         json.dump(res, f)
     with LOCK:
         STATE["review"] = res
+        STATE["review_status"] = {"running": False, "account": rid, "at": res["analysed_at"]}
     COACH.clear()
     return res
 
 
+def auto_review_loop(cfg):
+    """Coach analyses by itself: at start (if older than 6 h or another account) and every 6 h."""
+    time.sleep(25)  # let the client connect first, so the active account is known
+    while True:
+        try:
+            with LOCK:
+                rev = STATE.get("review") or {}
+                running = (STATE.get("review_status") or {}).get("running")
+            rid = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
+            stale = time.time() - rev.get("analysed_at", 0) > 6 * 3600
+            other = (rev.get("account") or "").lower() != (rid or "").lower()
+            if riot_cred(cfg) and "#" in (rid or "") and not running and (stale or other or not rev.get("games")):
+                run_review(cfg)
+        except Exception:  # noqa: BLE001 - retried next round
+            pass
+        time.sleep(600)
+
+
 def coach_plan(gd, cfg, rev):
     from . import coach
-    games = rev.get("games") or []
+    games = (rev.get("games") or []) + (rev.get("other_games") or [])
+    games.sort(key=lambda g: -(g.get("game_start") or 0))
     if not games:
         return {"ready": False, "reason": "Noch keine Games analysiert. Die Analyse läuft automatisch nach jedem "
                                           "Game – oder jetzt im Analyse-Tab starten."}
@@ -83,11 +116,14 @@ def coach_plan(gd, cfg, rev):
     bracket = current_bracket(cfg)
     counts = {}
     for g in games:
-        counts[g["champion"]] = counts.get(g["champion"], 0) + 1
-    by = {c: ms.benchmarks(c, "JUNGLE", bracket) for c in counts}
-    by = {c: b for c, b in by.items() if b}
+        key = (g["champion"], g.get("role") or "JUNGLE")
+        counts[key] = counts.get(key, 0) + 1
+    by = {k: ms.benchmarks(k[0], k[1], bracket) for k in counts}
+    by = {k: b for k, b in by.items() if b}
     main = max(counts, key=counts.get)
-    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(main, "JUNGLE", None), bench_by_champ=by)
+    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(main[0], main[1], None),
+                         bench_by_champ=by)
+    plan["roles"] = sorted({k[1] for k in counts})
     plan["account"] = rev.get("account")
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
     COACH["plan"] = plan
@@ -285,12 +321,16 @@ def make_handler(gd, cfg, lcu):
             self.wfile.write(data)
 
         def do_GET(self):
+            if self.path == "/i18n_en.js":
+                with open(os.path.join(STATIC, "i18n_en.js"), "rb") as f:
+                    return self._send(200, f.read(), "application/javascript")
             if self.path in ("/", "/index.html"):
                 with open(os.path.join(STATIC, "index.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html")
             if self.path == "/api/state":
                 with LOCK:
-                    return self._send(200, dict(STATE, version=gd.version))
+                    from . import i18n
+                    return self._send(200, dict(STATE, version=gd.version, lang=i18n.LANG["code"]))
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()
@@ -390,6 +430,9 @@ def make_handler(gd, cfg, lcu):
                                         "improvements": ranked.improvements(games),
                                         "own_matchups": ranked.own_matchups(games), "games": len(games),
                                         "pool_worst": pool_worst})
+            if self.path == "/api/champions":
+                return self._send(200, sorted(({"id": c["id"], "name": gd.champ_name(c)} for c in gd.champ_by_id.values()),
+                                              key=lambda x: x["name"]))
             if self.path.startswith("/api/tierlist"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 role = (q.get("role") or ["JUNGLE"])[0].upper()
@@ -558,7 +601,9 @@ def start(cfg=None):
     """Starts data loading, polling and the local server in background threads. Returns URL."""
     cfg = cfg or load_config()
     print("Lade Spieldaten (Data Dragon)…")
-    gd = GameData(cfg.get("display_language", "de_DE"))
+    from . import i18n
+    i18n.setup(cfg)
+    gd = GameData(cfg.get("display_language") or i18n.ddragon_locale())
     print(f"Patch {gd.version} geladen.")
     lcu = LCU(cfg.get("league_path"))
     if os.path.exists(REVIEW_CACHE):
@@ -577,6 +622,7 @@ def start(cfg=None):
                 META["stats"] = None  # reopen with the new games
             time.sleep(1800)
     threading.Thread(target=cloud_loop, daemon=True).start()
+    threading.Thread(target=auto_review_loop, args=(cfg,), daemon=True).start()
     port = cfg.get("port", 8765)
     host = "0.0.0.0" if cfg.get("allow_phone", False) else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), make_handler(gd, cfg, lcu))

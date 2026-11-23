@@ -199,6 +199,7 @@
 </aside>
 <main><div id="err" class="err"></div><div id="main"></div></main>
 </div>
+<script src="/i18n_en.js"></script>
 
 <script>
 // ------------------------------------------------------------ state
@@ -206,6 +207,7 @@ let view = "profile", profData = null, profQuery = "", profQueue = "all", profLo
     histChamp = "", histRole = "", histResult = "", matchData = null, matchLoading = false, allTimer = null, state = {}, rankedData = null, metaData = null, cfgData = null, sessions = [];
 let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null, selClip = null, msg = {};
 let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null, rankedAccount = "";
+let onb = {role: "", mains: [], q: "", msg: ""}, champList = [];
 let coachData = null, tierRole = "JUNGLE", tierData = {}, champPage = null, champLoading = "", tierQuery = "";
 async function runLab() {
   labForm = {champ: $("#lab-champ").value.trim(), role: $("#lab-role").value, enemies: $("#lab-enemies").value, msg: "Rechne …"};
@@ -456,8 +458,8 @@ function simBody(s) {
   if (!s.available) return `<span class="muted small">${esc(s.reason || "Nicht verfügbar.")}</span>`;
   const icon = i => img(`https://ddragon.leagueoflegends.com/cdn/${s.patch}/img/item/${i}.png`, 30);
   const mix = s.enemy_mix || {};
-  return `${s.items.map((i, n) => `<div class="item"><div class="num">${n + 1}</div>${icon(i.id)}<div><div class="n">${esc(i.name_de || i.name)} ${badge(i.badge)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("")}
-    ${s.boots ? `<div class="item"><div class="num">👟</div>${icon(s.boots.id)}<div><div class="n">${esc(s.boots.name_de || s.boots.name)}</div><div class="w">beste Schuhe für diesen Build</div></div></div>` : ""}
+  return `${s.items.map((i, n) => `<div class="item"><div class="num">${n + 1}</div>${icon(i.id)}<div><div class="n">${esc(NM(i))} ${badge(i.badge)}</div><div class="w">${esc(i.why)}</div></div></div>`).join("")}
+    ${s.boots ? `<div class="item"><div class="num">👟</div>${icon(s.boots.id)}<div><div class="n">${esc(NM(s.boots))}</div><div class="w">beste Schuhe für diesen Build</div></div></div>` : ""}
     <div class="row small" style="margin-top:10px"><span>Gegner-Schaden</span><span>${mix.physical || 0}% physisch · ${mix.magic || 0}% magisch · ${mix.true || 0}% true</span></div>
     <div class="meter" style="height:8px;display:flex"><i style="width:${mix.physical || 0}%;background:var(--orange)"></i><i style="width:${mix.magic || 0}%;background:var(--acc)"></i><i style="width:${mix.true || 0}%;background:var(--sec)"></i></div>
     ${s.clear_time ? `<div class="row small"><span>Full Clear (Lvl 6, 1. Item)</span><b>~${s.clear_time} s</b></div>` : ""}
@@ -605,18 +607,50 @@ function ring(v, label, size = 128) {
 }
 const pbar = (label, p, val) => `<div class="pbar"><div class="lab">${esc(label)}</div><div class="val"><span class="muted">${esc(val || "")}</span> · <b style="color:${pctCol(p)}">${p}%</b></div><div class="track"><i style="width:${p}%;background:${pctCol(p)}"></i></div></div>`;
 
+// ------------------------------------------------------------ ONBOARDING (first start)
+const ROLE_ICON = {TOP: "🛡️", JUNGLE: "🌿", MIDDLE: "✨", BOTTOM: "🏹", UTILITY: "💠"};
+const needsOnboarding = () => cfgData && !cfgData.main_role;
+function renderOnboarding() {
+  const q = onb.q.trim().toLowerCase();
+  const hits = q ? champList.filter(c => c.name.toLowerCase().includes(q) && !onb.mains.includes(c.id)).slice(0, 8) : [];
+  return `<h1 class="title">Willkommen bei <span class="g">Jungle Coach</span></h1>
+    <p class="subtitle">Zwei kurze Fragen – danach richtet sich alles nach dir: Coach, Vergleiche, Tierliste und Champ-Select-Hilfe.</p>
+    <div class="grid">${card("1 · Deine Rolle", "Pflicht – damit der Coach dich mit den richtigen Spielern vergleicht.",
+      `<div class="focus" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${ROLES.map(([r, l]) => `
+        <button class="fcard click" style="text-align:center;cursor:pointer;color:var(--txt);font:inherit;${onb.role === r ? "border-color:var(--acc);box-shadow:0 0 0 2px rgba(34,211,238,.35)" : "opacity:.85"}" onclick="onb.role='${r}';render()">
+          <div style="font-size:30px">${ROLE_ICON[r]}</div><h4 style="margin:6px 0 0">${l}</h4></button>`).join("")}</div>`, true)}
+    ${card("2 · Deine Main-Champions", "Optional – bis zu 2. Sie bekommen extra Analysen, Matchups und Vorschläge im Champ Select.",
+      `<div class="chips" style="margin-bottom:12px">${onb.mains.map(id => `<button class="chip on" onclick="onb.mains=onb.mains.filter(x=>x!=='${id}');render()">${cImg(id, 20, 6)} ${esc((champList.find(c => c.id === id) || {name: id}).name)} ✕</button>`).join("") || '<span class="muted small">Noch keiner gewählt.</span>'}</div>
+      ${onb.mains.length < 2 ? `<input placeholder="Champion suchen, z. B. Graves" value="${esc(onb.q)}" oninput="onb.q=this.value;render()">
+      <div class="chips" style="margin-top:10px">${hits.map(c => `<button class="chip" onclick="onb.mains.push('${c.id}');onb.q='';render()">${cImg(c.id, 20, 6)} ${esc(c.name)}</button>`).join("")}</div>` : ""}`, true)}
+    ${card("", "", `<div class="row" style="border:0"><span class="small ${onb.msg ? "red" : "muted"}">${esc(onb.msg || "Du kannst beides später in den Einstellungen ändern.")}</span>
+      <button class="btn" ${onb.role ? "" : "disabled"} onclick="finishOnboarding()">Los geht's</button></div>`, true)}</div>`;
+}
+async function finishOnboarding() {
+  if (!onb.role) { onb.msg = "Bitte wähle deine Rolle."; render(); return; }
+  const body = {main_role: onb.role, champion_pool: onb.mains};
+  const r = await (await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
+  if (!r.ok) { onb.msg = "Speichern fehlgeschlagen."; render(); return; }
+  await loadCfg(); tierRole = onb.role; renderedView = null; go("coach");
+}
+
 // ------------------------------------------------------------ COACH
 async function loadCoach() { try { coachData = await getJson("/api/coach"); if (view === "coach") render(); } catch (e) {} }
 function renderCoach() {
   const c = coachData;
   if (!c) return page("Coach", "Lade deinen Coaching-Plan …", card("", "", `<div class="skel" style="height:140px"></div>`, true));
+  const rs = state.review_status || {};
+  if (!c.ready && rs.running) return page("Coach", "Dein Coach analysiert gerade automatisch deine letzten Ranked-Games – alle Rollen.",
+    card("", "", `<div class="hero" style="grid-template-columns:auto 1fr">${ring(rs.total ? Math.round(100 * rs.done / rs.total) : 0, "Analyse")}
+      <div><div class="big">Analysiere deine Games …</div><p class="muted">${rs.done || 0} von ${rs.total || "?"} Games · ${esc(rs.account || "")}</p>
+      <p class="small muted">Jungle-Games werden mit Zeitverlauf (Pfade, Tode, Objectives) analysiert, andere Rollen mit allen Detailwerten. Dauert 1–2 Minuten.</p></div></div>`, true));
   if (!c.ready) return page("Dein <span class='g'>Coach</span>".replace(/<[^>]+>/g, ""), "Persönliche Schwerpunkte, Konstanz und Tilt-Muster – aus deinen echten Games, verglichen mit Spielern deines Champions und Elos.",
     card("", "", empty("🧠", "Noch kein Coaching-Plan", `<p>${esc(c.reason)}</p><button class="btn" onclick="go('analyse');loadReview()">Jetzt Games analysieren</button>`), true));
   const pt = c.player_type, cons = c.consistency, t = c.tilt;
   let h = card("", "", `<div class="hero">${ring(c.score, "Leistung")}
       <div><div class="muted small" style="font-weight:800;letter-spacing:.6px;text-transform:uppercase">Dein Spielertyp</div>
         <div class="huge g">${esc(pt.name)}</div><p style="margin:6px 0 0;font-size:15px">${esc(pt.text)}</p>
-        <p class="small muted" style="margin-top:8px">${c.games} Games${c.account ? " · " + esc(c.account) : ""} · verglichen mit ${esc(c.scope)} (${c.bench_games.toLocaleString("de-DE")} Games)</p></div>
+        <p class="small muted" style="margin-top:8px">${c.games} Games${(c.roles || []).length > 1 ? " · " + c.roles.map(r => ROLE_DE[r] || r).join(", ") : ""}${c.account ? " · " + esc(c.account) : ""} · verglichen mit ${esc(c.scope)} (${c.bench_games.toLocaleString("de-DE")} Games)</p></div>
       ${cons ? ring(cons.score, "Konstanz", 110) : ""}</div>`, true).replace('class="card', 'class="card glow');
   h += card("Deine Schwerpunkte", "Das bringt dir gerade am meisten Winrate – automatisch gewählt aus Schwächen, die in deinen Niederlagen den Unterschied machen.",
     c.focus.length ? `<div class="focus">${c.focus.map((f, i) => `<div class="fcard"><div class="k">Schwerpunkt ${i + 1}</div><h4>${esc(f.title)}</h4>
@@ -626,7 +660,7 @@ function renderCoach() {
         <div class="meter"><i style="width:${(() => { const [a, b] = f.last10.split("/").map(Number); return b ? 100 * a / b : 0; })()}%;background:var(--grad)"></i></div>` : ""}
       ${f.week && f.week.games ? `<div class="small muted" style="margin-top:8px">Diese Woche: ${f.week.done}/${f.week.games} Games im Ziel</div>` : ""}</div>`).join("")}</div>`
       : `<p class="muted">Keine klaren Schwächen gefunden – stark! Halte deine Konstanz.</p>`, true);
-  h += card("Du im Vergleich", `Besser als x % der ${esc(c.scope)}-Spieler. Strich in der Mitte = Durchschnitt.`,
+  h += card("Du im Vergleich", `Besser als x % der ${esc(c.scope)} Spieler. Strich in der Mitte = Durchschnitt.`,
     c.profile.map(p => pbar(p.label, p.percentile, `${p.you} · Top: ${p.top}`)).join(""));
   if (cons) h += card("Konstanz", esc(cons.verdict), `<div class="stats" style="margin-top:0">
       <div class="stat"><b>${cons.avg}</b><span>Ø Leistung</span></div><div class="stat"><b class="${cons.floor < 35 ? "red" : ""}">${cons.floor}</b><span>Dein Boden (schwächstes Viertel)</span></div>
@@ -734,6 +768,8 @@ function renderSettings() {
     card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
+      <label class="f">Deine Rolle</label><select class="f" id="s_role">${ROLES.map(([r, l]) => `<option value="${r}" ${r === c.main_role ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <label class="f">Sprache / Language</label><select class="f" id="s_lang">${[["", "Automatisch / Automatic"], ["de", "Deutsch"], ["en", "English"]].map(([v, l]) => `<option value="${v}" ${v === (c.language || "") ? "selected" : ""}>${l}</option>`).join("")}</select>
       <details style="margin-top:14px"><summary class="small muted" style="cursor:pointer">Entwickler: eigener Riot API Key (optional)</summary>
       <label class="f">Riot API Key ${c.riot_api_key_set ? '<span class="badge team">gespeichert</span>' : '<span class="badge">nicht gesetzt</span>'}</label>
       <input class="f" id="s_key" type="password" placeholder="${c.riot_api_key_set ? "Neuen Key eingeben, um zu ersetzen" : "RGAPI-…"}">
@@ -791,7 +827,26 @@ async function deleteAccount() {
 }
 
 // ------------------------------------------------------------ render + data
-let renderedView = null;
+let renderedView = null, LANG = "de", LANG_SAVED = null, TR_RE = null;
+const NM = x => x ? (LANG === "en" ? (x.name || x.name_de) : (x.name_de || x.name)) : "";
+function setLang(l) {
+  l = l === "en" ? "en" : "de";
+  if (l === LANG && (l === "de" || TR_RE)) return;
+  LANG = l; document.documentElement.lang = l;
+  const dict = window.I18N_EN || {};
+  const keys = Object.keys(dict).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  TR_RE = keys.length ? new RegExp("(?<![\\p{L}\\d])(" + keys.join("|") + ")(?![\\p{L}])", "gu") : null;
+  translateTree(document.querySelector("aside")); renderedView = null; render();
+}
+const tr = t => (LANG === "en" && TR_RE && t && /[A-Za-zÄÖÜäöüß]/.test(t)) ? t.replace(TR_RE, m => window.I18N_EN[m] ?? m) : t;
+function translateTree(root) {
+  if (LANG !== "en" || !root || !TR_RE) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = w.currentNode; n; n = w.nextNode()) {
+    if (n.nodeType === 3) { const t = tr(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; }
+    else for (const a of ["placeholder", "title"]) if (n.hasAttribute && n.hasAttribute(a)) n.setAttribute(a, tr(n.getAttribute(a)));
+  }
+}
 function morphAttrs(a, b) {
   for (const at of [...a.attributes]) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
   for (const at of [...b.attributes]) if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
@@ -818,16 +873,20 @@ function render() {
   const label = {InGame: "Im Spiel", ChampSelect: "Champ Select", Lobby: "Lobby", None: "Client bereit", Matchmaking: "Suche läuft", ReadyCheck: "Match gefunden", EndOfGame: "Spielende"}[ph] || ph;
   $("#stxt").textContent = label; $("#sdot").classList.toggle("on", !/nicht gefunden|Startet/.test(ph));
   $("#rec").style.display = state.recording ? "flex" : "none";
-  $("#err").style.display = state.error ? "block" : "none"; $("#err").textContent = state.error || "";
+  $("#err").style.display = state.error ? "block" : "none"; $("#err").textContent = tr(state.error || "");
+  $("#stxt").textContent = tr($("#stxt").textContent);
   const R = {coach: renderCoach, profile: renderProfile, ranked: renderRanked, select: renderSelect, live: renderLive, analyse: renderAnalyse, meta: renderMeta, settings: renderSettings};
-  const html = R[view]();
+  const gate = needsOnboarding();
+  const html = gate ? renderOnboarding() : R[view]();
+  const vkey = gate ? "onboarding" : view;
   const main = $("#main");
-  if (renderedView !== view) {
-    main.innerHTML = html; renderedView = view; window.scrollTo({top: 0});
+  const tmp = document.createElement("div"); tmp.innerHTML = html; translateTree(tmp);
+  if (renderedView !== vkey) {
+    main.replaceChildren(...tmp.childNodes); renderedView = vkey; window.scrollTo({top: 0});
     main.classList.remove("enter"); void main.offsetWidth; main.classList.add("enter");
     clearTimeout(render._t); render._t = setTimeout(() => main.classList.remove("enter"), 900);
   } else {
-    const tmp = document.createElement("div"); tmp.innerHTML = html; morph(main, tmp);
+    morph(main, tmp);
   }
 }
 async function tick() {
@@ -835,6 +894,9 @@ async function tick() {
   try { txt = await (await fetch("/api/state")).text(); } catch (e) { txt = JSON.stringify({...state, error: "App-Server nicht erreichbar"}); }
   if (txt === lastJson) return;
   lastJson = txt; state = JSON.parse(txt);
+  if (state.lang && state.lang !== LANG) setLang(state.lang);
+  const rsNow = JSON.stringify(state.review_status || {});
+  if (rsNow !== tick._rs) { const was = tick._rs; tick._rs = rsNow; if (was && !(state.review_status || {}).running) { coachData = null; loadCoach(); } }
   const ph = state.live ? "InGame" : state.phase;          // auto-switch on phase change only
   if (ph !== lastPhase) { if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live"); lastPhase = ph; }
   if (view !== "settings") render();
@@ -842,7 +904,9 @@ async function tick() {
 const getJson = async u => (await fetch(u)).json();
 async function loadRanked() { try { rankedData = await getJson("/api/ranked" + (rankedAccount ? "?account=" + encodeURIComponent(rankedAccount) : "")); if (view === "ranked") render(); } catch (e) {} }
 async function loadMeta() { try { metaData = await getJson("/api/meta"); if (view === "meta") render(); } catch (e) {} }
-async function loadCfg() { try { cfgData = await getJson("/api/config"); if (view === "settings") render(); } catch (e) {} }
+async function loadCfg() { try { cfgData = await getJson("/api/config"); if (cfgData.main_role) tierRole = tierRole === "JUNGLE" ? cfgData.main_role : tierRole; if (!cfgData.main_role && !onb.mains.length) onb.mains = (cfgData.champion_pool || []).slice(0, 2);
+  if (view === "settings" || !cfgData.main_role) render(); } catch (e) {} }
+async function loadChampList() { try { champList = await getJson("/api/champions"); if (needsOnboarding()) render(); } catch (e) {} }
 async function loadSessions() { try { const s = await getJson("/api/sessions"); if (JSON.stringify(s) !== JSON.stringify(sessions)) { sessions = s; if (view === "analyse") render(); } } catch (e) {} }
 async function applyRunes() { const r = await (await fetch("/api/apply-runes", {method: "POST"})).json(); msg.runes = r.error || "Runen gesetzt ✓"; render(); }
 async function crawl() { const r = await (await fetch("/api/meta/crawl", {method: "POST"})).json(); if (r.error) alertMsg(r.error); loadMeta(); }
@@ -855,10 +919,12 @@ async function loadReview() {
 }
 async function saveCfg() {
   const body = {riot_id: $("#s_riot").value.trim(), platform: $("#s_platform").value, champion_pool: $("#s_pool").value.split(",").map(s => s.trim()).filter(Boolean),
-    meta_bracket: $("#s_bracket").value, auto_import_runes: $("#s_auto").checked, review_games: +$("#s_games").value || 20, profile_games: +$("#s_pgames").value || 20};
+    language: $("#s_lang").value, main_role: $("#s_role").value, meta_bracket: $("#s_bracket").value, auto_import_runes: $("#s_auto").checked, review_games: +$("#s_games").value || 20, profile_games: +$("#s_pgames").value || 20};
   if ($("#s_key").value.trim()) body.riot_api_key = $("#s_key").value.trim();
   const r = await (await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
   msg.cfg = r.ok ? "Gespeichert ✓" : "Fehler beim Speichern"; await loadCfg(); profData = null; profErr = "";
+  if (r.ok && (body.language || "") !== (LANG_SAVED ?? "")) msg.cfg += " – App neu starten, um die Sprache komplett zu wechseln / restart the app to switch language completely";
+  LANG_SAVED = body.language || ""; setLang(body.language || state.lang);
 }
 async function testKey() {
   const k = ($("#s_key") || {}).value || "";
@@ -872,7 +938,7 @@ function togglePlay() {
   playTimer = setInterval(() => { replayMin++; if (replayMin >= 15) { clearInterval(playTimer); playTimer = null; } render(); }, 700);
   render();
 }
-go("coach"); tick();
+loadCfg(); loadChampList(); go("coach"); tick();
 setInterval(tick, 2000); setInterval(loadSessions, 20000);
 setInterval(() => { if (view === "ranked") loadRanked(); if (view === "meta") loadMeta(); }, 8000);
 </script>
