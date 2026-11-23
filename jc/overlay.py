@@ -16,10 +16,10 @@ KEY = "#010203"  # transparent key colour for the rounded corners
 
 L = {"de": {"now": "JETZT", "item": "NÄCHSTES ITEM", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
             "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
-            "missing": "fehlen", "buy": "kaufbar!", "ejg_s": "JUNGLER", "fed_s": "GEFÜTTERT", "focus_s": "FOKUS", "left": "noch {} g", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
+            "missing": "fehlen", "buy": "kaufbar!", "ejg_s": "JUNGLER", "fed_s": "GEFÜTTERT", "focus_s": "FOKUS", "left": "noch {} g", "game": "SPIELZEIT", "move": "Overlay verschieben – Ctrl+Shift+K zum Fixieren"},
      "en": {"now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
             "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
-            "missing": "missing", "buy": "affordable!", "ejg_s": "JUNGLER", "fed_s": "FED", "focus_s": "FOCUS", "left": "{} g left", "move": "Move overlay – Ctrl+Shift+K to lock"}}
+            "missing": "missing", "buy": "affordable!", "ejg_s": "JUNGLER", "fed_s": "FED", "focus_s": "FOCUS", "left": "{} g left", "game": "GAME TIME", "move": "Move overlay – Ctrl+Shift+K to lock"}}
 
 
 def layout(state):
@@ -113,10 +113,11 @@ class MSG(ctypes.Structure):
                 ("lParam", ctypes.c_ssize_t), ("time", ctypes.c_uint), ("pt", ctypes.c_long * 2)]
 
 
-# ---------------------------------------------------------------- pixel renderer (Pillow)
-# Drawn into an RGBA image: the background can be see-through while text stays fully crisp
-# (Windows: per-pixel alpha via UpdateLayeredWindow – a plain window-wide alpha would fade the text too).
-SS = 2  # supersampling for smooth corners
+# ---------------------------------------------------------------- pixel renderer (Pillow), HUD style
+# Drawn into an RGBA image: the background is see-through while text stays crisp (Windows: per-pixel
+# alpha via UpdateLayeredWindow). Style: chamfered panels, thin neon accent lines, clear hierarchy,
+# tone icons in addition to colours (readable without relying on colour alone).
+SS = 2  # supersampling
 
 
 def _rgb(h, a=255):
@@ -125,20 +126,38 @@ def _rgb(h, a=255):
 
 
 def pil_fonts(scale=1.0):
+    """Bahnschrift (Windows 10/11, DIN-like HUD font) – fallbacks: Roboto Condensed, Segoe UI, DejaVu."""
     from PIL import ImageFont
-    cands = {"reg": ["C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"],
-             "semi": ["C:/Windows/Fonts/seguisb.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
-             "bold": ["C:/Windows/Fonts/segoeuib.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]}
+    cands = [("C:/Windows/Fonts/bahnschrift.ttf", True), ("/usr/share/fonts/truetype/google-fonts/ofl/roboto/Roboto[wdth,wght].ttf", True),
+             ("C:/Windows/Fonts/segoeui.ttf", False), ("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf", False)]
 
-    def f(kind, px):
-        for p in cands[kind]:
+    def f(px, weight, cond=False):
+        for path, var in cands:
             try:
-                return ImageFont.truetype(p, int(px * scale * SS))
+                ft = ImageFont.truetype(path, int(px * scale * SS))
             except OSError:
                 continue
+            if var:
+                try:
+                    axes = {a["name"].lower() if isinstance(a.get("name"), str) else a["name"].decode().lower(): a
+                            for a in ft.get_variation_axes()}
+                    vals = []
+                    for a in ft.get_variation_axes():
+                        n = a["name"] if isinstance(a["name"], str) else a["name"].decode()
+                        n = n.lower()
+                        if "weight" in n or n == "wght":
+                            vals.append(max(a["minimum"], min(a["maximum"], weight)))
+                        elif "width" in n or n == "wdth":
+                            vals.append(max(a["minimum"], min(a["maximum"], 78 if cond else 100)))
+                        else:
+                            vals.append(a.get("default", a["minimum"]))
+                    ft.set_variation_by_axes(vals)
+                except Exception:  # noqa: BLE001 - static font
+                    pass
+            return ft
         return ImageFont.load_default(int(px * scale * SS))
-    return {"chip": f("bold", 11), "label": f("bold", 9.5), "now": f("bold", 15), "more": f("reg", 11.5),
-            "row": f("semi", 12.5), "rowk": f("bold", 9.5)}
+    return {"big": f(21, 700), "now": f(15.5, 650), "row": f(12.5, 550), "more": f(11.5, 400),
+            "label": f(9.5, 700, True), "stat": f(14, 700), "statl": f(8.5, 600, True), "tile": f(13, 700), "icon": f(12, 800)}
 
 
 def _wrap(d, text, font, maxw):
@@ -153,6 +172,12 @@ def _wrap(d, text, font, maxw):
     if cur:
         lines.append(cur)
     return lines or [""]
+
+
+def _cham(x1, y1, x2, y2, c, corners="tl,br"):
+    """Polygon of a rectangle with cut (chamfered) corners."""
+    tl, tr, br, bl = ("tl" in corners) * c, ("tr" in corners) * c, ("br" in corners) * c, ("bl" in corners) * c
+    return [(x1 + tl, y1), (x2 - tr, y1), (x2, y1 + tr), (x2, y2 - br), (x2 - br, y2), (x1 + bl, y2), (x1, y2 - bl), (x1, y1 + tl)]
 
 
 def _monster_pil(d, x, y, s, mood):
@@ -173,110 +198,170 @@ def _monster_pil(d, x, y, s, mood):
         d.polygon([(x + s * .45, y + s * .8), (x + s * .5, y + s * .88), (x + s * .55, y + s * .8)], fill=(255, 255, 255, 255))
 
 
-def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.78, move=False, scale=1.0):
-    """Overlay card as RGBA image. bg_opacity: 0 = invisible background, 1 = solid."""
-    from PIL import Image, ImageDraw
+
+
+def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=False, scale=1.0):
+    """Overlay HUD as RGBA image. bg_opacity: 0 = invisible background, 1 = solid."""
+    from PIL import Image, ImageDraw, ImageFilter
     F = fonts or pil_fonts(scale)
     k = SS * scale
     Wp = int(W * k)
-    img = Image.new("RGBA", (Wp, int(900 * k)), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    pad, y = 12 * k, 10 * k
-    a_bg, a_card = int(255 * bg_opacity), int(255 * min(1.0, bg_opacity + 0.12))
-    layers = []  # backgrounds drawn later underneath (height known at the end)
+    fg = Image.new("RGBA", (Wp, int(1000 * k)), (0, 0, 0, 0))   # text + icons
+    under = Image.new("RGBA", fg.size, (0, 0, 0, 0))             # tiles / bars below the text
+    glow = Image.new("RGBA", fg.size, (0, 0, 0, 0))              # neon lines, blurred later
+    d, u, g = ImageDraw.Draw(fg), ImageDraw.Draw(under), ImageDraw.Draw(glow)
+    pad = 14 * k
+    acc = _rgb(CYAN)
+    a_tile = int(255 * min(1.0, bg_opacity * 0.55 + 0.25))
 
     def lh(f):
-        a, b = f.getbbox("Ag")[1], f.getbbox("Ag")[3]
-        return b - a + 3 * k
+        b = f.getbbox("ÄAg")
+        return b[3] - b[1] + 2 * k
 
-    def chip(x, yy, text, fg, bg):
-        f = F["chip"]
-        w = d.textlength(text, font=f) + 14 * k
-        hgt = lh(f) + 6 * k
-        layers.append(("rr", [x, yy, x + w, yy + hgt], 9 * k, bg))
-        d.text((x + 7 * k, yy + 3 * k), text, font=f, fill=fg)
-        return x + w + 5 * k, hgt
+    def section(y, text, col):
+        """HUD section label: small caps label + thin line to the right edge."""
+        d.text((pad, y), text, font=F["label"], fill=_rgb(col))
+        x = pad + d.textlength(text, font=F["label"]) + 8 * k
+        ym = y + lh(F["label"]) / 2
+        u.line([(x, ym), (Wp - pad, ym)], fill=_rgb(col, 70), width=max(1, int(k)))
+        u.rectangle([Wp - pad - 3 * k, ym - 1.5 * k, Wp - pad, ym + 1.5 * k], fill=_rgb(col, 160))
+        return y + lh(F["label"]) + 5 * k
 
-    _monster_pil(d, pad, y - 1 * k, 27 * k, m["mood"])
-    x = pad + 35 * k
-    chipbg = _rgb(CHIP, a_card)
-    x, _ = chip(x, y + 2 * k, str(m["time"]), _rgb(TXT), chipbg)
-    x, _ = chip(x, y + 2 * k, f"{m['cs']} CS/min", _rgb(GREEN if m["cs_ok"] else ORANGE), chipbg)
-    if m["gold"] is not None:
-        chip(x, y + 2 * k, f"{m['gold']:,} g".replace(",", "."), _rgb(GOLD), chipbg)
-    y += 34 * k
+    # ---- header: Moosi in a diamond, game time, CS/min and gold as stat blocks
+    y = 12 * k
+    cx, cy, r = pad + 17 * k, y + 17 * k, 17 * k
+    u.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=_rgb(CHIP, a_tile))
+    g.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], outline=acc, width=max(1, int(1.5 * k)))
+    _monster_pil(d, cx - 11 * k, cy - 11 * k, 22 * k, m["mood"])
+    d.text((pad + 44 * k, y + 1 * k), str(m["time"]), font=F["big"], fill=_rgb(TXT))
+    d.text((pad + 45 * k, y + lh(F["big"]) + 1 * k), m["t"]["game"], font=F["statl"], fill=_rgb(MUTED))
+    x = Wp - pad
+    for val, lab, col in ((f"{m['gold']:,}".replace(",", ".") if m["gold"] is not None else "–", "GOLD", GOLD),
+                          (str(m["cs"]), "CS/MIN", GREEN if m["cs_ok"] else ORANGE)):
+        wv = max(d.textlength(val, font=F["stat"]), d.textlength(lab, font=F["statl"]))
+        d.text((x, y + 3 * k), val, font=F["stat"], fill=_rgb(col), anchor="ra")
+        d.text((x, y + 3 * k + lh(F["stat"])), lab, font=F["statl"], fill=_rgb(MUTED), anchor="ra")
+        u.line([(x - wv - 9 * k, y + 4 * k), (x - wv - 9 * k, y + 30 * k)], fill=_rgb(TXT, 40), width=max(1, int(k)))
+        x -= wv + 18 * k
+    y += 44 * k
+
+    # ---- NOW: the one thing that matters, with tone icon (colour + shape)
     if m["now"]:
         col = m["now"]["col"]
+        y = section(y, m["t"]["now"], col)
         top = y
-        d.text((pad + 14 * k, y + 8 * k), m["t"]["now"], font=F["label"], fill=_rgb(col))
-        yy = y + 8 * k + lh(F["label"]) + 1 * k
-        for ln in _wrap(d, m["now"]["text"], F["now"], Wp - 2 * pad - 26 * k):
-            d.text((pad + 14 * k, yy), ln, font=F["now"], fill=_rgb(TXT))
+        ts = 22 * k
+        u.polygon(_cham(pad, y, pad + ts, y + ts, 5 * k), fill=_rgb(col, 60))
+        g.polygon(_cham(pad, y, pad + ts, y + ts, 5 * k), outline=_rgb(col), width=max(1, int(1.5 * k)))
+        cx_, cy_, w_ = pad + ts / 2, y + ts / 2, max(2, int(2 * k))
+        if col == GREEN:  # shapes instead of font glyphs: identical on every PC
+            d.line([(cx_ - 5 * k, cy_), (cx_ - 1.5 * k, cy_ + 4 * k), (cx_ + 5.5 * k, cy_ - 4.5 * k)], fill=_rgb(col), width=w_)
+        elif col == RED:
+            d.line([(cx_ - 4.5 * k, cy_ - 4.5 * k), (cx_ + 4.5 * k, cy_ + 4.5 * k)], fill=_rgb(col), width=w_)
+            d.line([(cx_ + 4.5 * k, cy_ - 4.5 * k), (cx_ - 4.5 * k, cy_ + 4.5 * k)], fill=_rgb(col), width=w_)
+        else:
+            d.text((cx_, cy_), "i" if col == CYAN else "!", font=F["icon"], fill=_rgb(col), anchor="mm")
+        tx = pad + ts + 10 * k
+        yy = y - 1 * k
+        for ln in _wrap(d, m["now"]["text"], F["now"], Wp - pad - tx):
+            d.text((tx, yy), ln, font=F["now"], fill=_rgb(TXT))
             yy += lh(F["now"])
-        if m["more"]:
+        for more in m["more"][:1]:
             yy += 2 * k
-            for ln in _wrap(d, m["more"][0], F["more"], Wp - 2 * pad - 26 * k):
-                d.text((pad + 14 * k, yy), ln, font=F["more"], fill=_rgb(MUTED))
+            for ln in _wrap(d, "› " + more, F["more"], Wp - pad - tx):
+                d.text((tx, yy), ln, font=F["more"], fill=_rgb(MUTED))
                 yy += lh(F["more"])
-        layers.append(("rr", [pad, top, Wp - pad, yy + 8 * k], 12 * k, _rgb(CARD, a_card)))
-        layers.append(("rr", [pad + 4 * k, top + 9 * k, pad + 7 * k, yy], 2 * k, _rgb(col)))
-        y = yy + 18 * k
+        y = max(yy, top + ts) + 12 * k
+
+    # ---- next item: icon in a chamfered frame + segmented gold progress
     if m["item"]:
         itm = m["item"]
         ready = itm.get("missing") == 0
-        isz = 34 * k
-        tx = pad
+        col = GREEN if ready else CYAN
+        y = section(y, m["t"]["item"], col)
+        isz = 40 * k
+        frame = _cham(pad, y, pad + isz, y + isz, 7 * k)
+        u.polygon(frame, fill=_rgb(CHIP, a_tile))
         if item_icon is not None:
-            ic = item_icon.convert("RGBA").resize((int(isz), int(isz)))
+            ic = item_icon.convert("RGBA").resize((int(isz - 6 * k), int(isz - 6 * k)))
             mask = Image.new("L", ic.size, 0)
-            ImageDraw.Draw(mask).rounded_rectangle([0, 0, ic.size[0] - 1, ic.size[1] - 1], 8 * k, fill=255)
-            img.paste(ic, (int(pad), int(y)), mask)
-            if ready:
-                d.rounded_rectangle([pad - 1 * k, y - 1 * k, pad + isz + 1 * k, y + isz + 1 * k], 9 * k,
-                                    outline=_rgb(GREEN), width=int(2 * k))
-            tx = pad + isz + 10 * k
-        d.text((tx, y + 1 * k), m["t"]["item"], font=F["label"], fill=_rgb(MUTED))
+            ImageDraw.Draw(mask).polygon(_cham(0, 0, ic.size[0] - 1, ic.size[1] - 1, 5 * k), fill=255)
+            fg.paste(ic, (int(pad + 3 * k), int(y + 3 * k)), mask)
+        g.polygon(frame, outline=_rgb(col), width=max(1, int(1.5 * k)))
+        tx = pad + isz + 10 * k
+        d.text((tx, y + 1 * k), itm["name"], font=F["row"], fill=_rgb(TXT))
         right = m["t"]["buy"] if ready else (m["t"]["left"].format(itm["missing"]) if itm.get("missing") is not None else "")
-        d.text((Wp - pad, y + 1 * k), right, font=F["chip"], fill=_rgb(GREEN if ready else MUTED), anchor="ra")
-        d.text((tx, y + lh(F["label"]) + 1 * k), itm["name"], font=F["row"], fill=_rgb(TXT))
-        by = y + isz - 6 * k if item_icon is not None else y + lh(F["label"]) + lh(F["row"]) + 4 * k
+        d.text((Wp - pad, y + 2 * k), right.upper(), font=F["statl"], fill=_rgb(GREEN if ready else MUTED), anchor="ra")
         if itm.get("cost"):
             frac = max(0.0, min(1.0, 1 - (itm.get("missing") or 0) / itm["cost"]))
-            layers.append(("rr", [tx, by, Wp - pad, by + 6 * k], 3 * k, _rgb(CHIP, a_card)))
-            if frac > 0.03:
-                layers.append(("rrtop", [tx, by, tx + max(8 * k, (Wp - pad - tx) * frac), by + 6 * k], 3 * k,
-                               _rgb(GREEN if ready else CYAN)))
-        y = max(by + 6 * k, y + isz if item_icon is not None else 0) + 12 * k
+            n, gap = 12, 2 * k
+            bx0, bx1, by = tx, Wp - pad, y + isz - 10 * k
+            sw = (bx1 - bx0 - gap * (n - 1)) / n
+            for i in range(n):
+                sx = bx0 + i * (sw + gap)
+                on = (i + 1) / n <= frac + 1e-6 or (i == 0 and frac > 0.02)
+                poly = [(sx + 2 * k, by), (sx + sw, by), (sx + sw - 2 * k, by + 7 * k), (sx, by + 7 * k)]
+                if on:
+                    u.polygon(poly, fill=_rgb(col))
+                    g.polygon(poly, fill=_rgb(col, 200))
+                else:
+                    u.polygon(poly, fill=_rgb(TXT, 28))
+        y += isz + 12 * k
+
+    # ---- objective timers as tiles
     if m["timers"]:
-        x, ch = pad, 0
-        for label, when, soon in m["timers"]:
-            x, ch = chip(x, y, f"{label} {when}", _rgb(BG) if soon else _rgb(TXT),
-                         _rgb(ORANGE) if soon else chipbg)
-        y += ch + 10 * k
-    for key, text, col in (("ejg", m["ej"], TXT), ("fed", ", ".join(m["fed"]) if m["fed"] else None, RED),
-                           ("focus", m["focus"], VIOLET)):
+        y = section(y, m["t"]["timer"], VIOLET)
+        n = len(m["timers"])
+        gap = 6 * k
+        tw = (Wp - 2 * pad - gap * (n - 1)) / n
+        th = 34 * k
+        for i, (label, when, soon) in enumerate(m["timers"]):
+            x0 = pad + i * (tw + gap)
+            poly = _cham(x0, y, x0 + tw, y + th, 6 * k)
+            col = ORANGE if soon else TXT
+            u.polygon(poly, fill=_rgb(ORANGE, 55) if soon else _rgb(CHIP, a_tile))
+            (g if soon else u).polygon(poly, outline=_rgb(ORANGE) if soon else _rgb(TXT, 35), width=max(1, int(k)))
+            d.text((x0 + 8 * k, y + 4 * k), label.upper(), font=F["statl"], fill=_rgb(ORANGE if soon else MUTED))
+            d.text((x0 + 8 * k, y + 4 * k + lh(F["statl"])), str(when), font=F["tile"], fill=_rgb(col))
+        y += th + 12 * k
+
+    # ---- context lines (only when there is something to say)
+    rows = [(m["t"]["ejg_s"], m["ej"], TXT, CYAN), (m["t"]["fed_s"], ", ".join(m["fed"]) if m["fed"] else None, RED, RED),
+            (m["t"]["focus_s"], m["focus"], VIOLET, VIOLET)]
+    for lab, text, col, mark in rows:
         if not text:
             continue
-        d.text((pad, y + 3 * k), m["t"][key + "_s"], font=F["rowk"], fill=_rgb(MUTED))
-        for ln in _wrap(d, text, F["row"], Wp - 2 * pad - 66 * k):
-            d.text((pad + 66 * k, y), ln, font=F["row"], fill=_rgb(col))
+        u.rectangle([pad, y + 2 * k, pad + 2 * k, y + lh(F["row"]) - 1 * k], fill=_rgb(mark))
+        d.text((pad + 8 * k, y + 3 * k), lab, font=F["label"], fill=_rgb(MUTED))
+        lx = pad + 70 * k
+        for ln in _wrap(d, text, F["row"], Wp - pad - lx):
+            d.text((lx, y), ln, font=F["row"], fill=_rgb(col))
             y += lh(F["row"])
-        y += 4 * k
-    H = int(y + 6 * k)
+        y += 5 * k
+    H = int(y + 8 * k)
+
+    # ---- panel: chamfered, translucent, neon edge + corner brackets
     base = Image.new("RGBA", (Wp, H), (0, 0, 0, 0))
     bd = ImageDraw.Draw(base)
-    bd.rounded_rectangle([0, 0, Wp - 1, H - 1], 18 * k, fill=_rgb(BG, a_bg),
-                         outline=_rgb(CYAN if move else "#2a3656", 255 if move else int(160 + 95 * bg_opacity)),
-                         width=int(1 * k) or 1)
-    tops = []
-    for kind, box, r, fill in layers:
-        if kind == "rrtop":
-            tops.append((box, r, fill))
-        else:
-            bd.rounded_rectangle(box, r, fill=fill)
-    for box, r, fill in tops:
-        bd.rounded_rectangle(box, r, fill=fill)
-    out = Image.alpha_composite(base, img.crop((0, 0, Wp, H)))
+    c = 14 * k
+    shape = _cham(0, 0, Wp - 1, H - 1, c)
+    bd.polygon(shape, fill=_rgb(BG, int(255 * bg_opacity)))
+    top = Image.new("RGBA", (Wp, H), (0, 0, 0, 0))  # subtle top light
+    ImageDraw.Draw(top).polygon(_cham(0, 0, Wp - 1, int(H * .45), c, "tl"), fill=_rgb(CYAN, int(18 * bg_opacity + 6)))
+    base = Image.alpha_composite(base, top.filter(ImageFilter.GaussianBlur(20 * k)))
+    bd = ImageDraw.Draw(base)
+    edge = _rgb(CYAN if move else "#3b4a6b", 255 if move else 150)
+    bd.line(shape + [shape[0]], fill=edge, width=max(1, int(k)))
+    gl = ImageDraw.Draw(glow)
+    L_ = 26 * k
+    gl.line([(0, c + L_), (0, c), (c, 0), (c + L_, 0)], fill=acc, width=int(2 * k))               # top-left bracket
+    gl.line([(Wp - 1, H - 1 - c - L_), (Wp - 1, H - 1 - c), (Wp - 1 - c, H - 1), (Wp - 1 - c - L_, H - 1)], fill=acc, width=int(2 * k))
+    glow_c = glow.crop((0, 0, Wp, H))
+    halo = glow_c.filter(ImageFilter.GaussianBlur(4 * k))
+    out = Image.alpha_composite(base, halo)
+    out = Image.alpha_composite(out, under.crop((0, 0, Wp, H)))
+    out = Image.alpha_composite(out, glow_c)
+    out = Image.alpha_composite(out, fg.crop((0, 0, Wp, H)))
     return out.resize((int(W * scale), int(H / SS)), Image.LANCZOS)
 
 
@@ -354,7 +439,7 @@ def run(url, cfg):
             scale = max(1.0, ctypes.windll.user32.GetDpiForSystem() / 96)
         except Exception:  # noqa: BLE001
             scale = 1.0
-    ocfg = {"x": -330, "y": 70, "width": 300, "bg_opacity": 0.78, **cfg.get("overlay", {})}
+    ocfg = {"x": -330, "y": 70, "width": 300, "bg_opacity": 0.72, **cfg.get("overlay", {})}
     if ocfg.get("width") == 390:  # old default -> new compact card
         ocfg["width"], ocfg["x"] = 300, -330
     W = ocfg["width"]
