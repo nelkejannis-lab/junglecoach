@@ -253,6 +253,11 @@
   .fr .nm { font-weight:700; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .fr .sub { font-size:11.5px; color:var(--sec); }
   .fr .rk { margin-left:auto; text-align:right; font-size:11.5px; font-weight:800; white-space:nowrap; }
+  .card .tsearch input { border:0 !important; background:none !important; padding:0 !important; box-shadow:none !important; width:auto; flex:1; }
+  .poolgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px; max-height:330px; overflow:auto; padding:2px; }
+  .pc { display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 4px; border-radius:14px; border:1px solid transparent; background:var(--card2); color:var(--txt); font:inherit; cursor:pointer; transition:background .15s, border-color .15s; }
+  .pc:hover { background:var(--card3); } .pc span { font-size:11px; line-height:1.2; text-align:center; color:var(--sec); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pc.on { border-color:rgba(45,212,191,.6); background:rgba(45,212,191,.12); } .pc.on span { color:var(--txt); font-weight:700; }
   .addf { display:flex; gap:8px; margin-top:10px; }
   .addf input { flex:1; min-width:0; padding:9px 11px; border-radius:11px; border:1px solid var(--line); background:rgba(0,0,0,.25); outline:none; font-size:13px; }
   .addf button { padding:0 12px; border-radius:11px; }
@@ -341,7 +346,7 @@ const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
-  if (v === "settings") { loadAccount(); ovSet({}); recSet({}); }
+  if (v === "settings") { loadAccount(); ovSet({}); recSet({}); poolSel = null; poolQ = ""; if (!champList.length) loadChampList().then(poolRefresh); }
   if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") { loadSessions(); loadReviewData(); }
   if (v === "coach") loadCoach();
   if (v === "friends") { loadFriends(); if (friendView) friendCoachLoad(friendView); }
@@ -1146,6 +1151,27 @@ function overlayCard() {
     <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
       <button class="btn ${o.move ? "" : "sec"}" onclick="ovSet({move:${!o.move}})">${o.move ? "Fertig – Position speichern" : "Position verschieben"}</button></div>`);
 }
+// champion pool picker: search + all champions with pictures (updates only its own box, keeps other inputs)
+let poolSel = null, poolQ = "";
+function poolHtml() {
+  if (poolSel == null) poolSel = ((cfgData || {}).champion_pool || []).slice();
+  const name = id => (champList.find(c => c.id === id) || {name: id}).name;
+  const q = poolQ.trim().toLowerCase();
+  const list = champList.filter(c => !q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
+  return `<div class="chips" style="margin-bottom:10px;min-height:32px">${poolSel.map(id => `<button class="chip on" style="display:flex;gap:6px;align-items:center" onclick="poolToggle('${id}')" title="Entfernen">${cImg(id, 22, 7)} ${esc(name(id))} ✕</button>`).join("") || '<span class="muted small">Noch keine Champions gewählt – unten antippen.</span>'}</div>
+    <div class="tsearch" style="max-width:none;height:42px;margin-bottom:10px"><span class="ic">${svgIcon("search")}</span><input id="poolq" placeholder="Champion suchen …" value="${esc(poolQ)}" oninput="poolQ=this.value;poolRefresh(true)"></div>
+    <div class="poolgrid">${list.map(c => `<button class="pc ${poolSel.includes(c.id) ? "on" : ""}" onclick="poolToggle('${c.id}')" title="${esc(c.name)}">${cImg(c.id, 52, 12)}<span>${esc(c.name)}</span></button>`).join("") || '<span class="muted small">Kein Champion gefunden.</span>'}</div>
+    <p class="small muted" style="margin:8px 0 0">${poolSel.length} gewählt · die ersten zwei gelten als deine Mains. Speichern unten mit „Sichern“.</p>`;
+}
+function poolToggle(id) { poolSel = poolSel.includes(id) ? poolSel.filter(x => x !== id) : [...poolSel, id]; poolRefresh(); }
+function poolRefresh(keepFocus) {
+  const box = document.getElementById("poolbox"); if (!box) return;
+  const grid = box.querySelector(".poolgrid"), st = grid ? grid.scrollTop : 0;
+  const tmp = document.createElement("div"); tmp.innerHTML = poolHtml(); translateTree(tmp);
+  morph(box, tmp);
+  const g2 = box.querySelector(".poolgrid"); if (g2 && !keepFocus) g2.scrollTop = st;
+  if (keepFocus) { const i = document.getElementById("poolq"); if (i && document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+}
 function renderSettings() {
   const c = cfgData;
   if (!c) return page("Einstellungen", "Lade…", "");
@@ -1164,8 +1190,7 @@ function renderSettings() {
       <div class="small">${(msg.test || []).map(s => `<div class="${s.ok ? "green" : "red"}">${s.ok ? "✓" : "✕"} ${esc(s.text)}</div>`).join("")}</div>
       <p class="small muted">Nur nötig, wenn du ohne Konto direkt mit eigenem Key arbeiten willst. Normale Nutzer melden sich einfach oben an.</p></details>`) +
     card("Champions & Empfehlungen", "", `
-      <label class="f">Dein Champion-Pool</label><input class="f" id="s_pool" value="${esc((c.champion_pool || []).join(", "))}" placeholder="LeeSin, Viego, Amumu">
-      <p class="small muted">Komma-getrennt, Schreibweise wie im Spiel ohne Leerzeichen (Wukong = MonkeyKing).</p>
+      <label class="f">Dein Champion-Pool</label><div id="poolbox">${poolHtml()}</div>
       <label class="f">Statistiken aus welchem Elo?</label><select class="f" id="s_bracket">
         ${[["auto", "Automatisch (mein Rang)"], ["all", "Alle Elos"], ["low", "Iron–Silver"], ["mid", "Gold–Platin"], ["high", "Emerald–Diamond"], ["apex", "Master+"]].map(([v, t]) => `<option value="${v}" ${v === c.meta_bracket ? "selected" : ""}>${t}</option>`).join("")}</select>
       <div class="switch"><span>Runen automatisch setzen<div class="small muted">Bei jedem neuen Gegner-Pick, final wenn alle 5 drin sind.</div></span><input type="checkbox" id="s_auto" ${c.auto_import_runes !== false ? "checked" : ""}></div>
@@ -1312,7 +1337,7 @@ async function loadReview() {
   render();
 }
 async function saveCfg() {
-  const body = {riot_id: $("#s_riot").value.trim(), platform: $("#s_platform").value, champion_pool: $("#s_pool").value.split(",").map(s => s.trim()).filter(Boolean),
+  const body = {riot_id: $("#s_riot").value.trim(), platform: $("#s_platform").value, champion_pool: poolSel.slice(),
     language: $("#s_lang").value, main_role: $("#s_role").value, meta_bracket: $("#s_bracket").value, auto_import_runes: $("#s_auto").checked, review_games: +$("#s_games").value || 20, profile_games: +$("#s_pgames").value || 20};
   if ($("#s_key").value.trim()) body.riot_api_key = $("#s_key").value.trim();
   const r = await (await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();

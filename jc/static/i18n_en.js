@@ -739,5 +739,9 @@ window.I18N_EN = {
 "Wird schlechter": "Getting worse",
 "Unverändert": "Unchanged",
 "▶ Clip ansehen": "▶ Watch clip",
-"Keine Tode – stark!": "No deaths – strong!"
+"Keine Tode – stark!": "No deaths – strong!",
+"Champion suchen …": "Search champion …",
+"Noch keine Champions gewählt – unten antippen.": "No champions chosen yet – tap below.",
+"Kein Champion gefunden.": "No champion found.",
+"gewählt · die ersten zwei gelten als deine Mains. Speichern unten mit „Sichern“.": "selected · the first two count as your mains. Save below with “Save”."
 };
