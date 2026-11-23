@@ -8,6 +8,7 @@ import os
 import re
 import ssl
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -32,15 +33,25 @@ def _from_lockfile(paths):
     return None
 
 
+_last_ps = 0.0
+
+
 def _from_process():
-    if os.name != "nt":
+    # Fallback only: ask Windows for the League client command line, hidden and at most every 15 s
+    global _last_ps
+    if os.name != "nt" or time.time() - _last_ps < 15:
         return None
+    _last_ps = time.time()
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = 0  # SW_HIDE
     try:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_Process -Filter \"name='LeagueClientUx.exe'\" | "
              "Select-Object -ExpandProperty CommandLine"],
-            capture_output=True, text=True, timeout=8).stdout
+            capture_output=True, text=True, timeout=8,
+            creationflags=0x08000000, startupinfo=si).stdout  # CREATE_NO_WINDOW
     except (OSError, subprocess.SubprocessError):
         return None
     port = re.search(r"--app-port=(\d+)", out)
