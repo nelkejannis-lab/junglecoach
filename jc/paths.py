@@ -36,7 +36,7 @@ def ensure_config():
             user = json.load(f)
         changed = False
         for k, v in default.items():  # new settings from updates
-            if k not in user or (k == "champion_pool" and not user.get(k)):
+            if k not in user or (k in ("champion_pool", "server_url") and not user.get(k)):
                 user[k] = v
                 changed = True
         built_in = default.get("riot_api_key", "")
