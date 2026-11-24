@@ -112,6 +112,8 @@
   .rk .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .rk .bar { width:70px; height:6px; border-radius:3px; background:var(--card2); overflow:hidden; }
   .rk .bar i { display:block; height:100%; } .rk .bar i.w { background:var(--green,#34d399); } .rk .bar i.l { background:var(--red,#f87171); } .rk b { width:30px; text-align:right; }
   .pl2 { cursor:pointer; }
+  .rkn { width:30px; flex:none; display:flex; flex-direction:column; align-items:center; line-height:1.05; } .rkn b { font-size:15px; font-weight:900; color:var(--sec); }
+  .rkn small { font-size:10.5px; font-weight:800; color:var(--txt); } .rkn.top b { color:var(--gold,#fbbf24); }
   .pl2 { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
   .pl2:last-child { border:0; } .pl2 > img { width:36px; height:36px; border-radius:11px; flex:none; }
   .pl2.me { background:rgba(45,212,191,.08); border-radius:12px; padding:8px 6px; }
@@ -528,10 +530,11 @@ function matchSheet() {
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
   const GS = gameScores(info);
   const badge = v => v && v.badge ? `<span class="gsb ${v.badge === "MVP" ? "mvp" : "ace"}">${v.badge}</span>` : "";
-  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>${cImg(p.championName, "")}
+  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
+      <span class="rkn ${GS[p.puuid] && GS[p.puuid].rank <= 3 ? "top" : ""}"><b>${GS[p.puuid] ? GS[p.puuid].rank : "–"}</b><small>${GS[p.puuid] ? GS[p.puuid].score.toFixed(1) : ""}</small></span>${cImg(p.championName, "")}
       <div class="spl">${sImg(p.summoner1Id)}${sImg(p.summoner2Id)}</div>
       <div style="flex:1;min-width:0"><div class="pl2h"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)} ${badge(GS[p.puuid])}</b><span>${p.kills}/${p.deaths}/${p.assists}</span></div>
-        <div class="muted" style="font-size:11px;margin-top:1px">${POS[p.teamPosition] || "–"} · ${esc(p.championName)} · Score <b style="color:var(--txt)">${GS[p.puuid] ? GS[p.puuid].score.toFixed(1) : "–"}</b> · #${GS[p.puuid] ? GS[p.puuid].rank : "–"}</div>
+        <div class="muted" style="font-size:11px;margin-top:1px">${POS[p.teamPosition] || "–"} · ${esc(p.championName)}</div>
         <div class="pl2s"><span>${cs(p)} CS</span><span>${k(p.goldEarned)} G</span><span class="dmg"><i style="width:${100 * p.totalDamageDealtToChampions / maxD}%"></i></span></div>
         <div class="mini">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div></div>`;
   const team = tid => { const w = (info.teams.find(t => t.teamId === tid) || {}).win;
@@ -552,7 +555,8 @@ function matchSheet() {
       <div class="stats" style="margin-top:12px">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
         ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}${stat((GS[me.puuid] ? GS[me.puuid].score.toFixed(1) : "–") + "/10", "Game-Score · #" + (GS[me.puuid] ? GS[me.puuid].rank : "–") + (GS[me.puuid] && GS[me.puuid].badge ? " " + GS[me.puuid].badge : ""))}</div>
       <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
-    ${ranking}${team(mine)}${team(mine === 100 ? 200 : 100)}
+    ${team(mine)}${team(mine === 100 ? 200 : 100)}
+    <p class="muted small" style="margin:4px 0 10px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert.</p>
     <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button>
     <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
 }
