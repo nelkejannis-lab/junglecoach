@@ -112,8 +112,10 @@ async function secret(env) {
 async function authUser(req, env) {
   const h = req.headers.get("authorization") || "";
   const p = await verify(h.replace(/^Bearer\s+/i, ""), await secret(env));
-  if (!p) return null;
-  return env.DB.prepare("SELECT id, provider, name, riot_id, created_at FROM users WHERE id = ?").bind(p.uid).first();
+  if (!p) { req.jcAuthWhy = h ? "Token ungültig oder abgelaufen" : "kein Token gesendet"; return null; }
+  const u = await env.DB.prepare("SELECT id, provider, name, riot_id, created_at FROM users WHERE id = ?").bind(p.uid).first();
+  if (!u) req.jcAuthWhy = "Konto nicht gefunden";
+  return u;
 }
 
 // ------------------------------------------------------------------ auth
@@ -312,7 +314,7 @@ export default {
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
       if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/")) {
         const user = await authUser(req, env);
-        if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen." }, 401);
+        if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen.", why: req.jcAuthWhy || "" }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
         if (p === "/api/sync/friends") return await sync(req, env, user, "friends");
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");

@@ -26,6 +26,13 @@ struct WebContainer: UIViewRepresentable {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()          // keeps the login token between app starts
         cfg.userContentController.add(context.coordinator, name: "jcLogin")
+        cfg.userContentController.add(context.coordinator, name: "jcToken")
+        // The login token is also kept natively (UserDefaults) and handed to the page before it starts,
+        // so a lost WebView storage never sends the user back to the login screen.
+        if let t = UserDefaults.standard.string(forKey: "jc_token"), Coordinator.validToken(t) {
+            cfg.userContentController.addUserScript(WKUserScript(source: "window.__jcToken = '\(t)';",
+                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         let web = WKWebView(frame: .zero, configuration: cfg)
         web.isOpaque = false
         web.backgroundColor = BG
@@ -54,17 +61,33 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
         sender.endRefreshing()
     }
 
+    static func validToken(_ t: String) -> Bool {
+        t.range(of: "^[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+$", options: .regularExpression) != nil
+    }
+
+    private func reportError(_ msg: String) {
+        let safe = msg.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "'", with: "’")
+        DispatchQueue.main.async { self.web?.evaluateJavaScript("window.jcLoginError && window.jcLoginError('\(safe)')") }
+    }
+
     // The page asks for a login: open Google / Discord in the system login sheet, get the token back.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "jcToken" {   // page logged out or the server rejected the token
+            UserDefaults.standard.removeObject(forKey: "jc_token")
+            return
+        }
         guard let provider = message.body as? String, ["google", "discord"].contains(provider) else { return }
         var comps = URLComponents(string: SERVER + "/auth/" + provider)!
         comps.queryItems = [URLQueryItem(name: "redirect", value: "junglecoach://auth")]
-        let s = ASWebAuthenticationSession(url: comps.url!, callbackURLScheme: "junglecoach") { [weak self] url, _ in
-            guard let url = url,
-                  let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "token" })?.value,
-                  token.range(of: "^[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+$", options: .regularExpression) != nil
-            else { return }
+        let s = ASWebAuthenticationSession(url: comps.url!, callbackURLScheme: "junglecoach") { [weak self] url, error in
+            if let e = error as? ASWebAuthenticationSessionError, e.code == .canceledLogin { return }
+            if let e = error { self?.reportError("Login-Fenster: \(e.localizedDescription)"); return }
+            guard let url = url else { self?.reportError("keine Rückmeldung vom Login"); return }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let token = items.first(where: { $0.name == "token" })?.value, Coordinator.validToken(token) else {
+                self?.reportError("kein gültiges Token erhalten (\(url.absoluteString.prefix(60)))"); return
+            }
+            UserDefaults.standard.set(token, forKey: "jc_token")
             DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.jcSetToken('\(token)')") }
         }
         s.presentationContextProvider = self

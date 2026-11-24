@@ -145,11 +145,19 @@ const platform = () => LS.get("jc_platform") || "euw1";
   const u = new URL(location.href), t = u.searchParams.get("token");
   if (t) { LS.set("jc_token", t); u.searchParams.delete("token"); history.replaceState(null, "", u.pathname); }
 })();
-window.jcSetToken = t => { LS.set("jc_token", t); boot(); };
-const token = () => LS.get("jc_token");
+let MEM_TOKEN = window.__jcToken || null;  // the iOS app also injects the saved token natively
+window.jcSetToken = t => { MEM_TOKEN = t; LS.set("jc_token", t); S.err = ""; boot(); };
+window.jcLoginError = m => { S.err = "Anmeldung fehlgeschlagen: " + m; render(); };
+const token = () => LS.get("jc_token") || MEM_TOKEN;
 async function api(path, opt = {}) {
   const r = await fetch(path, {...opt, headers: {...(opt.headers || {}), Authorization: "Bearer " + token(), "Content-Type": "application/json"}});
-  if (r.status === 401) { LS.set("jc_token", null); render(); throw new Error("Bitte neu anmelden."); }
+  if (r.status === 401) {
+    const j = await r.json().catch(() => ({}));
+    LS.set("jc_token", null); MEM_TOKEN = null;
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage("");
+    S.err = "Server hat die Anmeldung abgelehnt" + (j.why ? ` (${j.why})` : "") + " – bitte erneut anmelden."; render();
+    throw new Error(S.err);
+  }
   if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
   return r.json();
@@ -159,7 +167,7 @@ function login(p) {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin) return window.webkit.messageHandlers.jcLogin.postMessage(p);
   location.href = `/auth/${p}?redirect=${encodeURIComponent(location.origin + "/m/")}`;
 }
-function logout() { LS.set("jc_token", null); S = {...S, me: null, acct: null, league: null, games: null, coach: null, friends: null}; render(); }
+function logout() { LS.set("jc_token", null); MEM_TOKEN = null; if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage(""); S = {...S, me: null, acct: null, league: null, games: null, coach: null, friends: null}; render(); }
 
 // ---- data
 const DD = () => `https://ddragon.leagueoflegends.com/cdn/${S.ver}`;
@@ -588,6 +596,7 @@ function vLogin() {
     <p class="sub" style="max-width:300px">Deine Stats, vergangenen Games, Freunde und Moosis Coaching – auch unterwegs.</p>
     <div style="width:100%;max-width:340px;display:grid;gap:10px;margin-top:10px"><button class="btn" onclick="login('google')">Mit Google anmelden</button>
     <button class="btn sec" onclick="login('discord')">Mit Discord anmelden</button></div>
+    ${S.err ? `<p class="red small" style="max-width:320px;margin-top:12px">${esc(S.err)}</p>` : ""}
     <p class="muted small" style="margin-top:16px">Gleiches Konto wie in der PC-App.</p></div>`;
 }
 const TAB_IC = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', games: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7.5 11v3M6 12.5h3"/><circle cx="15.5" cy="11.5" r=".9"/><circle cx="17.5" cy="13.7" r=".9"/>',
