@@ -48,6 +48,13 @@
     .tabs button { flex:none; flex-direction:row; justify-content:flex-start; gap:12px; font-size:15px; padding:11px 12px; border-radius:12px; }
     .tabs button.on { background:rgba(45,212,191,.1); }
     .sheet .in { max-width:640px; margin:0 auto; }
+    .sheet .in:has(.teams2) { max-width:1120px; }
+  }
+  /* both teams next to each other, lane by lane like the in-game scoreboard */
+  @media (min-width: 760px) {
+    .teams2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+    .teams2 .team { margin-top:0; }
+    .teams2 .pl2 { min-height:86px; }
   }
   #rail { display:none; }
   /* wide desktop: right column with your card, Moosi's task and friends (like the PC app) */
@@ -555,7 +562,7 @@ function matchSheet() {
       <div class="stats" style="margin-top:12px">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
         ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}${stat((GS[me.puuid] ? GS[me.puuid].score.toFixed(1) : "–") + "/10", "Game-Score · #" + (GS[me.puuid] ? GS[me.puuid].rank : "–") + (GS[me.puuid] && GS[me.puuid].badge ? " " + GS[me.puuid].badge : ""))}</div>
       <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
-    ${team(mine)}${team(mine === 100 ? 200 : 100)}
+    <div class="teams2">${team(mine)}${team(mine === 100 ? 200 : 100)}</div>
     <p class="muted small" style="margin:4px 0 10px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert.</p>
     <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button>
     <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
