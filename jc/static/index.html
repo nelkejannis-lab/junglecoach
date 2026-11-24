@@ -155,7 +155,7 @@
   .ring { position:relative; width:128px; height:128px; flex:none; }
   .ring svg { transform:rotate(-90deg); } .ring circle { transition:stroke-dashoffset 1s var(--ease); }
   .ring b { position:absolute; inset:0; display:grid; place-items:center; font-size:34px; font-weight:900; letter-spacing:-1px; }
-  .ring span { position:absolute; bottom:22px; left:0; right:0; text-align:center; font-size:10.5px; color:var(--sec); font-weight:700; letter-spacing:.4px; text-transform:uppercase; }
+  .ring span { position:absolute; bottom:24px; left:18%; right:18%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center; font-size:10px; color:var(--sec); font-weight:700; letter-spacing:.4px; text-transform:uppercase; }
   .focus { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
   .fcard { position:relative; border-radius:18px; padding:18px 18px 16px; background:linear-gradient(160deg,rgba(34,211,238,.10),rgba(129,140,248,.05) 50%,rgba(255,255,255,.02)); border:1px solid rgba(34,211,238,.22); }
   .fcard .k { font-size:11px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--acc); }
@@ -293,6 +293,43 @@
   .tierc { font-weight:900; letter-spacing:.3px; }
   .tierc.IRON, .tierc.BRONZE { color:#c08a5b; } .tierc.SILVER { color:#cbd5e1; } .tierc.GOLD { color:var(--gold); } .tierc.PLATINUM { color:#5eead4; }
   .tierc.EMERALD { color:var(--green); } .tierc.DIAMOND { color:#93c5fd; } .tierc.MASTER, .tierc.GRANDMASTER, .tierc.CHALLENGER { color:var(--purple); }
+
+  .pa-top { display:grid; grid-template-columns: 180px minmax(260px, 1fr) 250px; gap:28px; align-items:start; }
+  .pa-score { text-align:center; } .pa-score .ring { margin:0 auto; }
+  .pa-mini { display:grid; gap:8px; margin-top:14px; } .pa-mini b { font-size:18px; display:block; } .pa-mini span { font-size:12px; color:var(--sec); }
+  .sk { display:grid; grid-template-columns: 96px 1fr 38px; gap:12px; align-items:center; padding:8px 0; }
+  .skl b { display:block; font-size:14px; } .skl span { font-size:11.5px; }
+  .skt { height:8px; border-radius:5px; background:rgba(255,255,255,.06); overflow:hidden; } .skt i { display:block; height:100%; border-radius:5px; }
+  .skv { text-align:right; font-size:16px; }
+  .pa-box { border-radius:14px; padding:12px 14px; margin-bottom:10px; background:rgba(255,255,255,.03); }
+  .pa-box.good { border:1px solid rgba(52,211,153,.25); } .pa-box.bad { border:1px solid rgba(248,113,113,.25); }
+  .pa-h { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--sec); font-weight:700; margin-bottom:8px; }
+  .pa-bottom { display:grid; grid-template-columns: 1fr 1fr; gap:28px; margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+  .pa-tab { width:100%; border-collapse:collapse; font-size:13px; } .pa-tab th { text-align:left; color:var(--sec); font-weight:600; font-size:11px; padding:4px 6px; }
+  .pa-tab td { padding:5px 6px; border-top:1px solid var(--line); } .pa-tab td:first-child { display:flex; align-items:center; gap:8px; }
+  .pa-form { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; }
+  .pf { display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 4px; border-radius:12px; background:rgba(255,255,255,.03); border-bottom:3px solid transparent; }
+  .pf.w { border-bottom-color:#34d399; } .pf.l { border-bottom-color:#f87171; }
+  .an-tabs { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:10px 14px; }
+  .an-tabs .seg { display:flex; gap:4px; background:rgba(255,255,255,.04); padding:4px; border-radius:12px; }
+  .an-tabs .seg button { border:0; background:none; color:var(--sec); font:inherit; font-weight:700; padding:8px 16px; border-radius:9px; cursor:pointer; }
+  .an-tabs .seg button.on { background:var(--card2); color:var(--txt); }
+  .an-sum { display:flex; gap:18px; margin-left:auto; font-size:13px; color:var(--sec); } .an-sum b { color:var(--txt); }
+  .tipbar { padding:14px 18px; font-size:14px; }
+  .an-split { display:grid; grid-template-columns: 320px 1fr; gap:18px; padding:14px; }
+  .an-list { display:flex; flex-direction:column; gap:6px; }
+  .gl { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:12px; cursor:pointer; border-left:3px solid transparent; background:rgba(255,255,255,.02); }
+  .gl.w { border-left-color:#34d399; } .gl.l { border-left-color:#f87171; } .gl:hover { background:rgba(255,255,255,.05); } .gl.sel { background:rgba(34,211,238,.10); }
+  .spill { font-weight:800; font-size:13px; padding:4px 9px; border-radius:9px; border:1px solid; }
+  .pager { display:flex; align-items:center; justify-content:space-between; margin-top:8px; } .pager .btn { padding:6px 14px; }
+  .an-detail > .card { margin:0; box-shadow:none; }
+  @media (max-width: 1250px) { .pa-top { grid-template-columns: 180px 1fr; } .pa-sw { grid-column: 1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:10px; } .an-split { grid-template-columns:1fr; } }
+  .frank .seg { display:flex; gap:4px; background:rgba(255,255,255,.04); padding:4px; border-radius:12px; }
+  .frank .seg button { border:0; background:none; color:var(--sec); font:inherit; font-weight:700; font-size:13px; padding:6px 12px; border-radius:9px; cursor:pointer; }
+  .frank .seg button.on { background:var(--card2); color:var(--txt); }
+  .fr-tab td { padding:9px 8px; } .fr-tab tr.click:hover td { background:rgba(255,255,255,.03); cursor:pointer; } .fr-tab tr.mine td { background:rgba(34,211,238,.08); }
+  .fr-tab { table-layout:fixed; } .fr-tab th:nth-child(1) { width:44px; } .fr-tab th:nth-child(2) { width:30%; } .fr-tab th:nth-child(3) { width:28%; } .fr-tab td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fr-tab td:first-child { display:table-cell; width:36px; }
 </style>
 </head>
 <body>
@@ -502,7 +539,32 @@ function renderFriends() {
             <div class="stat"><b>${f.recent && f.recent.kda != null ? f.recent.kda : "–"}</b><span>KDA</span></div><div class="stat"><b>${(f.coach || {}).score ?? "–"}</b><span>Coach</span></div></div>
           <div style="display:flex;gap:4px;margin-top:12px">${(f.top || []).map(c => cImg(c, 30, 9)).join("")}<span class="muted small" style="margin-left:auto;align-self:center">${esc(f.role || "")}</span></div></div></div>`; }).join("")}</div></div>`
     : card("", "", empty(moosi("happy", 90), "Noch keine Freunde", "Füge Freunde mit ihrer Riot ID hinzu – oder direkt aus deiner Client-Freundesliste oben."), true);
-  return `<h1 class="title">Deine <span class="g">Freunde</span></h1><p class="subtitle">Stats, Rang und Online-Status – und Moosi analysiert jeden Freund genauso wie dich.</p><div class="grid">${add}${cards}</div>`;
+  return `<h1 class="title">Deine <span class="g">Freunde</span></h1><p class="subtitle">Stats, Rang und Online-Status – und Moosi analysiert jeden Freund genauso wie dich.</p><div class="grid">${friendsRanking(fl)}${cards}${add}</div>`;
+}
+// ranking like in the mobile app: you + friends, sortable
+let frSort = "rank";
+const TIER_ORD = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"];
+const DIV_ORD = {IV: 0, III: 1, II: 2, I: 3};
+const rankVal = r => r ? TIER_ORD.indexOf(r.tier) * 400 + (DIV_ORD[r.division] || 0) * 100 + (r.lp || 0) : -1;
+function friendsRanking(fl) {
+  const me = !profQuery && profData && !profData.error ? {me: true, riot_id: profData.riot_id || state.account || "Du", rank: (profData.ranks || {}).solo || (profData.ranks || {}).flex,
+    recent: (A => A ? {games: A.n, wins: A.wins, kda: A.kda, score: A.score} : {})(playerAnalysis(anRows())), presence: {status: "online"}} : null;
+  if (!profData && !profLoading && !profQuery) loadProfile().then(() => view === "friends" && render());
+  const rows = [...(me ? [me] : []), ...fl.filter(f => !f.loading)];
+  if (rows.length < 2) return "";
+  const wr = f => f.recent && f.recent.games ? Math.round(100 * f.recent.wins / f.recent.games) : null;
+  const key = {rank: f => rankVal(f.rank), score: f => (f.recent || {}).score ?? -1, wr: f => wr(f) ?? -1, kda: f => +((f.recent || {}).kda ?? -1)}[frSort];
+  rows.sort((a, b) => key(b) - key(a));
+  const S_ = [["rank", "Rang"], ["score", "Ø Score"], ["wr", "Winrate"], ["kda", "KDA"]];
+  return `<div class="card wide frank"><div class="row" style="border:0;padding:0 0 10px"><h3 style="margin:0">Rangliste</h3>
+      <div class="seg" style="margin-left:auto">${S_.map(([k, l]) => `<button class="${frSort === k ? "on" : ""}" onclick="frSort='${k}';render()">${l}</button>`).join("")}</div></div>
+    <table class="pa-tab fr-tab"><tr><th>#</th><th>Spieler</th><th>Rang</th><th>Ø Score</th><th>WR (20)</th><th>KDA</th></tr>
+    ${rows.map((f, i) => { const st = (f.presence || {}).status, w = wr(f), sc = (f.recent || {}).score;
+      return `<tr class="${f.me ? "mine" : "click"}" ${f.me ? "" : `onclick='openFriend(${JSON.stringify(f.riot_id)})'`}><td><b>${i === 0 ? "👑" : i + 1}</b></td>
+        <td><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> <b>${esc((f.jc && f.jc.name) || String(f.riot_id).split("#")[0])}</b>${f.me ? ' <span class="muted small">(du)</span>' : ""}${st === "ingame" ? ' <span class="green small">im Spiel</span>' : ""}</td>
+        <td>${f.rank ? rankTxt(f.rank) : '<span class="muted">Unranked</span>'}</td>
+        <td><b style="color:${sc != null ? paCol(sc) : "inherit"}">${sc != null ? sc.toFixed(1) : "–"}</b></td>
+        <td class="${w == null ? "" : w >= 50 ? "green" : "red"}">${w ?? "–"}${w == null ? "" : "%"}</td><td>${(f.recent || {}).kda ?? "–"}</td></tr>`; }).join("")}</table></div>`;
 }
 function renderFriendDetail(rid) {
   const f = ((friendsData || {}).friends || []).find(x => x.riot_id === rid) || {riot_id: rid}, fc = friendCoach[rid] || {};
@@ -943,23 +1005,122 @@ function replayCard(g) {
     <div class="small muted">${cur ? "Gegner-Jungler: " + esc(cur.area) : ""}</div></div>
     <div><b>Gegner-Jungler pro Minute</b>${list(R.enemy_jg.filter(p => p.min >= 1), p => `<li class="small ${p.min === m ? "sel" : ""}">${p.min}' · ${esc(p.area)}</li>`)}</div></div>`, true);
 }
+// ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
+// weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
+// rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
+const PA_B = {   // "good" Silver–Platinum values per role (= 5.5 points)
+  TOP: {csm: 6.8, gpm: 390, kda: 2.6, dmg: .25, deaths: 5.2, vpm: .7, kp: 45, obj: .22},
+  JUNGLE: {csm: 5.6, gpm: 370, kda: 3.0, dmg: .18, deaths: 5.0, vpm: 1.0, kp: 60, obj: .30},
+  MIDDLE: {csm: 7.2, gpm: 400, kda: 2.8, dmg: .27, deaths: 5.0, vpm: .7, kp: 55, obj: .15},
+  BOTTOM: {csm: 7.6, gpm: 410, kda: 2.8, dmg: .28, deaths: 5.0, vpm: .55, kp: 55, obj: .18},
+  UTILITY: {csm: 1.2, gpm: 270, kda: 2.9, dmg: .10, deaths: 5.5, vpm: 2.1, kp: 60, obj: .05},
+};
+const PA_SKILLS = [
+  ["farm", "Farmen", "CS und Gold pro Minute", "Mehr CS: Wellen zwischen Kämpfen mitnehmen, Camps auf dem Weg clearen, nicht ohne Grund recallen."],
+  ["fight", "Kämpfen", "KDA und Schaden-Anteil", "Kämpfe nur mit Level-/Item-Vorteil oder Überzahl nehmen – und dann voll Schaden machen."],
+  ["survive", "Überleben", "Tode pro Game", "Weniger sterben: ohne Sicht nicht vorlaufen, nach Kills zurückziehen, Gegner-Jungler im Kopf behalten."],
+  ["vision", "Vision", "Visionscore pro Minute", "Pro Back eine Control Ward kaufen, Trinket immer benutzen, vor Objectives warden."],
+  ["team", "Teamplay", "Kill-Beteiligung", "Bei Kämpfen und Objectives dabei sein – auf die Map schauen, Team-Fights nicht verpassen."],
+  ["obj", "Objectives", "Schaden an Türmen, Drachen, Baron", "Nach jedem Kill: Turm, Drache oder Grubs – Vorteile in Objectives umwandeln."],
+  ["steady", "Konstanz", "Schwankung deiner Game-Scores", "Gleiche Champions und denselben Plan spielen – weniger Coinflip-Games."],
+];
+function playerAnalysis(rows) {
+  const G = (rows || []).filter(g => g && !g.remake && g.pos !== undefined);
+  if (G.length < 3) return null;
+  const pt = r => Math.max(1, Math.min(10, 5.5 + (r - 1) * 4.5));
+  const avg = a => a.length ? a.reduce((t, x) => t + x, 0) / a.length : null;
+  const per = {farm: [], fight: [], survive: [], vision: [], team: [], obj: []};
+  G.forEach(g => {
+    const B = PA_B[g.pos] || PA_B.MIDDLE, kda = (g.kills + g.assists) / Math.max(1, g.deaths);
+    if (g.pos !== "UTILITY") per.farm.push(pt(.6 * g.cs_min / B.csm + .4 * (g.gpm || B.gpm) / B.gpm));
+    per.fight.push(pt(.5 * Math.min(2, kda / B.kda) + .5 * (g.dmg_share != null ? g.dmg_share / B.dmg : 1)));
+    per.survive.push(pt(Math.min(2, B.deaths / Math.max(1.5, g.deaths)) * .8 + .2));
+    if (g.vpm != null) per.vision.push(pt(g.vpm / B.vpm));
+    per.team.push(pt((g.kp || 0) / B.kp));
+    if (g.obj_share != null) per.obj.push(pt(g.obj_share / B.obj));
+  });
+  const scores = G.map(g => g.score).filter(x => x != null);
+  const mean = avg(scores);
+  const sd = scores.length > 2 ? Math.sqrt(avg(scores.map(x => (x - mean) ** 2))) : null;
+  const val = {...Object.fromEntries(Object.entries(per).map(([k, a]) => [k, avg(a)])), steady: sd == null ? null : Math.max(1, Math.min(10, 10.5 - sd * 2.6))};
+  const skills = PA_SKILLS.map(([k, label, what, tip]) => ({k, label, what, tip, v: val[k] == null ? null : Math.round(val[k] * 10) / 10})).filter(s => s.v != null);
+  const sorted = skills.slice().sort((a, b) => b.v - a.v);
+  const champs = {};
+  G.forEach(g => { const c = champs[g.champion] ||= {c: g.champion, name: g.name || g.champion, n: 0, w: 0, k: 0, d: 0, a: 0, s: []};
+    c.n++; c.w += g.win ? 1 : 0; c.k += g.kills; c.d += g.deaths; c.a += g.assists; if (g.score != null) c.s.push(g.score); });
+  const roles = {}; G.forEach(g => { if (g.pos) roles[g.pos] = (roles[g.pos] || 0) + 1; });
+  const k = G.reduce((t, g) => t + g.kills, 0), d = G.reduce((t, g) => t + g.deaths, 0), a = G.reduce((t, g) => t + g.assists, 0);
+  const recent = scores.slice(0, 5), before = scores.slice(5, 15);
+  return {
+    n: G.length, wins: G.filter(g => g.win).length, wr: Math.round(100 * G.filter(g => g.win).length / G.length),
+    score: mean == null ? null : Math.round(mean * 10) / 10, kda: ((k + a) / Math.max(1, d)).toFixed(2),
+    kda_avg: `${(k / G.length).toFixed(1)} / ${(d / G.length).toFixed(1)} / ${(a / G.length).toFixed(1)}`,
+    skills, strengths: sorted.filter(s => s.v >= 6).slice(0, 2), weaknesses: sorted.slice().reverse().filter(s => s.v < 5.5).slice(0, 2),
+    champs: Object.values(champs).map(c => ({...c, wr: Math.round(100 * c.w / c.n), kda: ((c.k + c.a) / Math.max(1, c.d)).toFixed(2), score: c.s.length ? (avg(c.s)).toFixed(1) : null}))
+      .sort((x, y) => y.n - x.n || y.wr - x.wr).slice(0, 6),
+    roles: Object.entries(roles).sort((x, y) => y[1] - x[1]).map(([r, n]) => ({r, pct: Math.round(100 * n / G.length)})),
+    form: G.slice(0, 10).map(g => ({win: g.win, score: g.score, c: g.champion})),
+    trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
+  };
+}
+const PA_ROLE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
+const paCol = v => v >= 7 ? "#34d399" : v >= 5.5 ? "#22d3ee" : v >= 4 ? "#fbbf24" : "#f87171";
+
+let anTab = "games", anPage = 0;
+const anRows = () => (!profQuery && profData && !profData.error && profData.games) || [];
+function playerHero(A, opts = {}) {
+  const sk = A.skills.map(x => `<div class="sk" title="${esc(x.what)}"><div class="skl"><b>${esc(x.label)}</b></div>
+      <div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b class="skv" style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("");
+  const tr = A.trend == null ? "" : `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"} ${Math.abs(A.trend).toFixed(1)} letzte 5</span>`;
+  return `<div class="card wide pa">
+    <div class="pa-top">
+      <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Ø Game-Score von 10</div>
+        <div class="pa-mini"><div><b>${A.wr}%</b><span>Winrate · ${A.wins}S ${A.n - A.wins}N</span></div><div><b>${A.kda}</b><span>KDA · ${A.kda_avg}</span></div>${tr ? `<div>${tr}</div>` : ""}</div>
+        <div class="chips" style="justify-content:center;margin-top:10px">${A.roles.slice(0, 3).map(r => `<span class="chip">${PA_ROLE[r.r] || r.r} ${r.pct}%</span>`).join("")}</div></div>
+      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · 1–10 im Vergleich zu guten Spielern deiner Rolle (5,5 = gut)</p>${sk}</div>
+      <div class="pa-sw">
+        <div class="pa-box good"><div class="pa-h">Stärken</div>${A.strengths.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span></div>`).join("") || '<div class="muted small">Noch keine klare Stärke – alles im Mittelfeld.</div>'}</div>
+        <div class="pa-box bad"><div class="pa-h">Daran arbeiten</div>${A.weaknesses.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span><p class="small muted" style="margin:3px 0 8px">${esc(x.tip)}</p></div>`).join("") || '<div class="muted small">Keine großen Schwächen. Stark!</div>'}</div>
+        ${opts.action || ""}</div>
+    </div>
+    <div class="pa-bottom">
+      <div><div class="pa-h">Champion-Pool</div><table class="pa-tab"><tr><th></th><th>Games</th><th>WR</th><th>KDA</th><th>Score</th></tr>
+        ${A.champs.map(c => `<tr><td>${cImg(c.c, 26, 8)} ${esc(c.name)}</td><td>${c.n}</td><td class="${c.wr >= 55 ? "green" : c.wr < 45 ? "red" : ""}">${c.wr}%</td><td>${c.kda}</td><td><b style="color:${c.score ? paCol(+c.score) : "inherit"}">${c.score || "–"}</b></td></tr>`).join("")}</table></div>
+      <div><div class="pa-h">Form · letzte ${A.form.length}</div><div class="pa-form">${A.form.map(f => `<div class="pf ${f.win ? "w" : "l"}" title="${esc(f.c)}">${cImg(f.c, 34, 8)}<b style="color:${f.score != null ? paCol(f.score) : "inherit"}">${f.score != null ? f.score.toFixed(1) : "–"}</b></div>`).join("")}</div>
+        <p class="small muted" style="margin-top:10px">Grün/rot = Sieg/Niederlage · Zahl = Game-Score 1–10 (wie bei den Freunden).</p></div>
+    </div></div>`;
+}
+function gamesPanel(r) {
+  const per = 10, pages = Math.ceil(r.games.length / per), from = anPage * per;
+  const list = r.games.slice(from, from + per).map((g, j) => { const i = from + j, sc = g.deep ? g.deep.categories.reduce((t, c) => t + c.score, 0) / g.deep.categories.length / 10 : null;
+    return `<div class="gl ${i === selGame ? "sel" : ""} ${g.win ? "w" : "l"}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
+      ${cImg(g.champion, 34, 9)}<div style="flex:1;min-width:0"><b>${esc(g.champion)}</b> <span class="muted small">vs ${esc(g.enemy_jungler)}</span>
+      <div class="small muted">${g.win ? '<span class="green">Sieg</span>' : '<span class="red">Niederlage</span>'} · ${esc(g.kda)}${g.clips ? " · 🎬 Clips" : ""}</div></div>
+      ${sc != null ? `<span class="spill" style="color:${paCol(sc)};border-color:${paCol(sc)}55">${Math.max(1, sc).toFixed(1)}</span>` : ""}</div>`; }).join("");
+  const g = r.games[selGame];
+  return `<div class="card wide an-split"><div class="an-list">${list}
+      ${pages > 1 ? `<div class="pager"><button class="btn sec" ${anPage ? "" : "disabled"} onclick="anPage--;render()">‹</button><span class="small muted">Seite ${anPage + 1} / ${pages}</span><button class="btn sec" ${anPage < pages - 1 ? "" : "disabled"} onclick="anPage++;render()">›</button></div>` : ""}</div>
+    <div class="an-detail">${g && g.deep ? deepCard(g) : empty("👈", "Game wählen", "Links ein Game antippen – hier erscheint die Deep-Analyse mit Fehlern und Clips.")}</div></div>`;
+}
 function renderAnalyse() {
   const r = reviewData;
-  const loadBtn = `<button class="btn" onclick="loadReview()">${r ? "Neu laden" : "Letzte Games analysieren"}</button> <span class="small muted">${esc(msg.review || "")}</span>`;
-  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Punkte 1–10, Fehler und Clips.",
-    card("", "", empty("🔍", "Noch nichts analysiert", `<p>Lädt deine letzten Ranked-Games über die Riot API.<br>Voraussetzung: Riot ID und API Key in den <a href="#" onclick="go('settings');return false">Einstellungen</a>.</p>${loadBtn}`), true) + sessionsCards());
-  const s = r.summary;
-  let h = card("Überblick", `${s.games || 0} Jungle-Games`, (s.games ? `
-    <div class="stats"><div class="stat"><b>${s.winrate}%</b><span>Winrate</span></div><div class="stat"><b class="${col(s.avg_gold_diff_10)}">${sign(s.avg_gold_diff_10)}</b><span>Ø Gold @10 vs JG</span></div>
-    <div class="stat"><b>${s.avg_jungle_cs_5}</b><span>Ø Jungle-CS @5</span></div><div class="stat"><b>${esc(s.objectives_pre20)}</b><span>Objectives vor 20'</span></div></div>` : "") + `<div style="margin-top:14px">${loadBtn}</div>`);
-  h += card("Was du ändern musst", "Muster über alle analysierten Games.", list(s.tips, t => `<li class="small">${esc(t)}</li>`));
-  h += card("Games", "Antippen für Deep-Analyse und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
-    <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · " + pts(g.deep.categories.reduce((t, c) => t + c.score, 0) / g.deep.categories.length) + "/10" : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
-  h += deathCompareCard(r.games);
-  const g = r.games[selGame];
-  if (g && g.deep) h += deepCard(g);
-  if (!r.games.some(x => x.clips)) h += sessionsCards();
-  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Punkte 1–10, Fehler und Clips.", h);
+  if (!profData && !profLoading) loadProfile().then(() => view === "analyse" && render());
+  const A = playerAnalysis(anRows());
+  const check = `<button class="btn" style="width:100%;margin-top:12px" onclick="loadReview()">${r ? "Games neu prüfen lassen" : "Games prüfen lassen"}</button><div class="small muted" style="margin-top:6px;text-align:center">${esc(msg.review || "Deep-Analyse deiner Ranked-Games mit Fehlern und Clips")}</div>`;
+  let h = A ? playerHero(A, {action: check}) : card("Spieler-Analyse", "", profLoading || !profData ? `<div class="skel" style="height:220px"></div>` : empty("📊", "Noch zu wenig Games", `Spiel ein paar Games – ab 3 Games gibt's deine Analyse.${check}`), true);
+  const s = r && r.summary;
+  const tabs = [["games", `Games${r ? " (" + r.games.length + ")" : ""}`], ["deaths", "Tode"], ["clips", `Clips${sessions.length ? " (" + sessions.length + ")" : ""}`]];
+  h += `<div class="card wide an-tabs"><div class="seg">${tabs.map(([k, l]) => `<button class="${anTab === k ? "on" : ""}" onclick="anTab='${k}';render()">${l}</button>`).join("")}</div>
+    ${s && s.games ? `<div class="an-sum"><span><b>${s.winrate}%</b> WR</span><span><b class="${col(s.avg_gold_diff_10)}">${sign(s.avg_gold_diff_10)}</b> Gold @10</span><span><b>${s.avg_jungle_cs_5}</b> CS @5</span><span><b>${esc(s.objectives_pre20)}</b> Obj. vor 20'</span></div>` : ""}</div>`;
+  if (anTab === "games") {
+    if (!r) h += card("", "", empty("🔍", "Noch keine Games geprüft", `<p>Moosi prüft deine letzten Ranked-Games Minute für Minute: Tode, Objectives, Ganks.</p><button class="btn" onclick="loadReview()">Games prüfen lassen</button>`), true);
+    else {
+      if ((s.tips || []).length) h += `<div class="card wide tipbar"><b>👉 Wichtigste Änderung:</b> ${esc(s.tips[0])}</div>`;
+      h += gamesPanel(r);
+    }
+  } else if (anTab === "deaths") h += r ? deathCompareCard(r.games) || card("", "", empty("💀", "Keine Todesdaten", "Lass deine Games prüfen."), true) : card("", "", empty("💀", "Noch keine Games geprüft", ""), true);
+  else h += sessionsCards();
+  return page("Analyse", "Deine Spieler-Analyse wie bei op.gg & Mobalytics – plus Deep-Analyse jedes Games mit Fehlern und Clips.", h);
 }
 
 // your death causes per game vs. better players (winners one elo bracket higher, same role, from the crawler)
@@ -1001,7 +1162,7 @@ function ring(v, label, size = 128) {
     <defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#c084fc"/></linearGradient></defs>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="rgba(255,255,255,.07)" stroke-width="10" fill="none"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="url(#rg)" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/></svg>
-    <b style="font-size:${size / 3.8}px">${label === "Analyse" ? (v ?? "–") + "%" : pts(v)}</b>${label ? `<span>${esc(label)}${label === "Analyse" ? "" : " · von 10"}</span>` : ""}</div>`;
+    <b style="font-size:${size / 3.8}px">${label === "Analyse" ? (v ?? "–") + "%" : pts(v)}</b>${label ? `<span>${esc(label)}</span>` : ""}</div>`;
 }
 const pbar = (label, p, val) => `<div class="pbar"><div class="lab">${esc(label)}</div><div class="val"><span class="muted">${esc(val || "")}</span> · <b style="color:${pctCol(p)}">${p}%</b></div><div class="track"><i style="width:${p}%;background:${pctCol(p)}"></i></div></div>`;
 

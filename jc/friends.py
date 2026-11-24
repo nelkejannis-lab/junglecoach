@@ -40,6 +40,11 @@ def remove(cfg, rid):
     cfg["friends"] = [f for f in cfg.get("friends", []) if f.lower() != norm(rid).lower()]
 
 
+def _avg_score(games):
+    sc = [g["score"] for g in games[:20] if g.get("score") is not None and not g.get("remake")]
+    return round(sum(sc) / len(sc), 1) if sc else None
+
+
 def summarize(prof):
     solo = (prof.get("ranks") or {}).get("solo") or (prof.get("ranks") or {}).get("flex")
     champs = prof.get("champions") or []
@@ -50,7 +55,8 @@ def summarize(prof):
             if solo else None,
             "top": [c.get("champion") for c in champs[:3] if c.get("champion")],
             "role": (roles[0].get("role") if roles and isinstance(roles[0], dict) else None),
-            "recent": {"games": rec.get("games", 0), "wins": rec.get("wins", 0), "kda": rec.get("kda")},
+            "recent": {"games": rec.get("games", 0), "wins": rec.get("wins", 0), "kda": rec.get("kda"),
+                       "score": _avg_score(prof.get("games") or [])},
             "at": time.time()}
 
 

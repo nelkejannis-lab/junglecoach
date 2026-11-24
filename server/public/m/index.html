@@ -38,6 +38,22 @@
     background:rgba(9,12,20,.82); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-top:1px solid var(--line); z-index:20; }
   .tabs button { flex:1; border:0; background:none; color:#6b7590; font:inherit; font-size:11px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; }
   .tabs button.on { color:var(--acc); }
+  .pa-head { display:flex; gap:14px; align-items:center; margin-bottom:10px; }
+  .pa-ring { width:74px; height:74px; border-radius:50%; flex:none; display:grid; place-items:center; align-content:center; background:radial-gradient(closest-side,#141a26 79%,transparent 80% 100%),conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.07) 0); }
+  .pa-ring b { font-size:22px; line-height:1; } .pa-ring span { font-size:10px; color:#8f9ab3; }
+  .pa-kpi { display:flex; gap:12px; margin-top:6px; font-size:13px; color:#8f9ab3; } .pa-kpi b { color:#fff; }
+  .sk { display:grid; grid-template-columns:88px 1fr 30px; gap:10px; align-items:center; padding:5px 0; font-size:13.5px; }
+  .sk b { text-align:right; } .skt { height:7px; border-radius:4px; background:rgba(255,255,255,.07); overflow:hidden; } .skt i { display:block; height:100%; border-radius:4px; }
+  .pa-sw { font-size:13px; padding:9px 11px; border-radius:12px; margin-top:8px; line-height:1.4; }
+  .pa-sw.good { background:rgba(52,211,153,.08); } .pa-sw.bad { background:rgba(248,113,113,.08); }
+  .pa-pool { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px; }
+  .pa-pool > div { display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 4px; border-radius:12px; background:rgba(255,255,255,.03); }
+  .pa-pool img { width:34px; height:34px; border-radius:9px; } .pa-pool span { font-size:11px; color:#8f9ab3; }
+  .onl { padding:12px 14px; } .onl-h { display:flex; justify-content:space-between; align-items:center; }
+  .onl-l { display:flex; gap:10px; margin-top:10px; }
+  .onl-f { border:0; background:rgba(255,255,255,.04); border-radius:14px; padding:8px 10px; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:84px; color:inherit; font:inherit; }
+  .onl-f b { font-size:12.5px; max-width:84px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .onl-f span { font-size:10.5px; color:var(--acc); max-width:84px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .onl-a { position:relative; width:44px; height:44px; } .onl-a > :first-child { width:44px !important; height:44px !important; border-radius:12px; font-size:15px; overflow:hidden; } .onl-a i { position:absolute; right:-1px; bottom:-1px; width:11px; height:11px; border-radius:50%; background:#34d399; border:2px solid #141a26; } .onl-a i.g { background:var(--acc); }
   .btn.mini { width:auto; height:34px; padding:0 14px; font-size:13px; margin:0; flex:none; }
   .x { width:32px; height:32px; border:0; border-radius:10px; background:rgba(255,255,255,.06); color:#9aa4bd; font-size:18px; line-height:1; flex:none; }
   .acct { display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:14px; background:rgba(255,255,255,.03); margin-top:6px; border:1px solid transparent; }
@@ -662,6 +678,98 @@ function socialCards() {
   return h;
 }
 
+// ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
+// weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
+// rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
+const PA_B = {   // "good" Silver–Platinum values per role (= 5.5 points)
+  TOP: {csm: 6.8, gpm: 390, kda: 2.6, dmg: .25, deaths: 5.2, vpm: .7, kp: 45, obj: .22},
+  JUNGLE: {csm: 5.6, gpm: 370, kda: 3.0, dmg: .18, deaths: 5.0, vpm: 1.0, kp: 60, obj: .30},
+  MIDDLE: {csm: 7.2, gpm: 400, kda: 2.8, dmg: .27, deaths: 5.0, vpm: .7, kp: 55, obj: .15},
+  BOTTOM: {csm: 7.6, gpm: 410, kda: 2.8, dmg: .28, deaths: 5.0, vpm: .55, kp: 55, obj: .18},
+  UTILITY: {csm: 1.2, gpm: 270, kda: 2.9, dmg: .10, deaths: 5.5, vpm: 2.1, kp: 60, obj: .05},
+};
+const PA_SKILLS = [
+  ["farm", "Farmen", "CS und Gold pro Minute", "Mehr CS: Wellen zwischen Kämpfen mitnehmen, Camps auf dem Weg clearen, nicht ohne Grund recallen."],
+  ["fight", "Kämpfen", "KDA und Schaden-Anteil", "Kämpfe nur mit Level-/Item-Vorteil oder Überzahl nehmen – und dann voll Schaden machen."],
+  ["survive", "Überleben", "Tode pro Game", "Weniger sterben: ohne Sicht nicht vorlaufen, nach Kills zurückziehen, Gegner-Jungler im Kopf behalten."],
+  ["vision", "Vision", "Visionscore pro Minute", "Pro Back eine Control Ward kaufen, Trinket immer benutzen, vor Objectives warden."],
+  ["team", "Teamplay", "Kill-Beteiligung", "Bei Kämpfen und Objectives dabei sein – auf die Map schauen, Team-Fights nicht verpassen."],
+  ["obj", "Objectives", "Schaden an Türmen, Drachen, Baron", "Nach jedem Kill: Turm, Drache oder Grubs – Vorteile in Objectives umwandeln."],
+  ["steady", "Konstanz", "Schwankung deiner Game-Scores", "Gleiche Champions und denselben Plan spielen – weniger Coinflip-Games."],
+];
+function playerAnalysis(rows) {
+  const G = (rows || []).filter(g => g && !g.remake && g.pos !== undefined);
+  if (G.length < 3) return null;
+  const pt = r => Math.max(1, Math.min(10, 5.5 + (r - 1) * 4.5));
+  const avg = a => a.length ? a.reduce((t, x) => t + x, 0) / a.length : null;
+  const per = {farm: [], fight: [], survive: [], vision: [], team: [], obj: []};
+  G.forEach(g => {
+    const B = PA_B[g.pos] || PA_B.MIDDLE, kda = (g.kills + g.assists) / Math.max(1, g.deaths);
+    if (g.pos !== "UTILITY") per.farm.push(pt(.6 * g.cs_min / B.csm + .4 * (g.gpm || B.gpm) / B.gpm));
+    per.fight.push(pt(.5 * Math.min(2, kda / B.kda) + .5 * (g.dmg_share != null ? g.dmg_share / B.dmg : 1)));
+    per.survive.push(pt(Math.min(2, B.deaths / Math.max(1.5, g.deaths)) * .8 + .2));
+    if (g.vpm != null) per.vision.push(pt(g.vpm / B.vpm));
+    per.team.push(pt((g.kp || 0) / B.kp));
+    if (g.obj_share != null) per.obj.push(pt(g.obj_share / B.obj));
+  });
+  const scores = G.map(g => g.score).filter(x => x != null);
+  const mean = avg(scores);
+  const sd = scores.length > 2 ? Math.sqrt(avg(scores.map(x => (x - mean) ** 2))) : null;
+  const val = {...Object.fromEntries(Object.entries(per).map(([k, a]) => [k, avg(a)])), steady: sd == null ? null : Math.max(1, Math.min(10, 10.5 - sd * 2.6))};
+  const skills = PA_SKILLS.map(([k, label, what, tip]) => ({k, label, what, tip, v: val[k] == null ? null : Math.round(val[k] * 10) / 10})).filter(s => s.v != null);
+  const sorted = skills.slice().sort((a, b) => b.v - a.v);
+  const champs = {};
+  G.forEach(g => { const c = champs[g.champion] ||= {c: g.champion, name: g.name || g.champion, n: 0, w: 0, k: 0, d: 0, a: 0, s: []};
+    c.n++; c.w += g.win ? 1 : 0; c.k += g.kills; c.d += g.deaths; c.a += g.assists; if (g.score != null) c.s.push(g.score); });
+  const roles = {}; G.forEach(g => { if (g.pos) roles[g.pos] = (roles[g.pos] || 0) + 1; });
+  const k = G.reduce((t, g) => t + g.kills, 0), d = G.reduce((t, g) => t + g.deaths, 0), a = G.reduce((t, g) => t + g.assists, 0);
+  const recent = scores.slice(0, 5), before = scores.slice(5, 15);
+  return {
+    n: G.length, wins: G.filter(g => g.win).length, wr: Math.round(100 * G.filter(g => g.win).length / G.length),
+    score: mean == null ? null : Math.round(mean * 10) / 10, kda: ((k + a) / Math.max(1, d)).toFixed(2),
+    kda_avg: `${(k / G.length).toFixed(1)} / ${(d / G.length).toFixed(1)} / ${(a / G.length).toFixed(1)}`,
+    skills, strengths: sorted.filter(s => s.v >= 6).slice(0, 2), weaknesses: sorted.slice().reverse().filter(s => s.v < 5.5).slice(0, 2),
+    champs: Object.values(champs).map(c => ({...c, wr: Math.round(100 * c.w / c.n), kda: ((c.k + c.a) / Math.max(1, c.d)).toFixed(2), score: c.s.length ? (avg(c.s)).toFixed(1) : null}))
+      .sort((x, y) => y.n - x.n || y.wr - x.wr).slice(0, 6),
+    roles: Object.entries(roles).sort((x, y) => y[1] - x[1]).map(([r, n]) => ({r, pct: Math.round(100 * n / G.length)})),
+    form: G.slice(0, 10).map(g => ({win: g.win, score: g.score, c: g.champion})),
+    trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
+  };
+}
+const PA_ROLE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
+const paCol = v => v >= 7 ? "#34d399" : v >= 5.5 ? "#22d3ee" : v >= 4 ? "#fbbf24" : "#f87171";
+
+function paRows(games) {
+  return (games || []).map(g => {
+    const p = g.p, m = g.m.info, mins = Math.max(1, m.gameDuration / 60), T = m.participants.filter(x => x.teamId === p.teamId);
+    const sum = k => T.reduce((t, x) => t + (x[k] || 0), 0) || 1;
+    return {win: p.win, champion: p.championName, name: nameOf(p.championName), pos: p.teamPosition || "", remake: m.gameDuration < 300,
+      kills: p.kills, deaths: p.deaths, assists: p.assists, kp: Math.round(100 * (p.kills + p.assists) / sum("kills")),
+      cs_min: (p.totalMinionsKilled + p.neutralMinionsKilled) / mins, gpm: p.goldEarned / mins, vpm: (p.visionScore || 0) / mins,
+      dmg_share: p.totalDamageDealtToChampions / sum("totalDamageDealtToChampions"), obj_share: (p.damageDealtToObjectives || 0) / sum("damageDealtToObjectives"),
+      score: (gameScores(m)[p.puuid] || {}).score ?? null};
+  });
+}
+function paCard(A, title) {
+  if (!A) return "";
+  return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Ø Score</span></div>
+      <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · 5,5 = gut für die Rolle</div>
+        <div class="pa-kpi"><span><b>${A.wr}%</b> WR</span><span><b>${A.kda}</b> KDA</span>${A.trend != null ? `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"}${Math.abs(A.trend).toFixed(1)}</span>` : ""}</div></div></div>
+    ${A.skills.map(x => `<div class="sk"><span>${esc(x.label)}</span><div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("")}
+    ${A.strengths.length ? `<div class="pa-sw good">💪 <b>Stark:</b> ${A.strengths.map(x => esc(x.label)).join(", ")}</div>` : ""}
+    ${A.weaknesses.map(x => `<div class="pa-sw bad">🎯 <b>${esc(x.label)} ${x.v.toFixed(1)}:</b> ${esc(x.tip)}</div>`).join("")}
+    <div class="pa-pool">${A.champs.slice(0, 4).map(c => `<div>${cImg(c.c, "")}<b>${c.wr}%</b><span>${c.n} G · ${c.score || "–"}</span></div>`).join("")}</div></div>`;
+}
+// who is online right now – one line on top of the friends tab
+function onlineStrip() {
+  const on = (S.friends || []).map(rid => ({rid, t: liveTxt(rid), pub: (S.pub || {})[rid.toLowerCase()] || {}}))
+    .filter(f => f.t || (f.pub.status && f.pub.status.state === "online"));
+  if (!(S.friends || []).length) return "";
+  return `<div class="card onl"><div class="onl-h"><b>${on.length ? on.length + " online" : "Gerade niemand online"}</b><span class="muted small">${(S.friends || []).length} Freunde</span></div>
+    ${on.length ? `<div class="hscroll onl-l">${on.map(f => `<button class="onl-f" onclick='S.view={friend:${JSON.stringify(f.rid)}};render()'>
+      <span class="onl-a">${avatar(f.pub.avatar, "", null)}<i class="${f.t ? "g" : ""}"></i></span><b>${esc(f.pub.name || f.rid.split("#")[0])}</b><span>${f.t ? f.t.replace("🎮 ", "") : "online"}</span></button>`).join("")}</div>` : ""}</div>`;
+}
+
 // ---- views
 function gameRow(g, onclick) {
   const p = g.p, m = g.m.info, min = Math.max(1, m.gameDuration / 60), cs = p.totalMinionsKilled + p.neutralMinionsKilled;
@@ -916,7 +1024,7 @@ function vStats() {
   const tile = (v, l, cls = "") => `<div class="stat"><b class="${cls}">${v}</b><span>${l}</span></div>`;
   const bestP = A.best.p, worstP = A.worst.p;
   const c = S.coach;
-  return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>
+  return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>${paCard(playerAnalysis(paRows(S.games)))}
     <div class="card"><div class="stats">${tile(A.wr + "%", "Winrate", A.wr >= 50 ? "green" : "red")}${tile(A.score.toFixed(1), "Ø Game-Score", A.score >= 6 ? "green" : A.score < 4.5 ? "red" : "")}${tile(A.kda, "KDA")}${tile(A.kp + "%", "Kill-Beteil.")}
       ${tile(A.csm, "CS / Min")}${tile(A.gpm, "Gold / Min")}${tile(A.vpm, "Vision / Min")}</div>
       <div class="dots" style="margin-top:12px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}<span class="muted small" style="margin-left:6px">${A.wins} Siege · Ø ${A.avgk}/${A.deaths}/${A.avga}</span></div></div>
@@ -961,7 +1069,7 @@ function vFriends() {
   (fl || []).forEach(rid => queueFriend(rid));
   const L = leaderboard();
   const top = L.list.filter(e => e.rid);
-  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Rangliste · letzte 10 Games · dieselbe Liste wie in der PC-App</p>
+  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Rangliste · letzte 10 Games · dieselbe Liste wie in der PC-App</p>${onlineStrip()}
     <div class="card"><div class="seg">${Object.entries(LBM).map(([k, [l]]) => `<button class="${S.lbm === k ? "on" : ""}" onclick="S.lbm='${k}';render()">${l}</button>`).join("")}</div>
       ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
         return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
@@ -991,6 +1099,7 @@ function vFriend(rid) {
       <h2>${esc(name)} ${roleChip(pub.role || gamesRole(d.games))}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
       ${(pub.favs || []).length ? `<div style="display:flex;gap:5px;margin:4px 0">${pub.favs.map(c => cImg(c, "fav")).join("")}</div>` : ""}<div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
+    ${paCard(playerAnalysis(paRows(d.games)), "Analyse von " + name)}
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
       <div class="cmph" style="margin-bottom:6px"><b style="color:var(--acc)">Du</b><span></span><b style="color:var(--purple)">${esc(name)}</b></div>
       ${bar2("Winrate", M.wr, A.wr, v => v + "%")}${bar2("Ø Game-Score", M.score, A.score, v => v.toFixed(1))}${bar2("KDA", M.kda, A.kda, v => v)}${bar2("Kill-Beteil.", M.kp, A.kp, v => v + "%")}

@@ -28,21 +28,35 @@ ROLES = {"TOP": "Top", "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": "Bot", "UT
 _mem = {}
 
 
-def _match(api, mid):
+class PuuidMismatch(Exception):
+    """The PUUID came from another Riot key (PUUIDs are encrypted per key) – look the Riot ID up again."""
+
+
+def _match(api, mid, puuid=None):
     os.makedirs(CACHE, exist_ok=True)
     p = os.path.join(CACHE, mid + ".json")
     if os.path.exists(p):
-        with open(p, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(p, encoding="utf-8") as f:
+                m = json.load(f)
+            # a match saved with another Riot key has other (encrypted) PUUIDs -> fetch it again
+            if not puuid or any(x.get("puuid") == puuid for x in m["info"]["participants"]):
+                return m
+        except Exception:  # noqa: BLE001 - half-written / broken file: fetch again
+            pass
     m = api.get(f"/lol/match/v5/matches/{mid}")
-    with open(p, "w", encoding="utf-8") as f:
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(m, f)
+    os.replace(tmp, p)   # never leave a half-written file behind
     return m
 
 
 def summarize_match(m, puuid, gd=None):
     info = m["info"]
-    me = next(p for p in info["participants"] if p["puuid"] == puuid)
+    me = next((p for p in info["participants"] if p["puuid"] == puuid), None)
+    if me is None:
+        raise PuuidMismatch(m["metadata"]["matchId"])
     mins = max(1, info.get("gameDuration", 0) / 60)
     champ = me["championName"]
     if gd:  # normalise odd API names (e.g. "FiddleSticks") to Data Dragon ids for icons
@@ -53,6 +67,13 @@ def summarize_match(m, puuid, gd=None):
     else:
         cname = champ
     team_kills = sum(p["kills"] for p in info["participants"] if p["teamId"] == me["teamId"]) or 1
+    team = [p for p in info["participants"] if p["teamId"] == me["teamId"]]
+    tsum = lambda k: sum(p.get(k, 0) for p in team) or 1
+    try:
+        from . import gamescore
+        sc = (gamescore.scores(info).get(puuid) or {}).get("score")
+    except Exception:  # noqa: BLE001
+        sc = None
     return {"match_id": m["metadata"]["matchId"], "queue": QUEUES.get(info.get("queueId"), "Andere"),
             "queue_id": info.get("queueId"), "champion": champ, "name": cname, "win": me["win"],
             "remake": info.get("gameDuration", 0) < 300,
@@ -64,7 +85,12 @@ def summarize_match(m, puuid, gd=None):
             "vision": me.get("visionScore", 0), "role": ROLES.get(me.get("teamPosition"), ""),
             "items": [me.get(f"item{i}", 0) for i in range(7)], "duration": round(mins),
             "ended": (info.get("gameEndTimestamp") or info.get("gameCreation", 0)) / 1000,
-            "level": me.get("champLevel")}
+            "level": me.get("champLevel"),
+            # for the player analysis (same fields the mobile app builds from the match)
+            "pos": me.get("teamPosition") or "", "score": sc,
+            "gpm": round(me.get("goldEarned", 0) / mins), "vpm": round(me.get("visionScore", 0) / mins, 2),
+            "dmg_share": round(me.get("totalDamageDealtToChampions", 0) / tsum("totalDamageDealtToChampions"), 3),
+            "obj_share": round(me.get("damageDealtToObjectives", 0) / tsum("damageDealtToObjectives"), 3)}
 
 
 def aggregate(games):
@@ -123,11 +149,20 @@ def _save_disk(key, out):
         pass
 
 
+def _drop_disk(key):
+    try:
+        os.remove(_disk_file(key))
+    except OSError:
+        pass
+
+
 def _load_disk(key):
     try:
         with open(_disk_file(key), encoding="utf-8") as f:
             out = json.load(f)
         out["_seen"] = set(out.get("_seen", []))
+        if out.get("games") and "pos" not in out["games"][0]:
+            return None   # saved by an older version (no analysis fields)
         return out
     except (OSError, ValueError):
         return None
@@ -137,10 +172,25 @@ def _summaries(api, ids, puuid, gd):
     """Match summaries in parallel (disk cache first) – the slow part of loading a profile."""
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=8) as ex:
-        return list(ex.map(lambda mid: summarize_match(_match(api, mid), puuid, gd), ids))
+        return list(ex.map(lambda mid: summarize_match(_match(api, mid, puuid), puuid, gd), ids))
 
 
 def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False, allow_stale=True):
+    try:
+        return _fetch(api_key, platform, riot_id, gd, count, queue, max_age, more, allow_stale)
+    except Exception as e:  # noqa: BLE001
+        # PUUIDs are encrypted per Riot key: after a key change the saved one gives 400 "decrypting" or
+        # matches without the player -> forget the saved PUUID and look the Riot ID up again (once)
+        if not (isinstance(e, PuuidMismatch) or "400" in str(e) or "decrypt" in str(e).lower()):
+            raise
+        flt = queue if queue in FILTERS else "all"
+        for f in FILTERS:   # every cached view of this player carries the old PUUID
+            _mem.pop((riot_id.lower(), f), None)
+            _drop_disk((riot_id.lower(), f))
+        return _fetch(api_key, platform, riot_id, gd, count, flt, max_age, False, False)
+
+
+def _fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False, allow_stale=True):
     """queue: filter key (all/solo/flex/ranked/normal/aram/arena). more=True appends the next page.
     allow_stale: show the last saved profile instantly and refresh it in the background."""
     flt = queue if queue in FILTERS else "all"
@@ -156,7 +206,7 @@ def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120
 
             def bg():
                 try:
-                    fetch(api_key, platform, riot_id, gd, count, queue, max_age, allow_stale=False)
+                    fetch(api_key, platform, riot_id, gd, count, queue, max_age, allow_stale=False)   # handles a PUUID change
                 except Exception:  # noqa: BLE001
                     pass
                 finally:
