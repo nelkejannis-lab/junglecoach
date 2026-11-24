@@ -87,6 +87,9 @@
   @keyframes sh { to { background-position:-200% 0; } }
   .tierc { font-weight:900; } .GOLD { color:var(--gold); } .PLATINUM { color:#5eead4; } .EMERALD { color:var(--green); } .DIAMOND { color:#93c5fd; } .SILVER { color:#cbd5e1; } .IRON, .BRONZE { color:#c08a5b; } .MASTER, .GRANDMASTER, .CHALLENGER { color:var(--purple); }
   .card .row > img { width:40px; height:40px; border-radius:12px; flex:none; }
+  .rchip { display:inline-block; vertical-align:middle; font-size:11px; font-weight:800; letter-spacing:.3px; color:var(--acc); background:rgba(45,212,191,.14); border:1px solid rgba(45,212,191,.3); padding:2px 8px; border-radius:99px; }
+  h2 .rchip { font-size:12px; position:relative; top:-4px; }
+  img.up { object-fit:cover; }
   .mav { display:inline-grid; place-items:center; width:40px; height:40px; border-radius:12px; background:linear-gradient(145deg,#0f2a2a,#13203a); overflow:hidden; flex:none; }
   .mav .moosi { animation:none; filter:none; }
   .hav, img.hav { width:52px !important; height:52px !important; border-radius:16px !important; border:2px solid rgba(255,255,255,.25); }
@@ -241,9 +244,12 @@ function liveTxt(rid) {
   if (pub.status && pub.status.state === "ingame") return `🎮 spielt ${pub.status.champ ? esc(nameOf(pub.status.champ)) : ""}`;
   return "";
 }
+const ROLE_DE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
+const roleChip = r => r && ROLE_DE[r] ? `<span class="rchip">${ROLE_DE[r]}</span>` : "";
 const nameOf = id => (CHAMPS.find(c => c.id === id) || {name: id}).name;
 const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
 function avatar(av, cls = "", fallback) {
+  if (av && av.type === "upload") return `<img class="${cls} up" src="/a/${av.id}" alt="">`;
   if (av && av.type === "moosi") return `<span class="mav ${cls}" style="filter:hue-rotate(${MOOSI_HUE[av.id] || 0}deg)">${moosi("happy", 40)}</span>`;
   const c = av && av.type === "champ" ? av.id : fallback;
   return c ? cImg(c, cls) : `<span class="mav ${cls}">${moosi("happy", 40)}</span>`;
@@ -339,7 +345,7 @@ function vHome() {
   const pr = S.prof || {};
   let h = `<div class="hero"><div class="art" style="background-image:url('${pr.banner ? splash(pr.banner) : main ? splash(main) : ""}')"></div><div class="in">
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pr.avatar, "hav", main)}<span class="tag">${c && c.player_type ? "✦ " + esc(c.player_type.name) : "Dein Profil"}</span></div>
-    <h2>${esc(pr.name || (S.me.riot_id || S.me.name || "").split("#")[0])}</h2>${pr.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pr.bio)}</div>` : ""}<div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
+    <h2>${esc(pr.name || (S.me.riot_id || S.me.name || "").split("#")[0])} ${roleChip(pr.role)}</h2>${pr.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pr.bio)}</div>` : ""}<div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
   h += `<div class="card moosi-card">${moosi(c && c.score >= 60 ? "proud" : "happy", 84)}<div class="bubble"><b>${task ? "Deine Aufgabe" : "Moosi"}</b>${task ? esc(task.title + ": " + task.drill)
     : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal mit deinem Konto – dann zeige ich dir hier deine Coaching-Aufgabe."}</div></div>`;
   if (gs.length) h += `<div class="card"><h3>Letzte ${gs.length} Games</h3><div class="stats"><div class="stat"><b class="${wins / gs.length >= .5 ? "green" : "red"}">${Math.round(100 * wins / gs.length)}%</b><span>Winrate</span></div>
@@ -456,7 +462,7 @@ function vFriends() {
       ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
         return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
           <span class="pos ${i < 3 ? "p" + i : ""}">${i === 0 ? "👑" : i + 1}</span>${avatar(e.me ? (S.prof || {}).avatar : ((S.pub || {})[e.rid.toLowerCase()] || {}).avatar, "", main)}
-          <div style="flex:1;min-width:0"><b>${esc((e.me ? (S.prof || {}).name : ((S.pub || {})[e.rid.toLowerCase()] || {}).name) || e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""}</b>
+          <div style="flex:1;min-width:0"><b>${esc((e.me ? (S.prof || {}).name : ((S.pub || {})[e.rid.toLowerCase()] || {}).name) || e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""} ${roleChip((e.me ? S.prof : (S.pub || {})[e.rid.toLowerCase()] || {}) ? (e.me ? (S.prof || {}).role : ((S.pub || {})[e.rid.toLowerCase()] || {}).role) : null)}</b>
             ${!e.me && liveTxt(e.rid) ? `<div class="live">${liveTxt(e.rid)}</div>` : ""}
             <div class="dots sm">${e.a ? e.a.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("") : '<span class="muted small">' + (e.err ? esc(e.err) : "lädt …") + "</span>"}</div></div>
           <div class="lbv">${L.show(e)}</div></div>`; }).join("")}
@@ -479,7 +485,7 @@ function vFriend(rid) {
   return `<button class="btn sec" style="width:auto;padding:10px 16px;margin-bottom:12px" onclick="S.view=null;render()">‹ Freunde</button>
     <div class="hero"><div class="art" style="background-image:url('${pub.banner ? splash(pub.banner) : A && A.champs[0] ? splash(A.champs[0].c) : ""}')"></div><div class="in">
       <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pub.avatar, "hav", A && A.champs[0] ? A.champs[0].c : null)}<span class="tag">${lv || "Freund"}</span></div>
-      <h2>${esc(name)}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
+      <h2>${esc(name)} ${roleChip(pub.role)}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
       ${(pub.favs || []).length ? `<div style="display:flex;gap:5px;margin:4px 0">${pub.favs.map(c => cImg(c, "fav")).join("")}</div>` : ""}<div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
@@ -544,6 +550,25 @@ function pickC(key, id, max) {
   const keepName = ($("#pe_name") || {}).value, keepBio = ($("#pe_bio") || {}).value;
   render(); if (keepName != null) { $("#pe_name").value = keepName; $("#pe_bio").value = keepBio; }
 }
+// own picture: square crop + 256 px on the phone, then upload
+async function uploadPic(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  toast("Lade hoch …");
+  try {
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    const sz = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement("canvas");
+    cv.width = cv.height = 256;
+    cv.getContext("2d").drawImage(img, (img.naturalWidth - sz) / 2, (img.naturalHeight - sz) / 2, sz, sz, 0, 0, 256, 256);
+    let q = 0.85, data = cv.toDataURL("image/jpeg", q);
+    while (data.length > 100000 && q > 0.4) { q -= 0.1; data = cv.toDataURL("image/jpeg", q); }
+    const r = await api("/api/sync/avatar", {method: "PUT", body: JSON.stringify({data})});
+    PE.avatar = r.avatar;
+    const keepName = $("#pe_name").value, keepBio = $("#pe_bio").value;
+    render(); $("#pe_name").value = keepName; $("#pe_bio").value = keepBio;
+    toast("Bild hochgeladen – jetzt Profil speichern");
+  } catch (e) { toast("Upload fehlgeschlagen: " + e.message); }
+}
 async function saveProf() {
   PE.name = $("#pe_name").value; PE.bio = $("#pe_bio").value; PE.visible = $("#pe_vis").checked; PE.show_status = $("#pe_st").checked;
   try { S.prof = (await api("/api/sync/profile", {method: "PUT", body: JSON.stringify({profile: PE})})).profile; PE = null; S.tab = "home"; render(); toast("Profil gespeichert"); }
@@ -552,7 +577,8 @@ async function saveProf() {
 function profEditor() {
   PE = PE || JSON.parse(JSON.stringify({favs: [], ...(S.prof || {})}));
   const sec = (t, inner, open) => `<details ${open ? "open" : ""} style="margin-top:12px"><summary style="font-weight:700">${t}</summary><div style="margin-top:10px">${inner}</div></details>`;
-  return `<div class="card"><h3>Mein Profil</h3><div style="display:flex;gap:12px;align-items:center">${avatar(PE.avatar, "hav")}<div class="muted small">So sehen dich deine Freunde – auf dem Handy und am PC.</div></div>
+  return `<div class="card"><h3>Mein Profil</h3><div style="display:flex;gap:12px;align-items:center">${avatar(PE.avatar, "hav")}<div><label class="btn sec" style="padding:8px 12px;font-size:14px;margin-bottom:6px;display:inline-block">📷 Bild hochladen<input type="file" accept="image/*" style="display:none" onchange="uploadPic(this)"></label><div class="muted small">So sehen dich deine Freunde – auf dem Handy und am PC.</div></div></div>
+    ${PE.role ? `<p class="muted small" style="margin:8px 0 0">Hauptrolle: ${roleChip(PE.role)} <span>(kommt automatisch aus der PC-App)</span></p>` : ""}
     <label>Anzeigename</label><input id="pe_name" maxlength="24" value="${esc(PE.name || "")}" placeholder="${esc((S.me.riot_id || "").split("#")[0])}">
     <label>Über mich</label><input id="pe_bio" maxlength="140" value="${esc(PE.bio || "")}" placeholder="z. B. Graves-OTP · Ziel Platin">
     ${sec("Profilbild", `<div class="mrow">${Object.keys(MOOSI_HUE).map(c => `<button class="${PE.avatar && PE.avatar.type === "moosi" && PE.avatar.id === c ? "on" : ""}" onclick="PE.avatar={type:'moosi',id:'${c}'};render()">${avatar({type: "moosi", id: c})}</button>`).join("")}</div>${champGrid("avatar", selOf("avatar"), 1)}`)}

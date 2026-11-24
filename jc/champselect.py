@@ -1,4 +1,5 @@
 """Turns an LCU champ-select session into analysis + recommendations."""
+import time
 from . import analyzer
 
 
@@ -107,7 +108,80 @@ def apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, enemy_ids=None)
     return out
 
 
-def analyze(gd, session, config, meta_stats=None, bracket=None):
+_CACHE = {}
+ROLE_DE = {"TOP": "Top", "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": "Bot (ADC)", "UTILITY": "Support"}
+
+
+def role_picks(gd, config, role, allies, prof, taken, meta_stats=None, bracket=None, history=None):
+    """Pick help for the position the client assigned you: your own champions on that role (from your game
+    history), your pool champions that are really played there, and the strongest meta picks of that role.
+    Every option gets: your games/winrate on it, meta tier/winrate in your elo, team fit."""
+    pool = config.get("champion_pool", [])
+    if not role:
+        return analyzer.pick_suggestions(gd, pool, allies, prof, taken)
+    cand = {}  # id -> reasons/sources
+    mine = {}
+    for g in history or []:
+        if g.get("role") == role and g.get("champion"):
+            c = gd.champ(g["champion"])
+            if c:
+                st = mine.setdefault(c["id"], [0, 0])
+                st[0] += 1; st[1] += 1 if g.get("win") else 0
+    for cid, (n, _) in sorted(mine.items(), key=lambda kv: -kv[1][0])[:6]:
+        cand.setdefault(cid, set()).add("mine")
+    tiers = {}
+    if meta_stats is not None:
+        try:
+            key = ("tier", role, bracket, id(meta_stats.db))
+            if key not in _CACHE or time.time() - _CACHE[key][0] > 600:  # champ select polls every second
+                _CACHE[key] = (time.time(), meta_stats.tierlist(bracket=bracket, role=role))
+            tl = _CACHE[key][1]
+            tiers = {t["champion"]: t for t in tl}
+            for t in tl[:6]:
+                cand.setdefault(t["champion"], set()).add("meta")
+        except Exception:  # noqa: BLE001
+            tiers = {}
+    for ref in pool:
+        c = gd.champ(ref)
+        if not c:
+            continue
+        plays_role = c["id"] in mine or c["id"] in tiers
+        if not plays_role and meta_stats is not None:
+            try:
+                k2 = ("main", c["id"], id(meta_stats.db))
+                if k2 not in _CACHE:
+                    _CACHE[k2] = (time.time(), meta_stats.main_role(c["id"]))
+                plays_role = _CACHE[k2][1] == role
+            except Exception:  # noqa: BLE001
+                plays_role = False
+        if plays_role:
+            cand.setdefault(c["id"], set()).add("pool")
+    out = []
+    for cid, src in cand.items():
+        c = gd.champ(cid)
+        if not c or cid in taken:
+            continue
+        p = analyzer.score_pick(gd, c, allies, prof)
+        why = [w for w in p["why"] if w != "neutral gegen diese Comp"]
+        score = p["score"]
+        if cid in mine:
+            n, w = mine[cid]
+            wr = round(100 * w / n)
+            score += min(20, n * 2) + (wr - 50) * 0.3  # comfort pick: what you actually play
+            why.insert(0, f"deine Games als {ROLE_DE[role]}: {n} · {wr}% WR")
+        t = tiers.get(cid)
+        if t:
+            score += {"S": 12, "A": 8, "B": 4, "C": 0, "D": -4}.get(t.get("tier"), 0)
+            why.append(f"Meta {ROLE_DE[role]}: Tier {t.get('tier')} · {t.get('winrate')}% WR")
+        if "pool" in src:
+            score += 6
+            why.append("in deinem Champion-Pool")
+        out.append({"champion": gd.champ_name(c), "id": cid, "score": round(score), "why": why or ["neutral gegen diese Comp"],
+                    "source": "mine" if "mine" in src else "pool" if "pool" in src else "meta"})
+    return sorted(out, key=lambda x: -x["score"])[:8]
+
+
+def analyze(gd, session, config, meta_stats=None, bracket=None, history=None):
     if not session:
         return None
     me_cell = session.get("localPlayerCellId")
@@ -161,7 +235,8 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
         "enemy_jungler": gd.champ_name(enemy_jg) if enemy_jg else None,
         "enemy_profile": prof,
         "notes": analyzer.enemy_notes(gd, prof, enemy_jg),
-        "pick_suggestions": analyzer.pick_suggestions(gd, config.get("champion_pool", []), allies, prof, taken),
+        "pick_suggestions": role_picks(gd, config, role, allies, prof, taken, meta_stats, bracket, history),
+        "assigned_role": role,
     }
     if my_champ:
         preset = config.get("champion_presets", {}).get(my_champ["id"])

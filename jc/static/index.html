@@ -254,6 +254,7 @@
   .fr .sub { font-size:11.5px; color:var(--sec); }
   .fr .rk { margin-left:auto; text-align:right; font-size:11.5px; font-weight:800; white-space:nowrap; }
   .card .tsearch input { border:0 !important; background:none !important; padding:0 !important; box-shadow:none !important; width:auto; flex:1; }
+  .rolechip { font-size:10.5px; font-weight:800; letter-spacing:.3px; color:var(--acc); background:rgba(45,212,191,.12); border:1px solid rgba(45,212,191,.25); padding:1px 7px; border-radius:99px; vertical-align:middle; }
   .mav { display:inline-grid; place-items:center; border-radius:30%; background:linear-gradient(145deg,#0f2a2a,#13203a); overflow:hidden; flex:none; }
   .mav .moosi { animation:none; filter:none; }
   .poolgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px; max-height:330px; overflow:auto; padding:2px; }
@@ -452,7 +453,7 @@ function railHtml() {
     <div class="rcard"><h4>${svgIcon("friends", 17)} Freunde <span class="cnt">${online} online · ${fl.length}</span></h4>
       <div style="margin-top:8px">${fl.slice(0, 8).map(f => `<div class="fr" onclick='openFriend(${JSON.stringify(f.riot_id)})'>
         <div class="av">${f.jc && f.jc.avatar ? avatarHtml(f.jc.avatar, 40) : f.top && f.top[0] ? cImg(f.top[0], 40, 12) : profIcon(f.icon)}<i class="${(f.presence || {}).status || ""}"></i></div>
-        <div style="min-width:0"><div class="nm">${esc((f.jc && f.jc.name) || f.riot_id.split("#")[0])}</div><div class="sub">${playingTxt(f) || esc(PRES[(f.presence || {}).status] || "–") + (f.role ? " · " + esc(f.role) : "")}</div></div>
+        <div style="min-width:0"><div class="nm">${esc((f.jc && f.jc.name) || f.riot_id.split("#")[0])}${f.jc && f.jc.role ? ` <span class="rolechip">${esc(ROLE_DE[f.jc.role] || f.jc.role)}</span>` : ""}</div><div class="sub">${playingTxt(f) || esc(PRES[(f.presence || {}).status] || "–") + (f.role ? " · " + esc(f.role) : "")}</div></div>
         <div class="rk">${f.rank ? rankTxt(f.rank).replace(/ · .*/, "") : f.loading ? '<span class="muted">…</span>' : ""}</div></div>`).join("")
         || '<p class="small muted" style="margin:6px 4px">Noch keine Freunde gespeichert.</p>'}</div>
       <div class="addf"><input id="rail-add" placeholder="Name#TAG" onkeydown="if(event.key==='Enter')addFriend(this.value)"><button class="btn sec" onclick="addFriend($('#rail-add').value)">+</button></div></div>`;
@@ -486,6 +487,7 @@ function renderFriends() {
         <div class="top" style="background-image:url('${(f.jc && f.jc.banner) ? splash(f.jc.banner) : top ? splash(top) : ""}')"></div><span class="st"><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> ${playingTxt(f) || esc(PRES[st])}</span>
         <div class="body"><div class="av">${f.jc && f.jc.avatar ? avatarHtml(f.jc.avatar, 58) : profIcon(f.icon, 58)}</div>
           <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><b style="font-size:17px">${esc((f.jc && f.jc.name) || f.riot_id.split("#")[0])}</b><span class="muted small">${esc(f.riot_id)}</span></div>
+          ${f.jc && f.jc.role ? `<span class="rolechip" style="margin-top:4px;display:inline-block">${esc(ROLE_DE[f.jc.role] || f.jc.role)}</span>` : ""}
           ${f.jc && f.jc.bio ? `<div class="small" style="margin-top:2px;color:#c9d2e6">${esc(f.jc.bio)}</div>` : ""}
           ${f.jc && (f.jc.favs || []).length ? `<div style="display:flex;gap:4px;margin-top:6px">${f.jc.favs.map(c => cImg(c, 22, 6)).join("")}<span class="muted small" style="align-self:center;margin-left:4px">Lieblinge</span></div>` : ""}
           <div class="small" style="margin-top:2px">${f.loading ? '<span class="muted">Lade Stats …</span>' : f.error ? `<span class="red">${esc(f.error)}</span>` : rankTxt(f.rank)}</div>
@@ -775,9 +777,14 @@ function renderSelect() {
      ${p.count ? `<div class="row small"><span>AD ${p.ad_share}%</span><span>AP ${p.ap_share}%</span></div>
        <div class="meter" style="height:8px;display:flex"><i style="width:${p.ad_share}%;background:var(--orange)"></i><i style="width:${p.ap_share}%;background:var(--acc)"></i></div>` : ""}
      <div style="margin-top:12px">${list(cs.notes, n => `<li class="small">${esc(n)}</li>`)}</div>`);
-  h += card("Pick-Empfehlung", "Aus deinem Champion-Pool, bewertet gegen diese Comp" + (cs.enemy_jungler ? " und den Gegner-Jungler." : "."),
-    list(cs.pick_suggestions.slice(0, 5), (s, i) => `<li><div class="row" style="border:0;padding:0"><b>${i === 0 ? "★ " : ""}${esc(s.champion)}</b><span class="muted">${s.score}</span></div>
-      <div class="muted small">${esc(s.why.join(" · "))}</div></li>`));
+  const roleTxt = ROLE_DE[cs.assigned_role] || "";
+  h += card(roleTxt ? `Pick-Empfehlung · ${roleTxt}` : "Pick-Empfehlung",
+    roleTxt ? `Du hast ${roleTxt} bekommen – deine Champions auf dieser Rolle, dein Pool und die stärksten Meta-Picks, bewertet gegen diese Comp${cs.lane_enemy ? " und " + esc(cs.lane_enemy) : ""}.`
+      : "Aus deinem Champion-Pool, bewertet gegen diese Comp" + (cs.enemy_jungler ? " und den Gegner-Jungler." : "."),
+    cs.pick_suggestions.length ? `<div style="display:grid;gap:8px">${cs.pick_suggestions.slice(0, 6).map((s, i) => `<div style="display:flex;gap:12px;align-items:center;padding:10px;border-radius:14px;background:${i === 0 ? "rgba(45,212,191,.10)" : "var(--card2)"};border:1px solid ${i === 0 ? "rgba(45,212,191,.35)" : "var(--sep)"}">
+      ${cImg(s.id, 44, 12)}<div style="flex:1;min-width:0"><div class="row" style="border:0;padding:0"><b>${i === 0 ? "★ " : ""}${esc(s.champion)}</b>
+      ${s.source ? `<span class="rolechip" style="${s.source === "meta" ? "color:var(--purple);border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.1)" : s.source === "pool" ? "color:var(--gold);border-color:rgba(245,196,81,.3);background:rgba(245,196,81,.1)" : ""}">${{mine: "Dein Champ", pool: "Pool", meta: "Meta"}[s.source]}</span>` : ""}</div>
+      <div class="muted small">${esc(s.why.join(" · "))}</div></div></div>`).join("")}</div>` : '<p class="muted small">Noch keine passenden Champions – spiel ein paar Games auf dieser Rolle oder füge Champions zu deinem Pool hinzu.</p>');
   if (cs.runes) {
     const r = cs.runes, data = r.source === "data";
     h += card("Runen · " + cs.my_champion, data ? "Aus echten Games berechnet." : "Regelbasiert – sammle Meta-Daten für datenbasierte Runen.",
@@ -1165,7 +1172,9 @@ function overlayCard() {
 }
 // ---- own profile (name, picture, text, favourite champions) – shared with friends via the server
 const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
+const avatarUrl = id => `${((cfgData || {}).server_url || "https://junglecoach.nelkejannis.workers.dev").replace(/\/$/, "")}/a/${id}`;
 function avatarHtml(av, size = 40, fallbackChamp) {
+  if (av && av.type === "upload") return `<img src="${avatarUrl(av.id)}" width="${size}" height="${size}" style="border-radius:${Math.round(size * .3)}px;object-fit:cover;flex:none">`;
   if (av && av.type === "moosi") return `<span class="mav" style="width:${size}px;height:${size}px;filter:hue-rotate(${MOOSI_HUE[av.id] || 0}deg)">${moosi("happy", size * .9)}</span>`;
   const c = av && av.type === "champ" ? av.id : fallbackChamp;
   return c ? cImg(c, size, Math.round(size * .3)) : `<span class="mav" style="width:${size}px;height:${size}px">${moosi("happy", size * .9)}</span>`;
@@ -1183,6 +1192,23 @@ async function saveMyProfile() {
     const j = await r.json(); if (j.profile) { myProf.profile = j.profile; profMsg = "Gespeichert ✓"; } else profMsg = j.error || "Fehler";
   } catch (e) { profMsg = "Server nicht erreichbar"; }
   render(); renderRail();
+}
+// own picture: cropped to a square and resized to 256 px on this PC before upload
+async function uploadAvatar(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  profMsg = "Lade hoch …"; render();
+  try {
+    const img = await createImageBitmap(f);
+    const s = Math.min(img.width, img.height), cv = document.createElement("canvas");
+    cv.width = cv.height = 256;
+    cv.getContext("2d").drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256);
+    let q = 0.85, data = cv.toDataURL("image/jpeg", q);
+    while (data.length > 100000 && q > 0.4) { q -= 0.1; data = cv.toDataURL("image/jpeg", q); }
+    const j = await (await fetch("/api/my-avatar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({data})})).json();
+    if (!j.avatar) throw new Error(j.error || "Upload fehlgeschlagen");
+    (myProf.profile = myProf.profile || {}).avatar = j.avatar; if (PK.avatar) PK.avatar.sel = [];
+    await saveMyProfile(); profMsg = "Profilbild gespeichert ✓"; render();
+  } catch (e) { profMsg = e.message; render(); }
 }
 function setMoosiAvatar(c) { (myProf.profile = myProf.profile || {}).avatar = {type: "moosi", id: c}; if (PK.avatar) PK.avatar.sel = []; pkRefresh("avatar"); }
 function pkHtml(key) {
@@ -1216,10 +1242,12 @@ function profileCard() {
   PK.banner = PK.banner || {sel: p.banner ? [p.banner] : [], max: 1, q: ""};
   const sec = (t, inner) => `<details class="dev" style="margin-top:12px"><summary>${t}</summary><div style="margin-top:10px">${inner}</div></details>`;
   return card("Mein Profil", "So sehen dich deine Freunde – in der PC-App und auf dem Handy.", `
-    <div style="display:flex;gap:14px;align-items:center;margin-bottom:6px"><div id="mp_prev">${avatarHtml(p.avatar, 64, ((cfgData || {}).champion_pool || [])[0])}</div>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:6px"><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div id="mp_prev">${avatarHtml(p.avatar, 64, ((cfgData || {}).champion_pool || [])[0])}</div><label style="cursor:pointer;font-size:12px;font-weight:600;color:var(--acc)">📷 Hochladen<input type="file" accept="image/*" style="display:none" onchange="uploadAvatar(this)"></label></div>
       <div style="flex:1"><label class="f" style="margin-top:0">Anzeigename</label><input class="f" id="mp_name" maxlength="24" value="${esc(p.name || "")}" placeholder="${esc(((cfgData || {}).riot_id || "").split("#")[0])}"></div></div>
+    <p class="small muted" style="margin:4px 0 0">Hauptrolle im Profil: <span class="rolechip">${esc(ROLE_DE[(cfgData || {}).main_role] || "–")}</span> <span class="muted">(automatisch erkannt oder unter „Deine Rolle“ gewählt)</span></p>
     <label class="f">Über mich <span class="muted small">(max. 140 Zeichen)</span></label><input class="f" id="mp_bio" maxlength="140" value="${esc(p.bio || "")}" placeholder="z. B. Graves-OTP · Ziel Platin">
-    ${sec("Profilbild wählen", `<div class="chips" style="margin-bottom:10px">${Object.keys(MOOSI_HUE).map(c => `<button class="chip ${p.avatar && p.avatar.type === "moosi" && p.avatar.id === c ? "on" : ""}" style="padding:4px" onclick="setMoosiAvatar('${c}');render()" title="Moosi ${c}">${avatarHtml({type: "moosi", id: c}, 34)}</button>`).join("")}</div><div id="pk_avatar">${pkHtml("avatar")}</div>`)}
+    ${sec("Profilbild wählen", `
+      <div class="chips" style="margin-bottom:10px">${Object.keys(MOOSI_HUE).map(c => `<button class="chip ${p.avatar && p.avatar.type === "moosi" && p.avatar.id === c ? "on" : ""}" style="padding:4px" onclick="setMoosiAvatar('${c}');render()" title="Moosi ${c}">${avatarHtml({type: "moosi", id: c}, 34)}</button>`).join("")}</div><div id="pk_avatar">${pkHtml("avatar")}</div>`)}
     ${sec("Lieblings-Champions (bis zu 3)", `<div id="pk_favs">${pkHtml("favs")}</div>`)}
     ${sec("Banner (Splash-Art)", `<div id="pk_banner">${pkHtml("banner")}</div>`)}
     <label class="switch" style="margin-top:10px"><span>Profil für Freunde sichtbar</span><input type="checkbox" id="mp_vis" ${p.visible !== false ? "checked" : ""}></label>

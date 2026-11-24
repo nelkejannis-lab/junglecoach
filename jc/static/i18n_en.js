@@ -763,5 +763,10 @@ window.I18N_EN = {
 "spielt": "playing",
 "Läuft automatisch: Die Cloud sammelt rund um die Uhr (EUW, NA, KR, OCE), die App holt neue Daten jede Stunde im Hintergrund – du musst nichts tun.": "Fully automatic: the cloud collects around the clock (EUW, NA, KR, OCE), the app fetches new data every hour in the background – nothing to do.",
 "Für Entwickler: mit eigenem Riot-Key zusätzlich vom PC sammeln": "For developers: also collect from this PC with your own Riot key",
-"Starten": "Start"
+"Starten": "Start",
+"📷 Eigenes Bild hochladen": "📷 Upload your own picture",
+"Lade hoch …": "Uploading …",
+"Profilbild gespeichert ✓": "Profile picture saved ✓",
+"Hauptrolle im Profil:": "Main role on profile:",
+"(automatisch erkannt oder unter „Deine Rolle“ gewählt)": "(detected automatically or chosen under “Your role”)"
 };

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import worker, { sign, verify } from "../src/index.js";
 
 function mockDB() {
-  const users = [], data = new Map();
+  const users = [], data = new Map(), avatars = new Map();
   return {
     users,
     prepare(sql) {
@@ -23,6 +23,10 @@ function mockDB() {
           } else if (sql.startsWith("INSERT INTO user_data")) {
             const [, col, atc] = sql.match(/user_id, (\w+), (\w+)\)/);
             data.set(args[0], { ...(data.get(args[0]) || {}), [col]: args[1], [atc]: args[2] });
+          } else if (sql.startsWith("INSERT INTO avatars")) {
+            avatars.set(args[0], { id: args[0], user_id: args[1], mime: args[2], data: args[3] });
+          } else if (sql.startsWith("DELETE FROM avatars")) {
+            for (const [k, v] of avatars) if (v.user_id === args[0]) avatars.delete(k);
           } else if (sql.startsWith("DELETE FROM user_data")) {
             data.delete(args[0]);
           } else if (sql.startsWith("DELETE FROM users")) {
@@ -39,6 +43,7 @@ function mockDB() {
         },
         async first() {
           if (sql.includes("FROM config")) return this.cfg ?? (globalThis.__cfg ? { value: globalThis.__cfg } : null);
+          if (sql.includes("FROM avatars")) return avatars.get(args[0]) || null;
           if (sql.includes("FROM user_data")) {
             const d = data.get(args[0]); const col = sql.match(/SELECT (\w+) AS v/)[1];
             const atc = (sql.match(/, (\w+) AS at/) || [])[1] || "updated_at";
@@ -155,4 +160,23 @@ test("profiles, status and public view", async () => {
   assert.equal(j.profiles["mia#ger"], undefined); // chose not to be visible
   r = await worker.fetch(new Request("https://jc.dev/api/public/profiles?ids=x"), env, ctx);
   assert.equal(r.status, 401);
+});
+
+test("avatar upload and serving", async () => {
+  const { sign } = await import("../src/index.js");
+  const cfgRow = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  const H = { authorization: "Bearer " + await sign({ uid: 77, exp: Date.now() / 1000 + 600 }, cfgRow.value) };
+  const jpeg = btoa(String.fromCharCode(0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4));
+  let r = await worker.fetch(new Request("https://jc.dev/api/sync/avatar", { method: "PUT", headers: H, body: JSON.stringify({ data: "data:image/jpeg;base64," + jpeg }) }), env, ctx);
+  const j = await r.json();
+  assert.equal(j.avatar.type, "upload");
+  r = await worker.fetch(new Request("https://jc.dev" + j.url), env, ctx);
+  assert.equal(r.headers.get("content-type"), "image/jpeg");
+  assert.equal((await r.arrayBuffer()).byteLength, 8);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/avatar", { method: "PUT", headers: H, body: JSON.stringify({ data: "data:text/html;base64," + btoa("<script>") }) }), env, ctx);
+  assert.equal(r.status, 400);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/profile", { method: "PUT", headers: H, body: JSON.stringify({ profile: { avatar: j.avatar, role: "JUNGLE" } }) }), env, ctx);
+  const pr = (await r.json()).profile;
+  assert.equal(pr.avatar.id, j.avatar.id);
+  assert.equal(pr.role, "JUNGLE");
 });

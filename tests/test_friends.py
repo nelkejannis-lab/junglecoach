@@ -170,3 +170,34 @@ class RoleTests(unittest.TestCase):
             self.assertEqual(cfg["main_role"], "TOP")
         finally:
             app.save_config = orig
+
+
+class RolePickTests(unittest.TestCase):
+    def test_role_picks(self):
+        from jc import champselect
+
+        class G:
+            data = {"Graves": {"id": "Graves", "tags": ["Marksman"]}, "Lulu": {"id": "Lulu", "tags": ["Support"]},
+                    "Nami": {"id": "Nami", "tags": ["Support"]}, "Thresh": {"id": "Thresh", "tags": ["Support", "Tank"]}}
+
+            def champ(self, ref):
+                return self.data.get(ref)
+
+            def champ_name(self, c):
+                return c["id"]
+
+        class MS:
+            db = object()
+
+            def tierlist(self, bracket=None, role=None):
+                return [{"champion": "Thresh", "tier": "S", "winrate": 53.1}]
+
+            def main_role(self, c):
+                return {"Graves": "JUNGLE", "Lulu": "UTILITY"}.get(c)
+        prof = {"squishies": 0, "tanks": 0, "assassins": 0, "cc": [], "count": 0}
+        hist = [{"role": "UTILITY", "champion": "Nami", "win": i % 2 == 0} for i in range(8)]
+        out = champselect.role_picks(G(), {"champion_pool": ["Graves", "Lulu"]}, "UTILITY", [], prof, set(), MS(), None, hist)
+        ids = [p["id"] for p in out]
+        self.assertEqual(set(ids), {"Nami", "Thresh", "Lulu"})  # Graves (jungle) is not suggested for support
+        self.assertEqual(out[0]["id"], "Nami")  # your comfort pick on that role
+        self.assertEqual(next(p for p in out if p["id"] == "Lulu")["source"], "pool")

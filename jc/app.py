@@ -109,6 +109,7 @@ def detect_role(cfg, hist):
     if cfg.get("role_auto", True) and n / len(recent) >= 0.5 and cfg.get("main_role") != role:
         cfg["main_role"] = role
         COACH.pop("plan", None)
+        threading.Thread(target=push_role, args=(cfg,), daemon=True).start()
     save_config(cfg)
     return det
 
@@ -278,11 +279,19 @@ def sync_loop(cfg):
             pass
 
 
+def push_role(cfg):
+    """Keeps the main role on the public profile up to date."""
+    r = cloud(cfg, "GET", "/api/sync/profile")
+    if r is not None and cfg.get("main_role") and (r.get("profile") or {}).get("role") != cfg["main_role"]:
+        cloud(cfg, "PUT", "/api/sync/profile", {"profile": {**(r.get("profile") or {}), "role": cfg["main_role"]}})
+
+
 def sync_on_start(cfg):
     """Merges the friend list with the server (phone additions) and publishes the Riot ID."""
     if not cfg.get("auth_token"):
         return
     sync_friends(cfg)
+    push_role(cfg)
     me = cloud(cfg, "GET", "/api/me")
     if me is not None and not me.get("riot_id") and "#" in (cfg.get("riot_id") or ""):
         cloud(cfg, "PUT", "/api/me", {"riot_id": cfg["riot_id"]})
@@ -350,6 +359,7 @@ def rune_tree(gd, page):
             "games": page.get("games"), "winrate": page.get("winrate")}
 
 
+HIST_CACHE = {}
 MCACHE = {}  # meta pages computed in the background -> the Meta tab opens instantly
 
 
@@ -540,7 +550,12 @@ def poll_loop(gd, cfg, lcu):
                 pass
             cs = live_state = None
             if phase == "ChampSelect":
-                cs = champselect.analyze(gd, lcu.champ_select(), cfg, meta_stats(gd), current_bracket(cfg))
+                acc_ = ranked.ACTIVE.get("account") or cfg.get("riot_id", "")
+                if HIST_CACHE.get("acc") != acc_ or time.time() - HIST_CACHE.get("at", 0) > 600:
+                    HIST_CACHE.update(acc=acc_, at=time.time(),
+                                      games=[v for k, v in load_history(acc_).items() if not k.startswith("__")])
+                cs = champselect.analyze(gd, lcu.champ_select(), cfg, meta_stats(gd), current_bracket(cfg),
+                                         HIST_CACHE.get("games"))
                 # auto-import runes: again whenever champion or enemy jungler (matchup) changes
                 if cs and cs.get("runes") and cfg.get("auto_import_runes", True):
                     key = (cs["my_champion"], tuple(sorted(cs.get("enemies", []))))  # re-push on every new enemy
@@ -987,8 +1002,13 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 profile._mem.clear()
                 return self._send(200, {"ok": True})
+            if self.path == "/api/my-avatar":
+                r = cloud(cfg, "PUT", "/api/sync/avatar", {"data": self._body().get("data", "")})
+                return self._send(200 if r and r.get("ok") else 400, r or {"error": "Server nicht erreichbar"})
             if self.path == "/api/my-profile":
-                r = cloud(cfg, "PUT", "/api/sync/profile", {"profile": self._body().get("profile") or {}})
+                prof = self._body().get("profile") or {}
+                prof["role"] = cfg.get("main_role") or prof.get("role")  # main role is shown on the profile
+                r = cloud(cfg, "PUT", "/api/sync/profile", {"profile": prof})
                 return self._send(200 if r is not None else 502, r or {"error": "Server nicht erreichbar"})
             if self.path == "/api/friends":
                 body = self._body()

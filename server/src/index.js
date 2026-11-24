@@ -7,6 +7,8 @@
  *  /api/sync/friends  GET | PUT {friends:[Riot IDs]}   – same friend list on PC and phone
  *  /api/sync/coach    GET | PUT {plan}                  – last coach summary from the PC app, for the phone
  *  /api/sync/profile  GET | PUT {profile}               – own display name, avatar, banner, bio, favourite champions
+ *  /api/sync/avatar   PUT {data: "data:image/jpeg;base64,..."} – own profile picture (256 px, max 80 KB) | DELETE
+ *  /a/<id>            GET – profile picture (public URL with a random id)
  *  /api/sync/status   PUT {state, champ}                – "playing right now" from the PC app (shown to friends)
  *  /api/public/profiles?ids=A#1,B#2  GET               – friends' public profiles + live status (only if shared)
  *  /m/                mobile web app (also loaded by the iOS app)
@@ -189,9 +191,11 @@ function cleanProfile(p) {
     name: clean(p.name, 24),
     bio: clean(p.bio, 140),
     avatar: av.type === "champ" && CHAMP_ID.test(av.id || "") ? { type: "champ", id: av.id }
+      : av.type === "upload" && /^[a-f0-9]{24}$/.test(av.id || "") ? { type: "upload", id: av.id }
       : av.type === "moosi" && /^(teal|green|orange|pink|violet|gold)$/.test(av.id || "") ? { type: "moosi", id: av.id } : null,
     banner: CHAMP_ID.test(p.banner || "") ? p.banner : null,
     favs: (Array.isArray(p.favs) ? p.favs : []).filter((c) => CHAMP_ID.test(String(c))).slice(0, 3),
+    role: ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"].includes(p.role) ? p.role : null,
     visible: p.visible !== false,
     show_status: p.show_status !== false,
   };
@@ -233,6 +237,48 @@ async function sync(req, env, user, kind) {
   return json({ ok: true, [kind]: kind === "coach" ? undefined : v, updated_at: now });
 }
 
+// Profile pictures: stored in D1 (resized on the device to 256 px), served under a random id.
+const MAX_AVATAR = 80000;
+async function ensureAvatars(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS avatars (id TEXT PRIMARY KEY, user_id INTEGER UNIQUE, mime TEXT, data TEXT, created_at INTEGER)`).run();
+}
+function sniff(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
+  return null;
+}
+async function avatarPut(req, env, user) {
+  await ensureAvatars(env);
+  if (req.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM avatars WHERE user_id = ?").bind(user.id).run();
+    return json({ ok: true });
+  }
+  if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
+  const raw = await req.text();
+  if (raw.length > MAX_AVATAR * 1.4 + 200) return json({ error: "Bild zu groß" }, 413);
+  let b64;
+  try { b64 = (JSON.parse(raw).data || "").split(",").pop(); } catch { return json({ error: "ungültig" }, 400); }
+  let bytes;
+  try { bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); } catch { return json({ error: "ungültig" }, 400); }
+  const mime = sniff(bytes);
+  if (!mime || bytes.length > MAX_AVATAR) return json({ error: "Nur JPEG/PNG/WebP bis 80 KB" }, 400);
+  const id = [...crypto.getRandomValues(new Uint8Array(12))].map((x) => x.toString(16).padStart(2, "0")).join("");
+  await env.DB.prepare("DELETE FROM avatars WHERE user_id = ?").bind(user.id).run();
+  await env.DB.prepare("INSERT INTO avatars (id, user_id, mime, data, created_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, user.id, mime, b64, Math.floor(Date.now() / 1000)).run();
+  return json({ ok: true, avatar: { type: "upload", id }, url: `/a/${id}` });
+}
+async function avatarGet(id, env) {
+  if (!/^[a-f0-9]{24}$/.test(id)) return new Response("not found", { status: 404 });
+  await ensureAvatars(env);
+  const row = await env.DB.prepare("SELECT mime, data FROM avatars WHERE id = ?").bind(id).first();
+  if (!row) return new Response("not found", { status: 404 });
+  const bytes = Uint8Array.from(atob(row.data), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: { "content-type": row.mime, "cache-control": "public, max-age=86400",
+    "x-content-type-options": "nosniff", "access-control-allow-origin": "*" } });
+}
+
 // Public profiles of other Jungle Coach users (by Riot ID) – only what they chose to share.
 async function publicProfiles(url, env) {
   await ensureData(env);
@@ -245,7 +291,7 @@ async function publicProfiles(url, env) {
     const p = cleanProfile(r.p ? JSON.parse(r.p) : {});
     if (!p.visible) continue;
     const st = p.show_status && r.s && now - (r.sa || 0) <= 180 ? JSON.parse(r.s) : null;
-    out[r.rid.toLowerCase()] = { name: p.name, bio: p.bio, avatar: p.avatar, banner: p.banner, favs: p.favs, status: st };
+    out[r.rid.toLowerCase()] = { name: p.name, bio: p.bio, avatar: p.avatar, banner: p.banner, favs: p.favs, role: p.role, status: st };
   }
   return json({ profiles: out });
 }
@@ -263,6 +309,7 @@ export default {
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
       if (p === "/m") return Response.redirect(`${url.origin}/m/`, 301);
+      if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
       if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen." }, 401);
@@ -271,6 +318,7 @@ export default {
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
         if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
+        if (p === "/api/sync/avatar") return await avatarPut(req, env, user);
         if (p === "/api/public/profiles" && req.method === "GET") return await publicProfiles(url, env);
         if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);
@@ -284,6 +332,8 @@ export default {
           await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
           await ensureData(env);
           await env.DB.prepare("DELETE FROM user_data WHERE user_id = ?").bind(user.id).run();
+          await ensureAvatars(env);
+          await env.DB.prepare("DELETE FROM avatars WHERE user_id = ?").bind(user.id).run();
           return json({ ok: true, deleted: true });
         }
         return json({ error: "method not allowed" }, 405);
