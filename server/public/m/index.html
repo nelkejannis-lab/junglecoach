@@ -150,7 +150,7 @@ const LS = {get: k => { try { return localStorage.getItem(k); } catch (e) { retu
 const PLATFORMS = {euw1: "EUW", eun1: "EUNE", tr1: "TR", ru: "RU", me1: "ME", na1: "NA", br1: "BR", la1: "LAN", la2: "LAS", kr: "KR", jp1: "JP", oc1: "OCE", sg2: "SG", tw2: "TW", vn2: "VN"};
 const REGION = p => ["na1", "br1", "la1", "la2"].includes(p) ? "americas" : ["kr", "jp1"].includes(p) ? "asia" : ["oc1", "sg2", "tw2", "vn2"].includes(p) ? "sea" : "europe";
 const ACC_REGION = p => REGION(p) === "sea" ? "asia" : REGION(p);
-let S = {tab: "home", me: null, ver: "16.23.1", acct: null, league: null, games: null, gamesMore: 20, lbm: "rank", coach: null, friends: null, fdata: {}, sheet: null, err: "", busy: false};
+let S = {tab: "home", me: null, ...(() => { try { const v = JSON.parse(localStorage.getItem("jc_ver") || "[]"); return {ver: v[0] || "16.23.1", verFb: v[1] || null}; } catch (e) { return {ver: "16.23.1", verFb: null}; } })(), acct: null, league: null, games: null, gamesMore: 20, lbm: "rank", coach: null, friends: null, fdata: {}, sheet: null, err: "", busy: false};
 const platform = () => LS.get("jc_platform") || "euw1";
 
 // ---- token (from the login redirect, or injected by the iOS app)
@@ -192,8 +192,14 @@ function logout() { LS.set("jc_snap", null); LS.set("jc_token", null); MEM_TOKEN
 
 // ---- data
 const DD = () => `https://ddragon.leagueoflegends.com/cdn/${S.ver}`;
-const cImg = (c, cls = "c") => `<img class="${cls}" src="${DD()}/img/champion/${encodeURIComponent(c)}.png" loading="lazy" onerror="this.style.visibility='hidden'">`;
-const iImg = i => i ? `<img src="${DD()}/img/item/${i}.png" loading="lazy">` : "<i></i>";
+// Data Dragon sometimes lists a new patch before its images are online -> fall back to the previous patch, then hide
+window.imgFb = el => {
+  const fb = S.verFb, cur = el.getAttribute("src") || "";
+  if (fb && !el.dataset.fb && cur.includes(`/cdn/${S.ver}/`)) { el.dataset.fb = 1; el.src = cur.replace(`/cdn/${S.ver}/`, `/cdn/${fb}/`); return; }
+  el.style.visibility = "hidden";
+};
+const cImg = (c, cls = "c") => `<img class="${cls}" src="${DD()}/img/champion/${encodeURIComponent(c)}.png" loading="lazy" onerror="imgFb(this)">`;
+const iImg = i => i ? `<img src="${DD()}/img/item/${i}.png" loading="lazy" onerror="imgFb(this)">` : "<i></i>";
 const splash = c => `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${encodeURIComponent(c)}_0.jpg`;
 const rankTxt = r => r ? `<span class="tierc ${r.tier}">${r.tier[0] + r.tier.slice(1).toLowerCase()} ${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier) ? "" : r.rank}</span> · ${r.leaguePoints} LP` : '<span class="muted">Unranked</span>';
 const solo = l => (l || []).find(e => e.queueType === "RANKED_SOLO_5x5") || (l || []).find(e => e.queueType === "RANKED_FLEX_SR");
@@ -292,7 +298,7 @@ async function boot() {
   if (!token()) return;
   const had = await hydrate();   // instant: last state from this phone
   try {
-    fetch("https://ddragon.leagueoflegends.com/api/versions.json").then(r => r.json()).then(v => { S.ver = v[0]; render(); }).catch(() => {});
+    fetch("https://ddragon.leagueoflegends.com/api/versions.json").then(r => r.json()).then(v => { S.ver = v[0]; S.verFb = v[1]; LS.set("jc_ver", JSON.stringify([v[0], v[1]])); render(); }).catch(() => {});
     S.me = await api("/api/me"); render();
     api("/api/sync/coach").then(c => { S.coach = c.coach; render(); snapSave(); }).catch(() => {});
     api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); loadPublic(); snapSave(); }).catch(() => { if (!S.friends) S.friends = []; });
