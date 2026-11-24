@@ -19,6 +19,7 @@
  * and timestamps. No e-mail, no password.
  */
 import { accountsApi, socialApi, socialDelete, rememberAccount, ensureSocial } from "./social.js";
+import { verifyGithubOidc } from "./crawlerkey.js";
 import { pushApi, pushInbox, scheduled as pushScheduled } from "./push.js";
 
 const APP_REDIRECTS = [/^http:\/\/(localhost|127\.0\.0\.1):87\d\d\/auth\/callback$/, /^junglecoach:\/\/auth$/];
@@ -419,6 +420,12 @@ export default {
       if (p === "/m" || p === "/web" || p === "/app") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
       if (p === "/api/push/inbox") return await pushInbox(url, env);
+      if (p === "/api/crawler/key" && req.method === "POST") {   // GitHub Actions crawler, proven by OIDC – never a user
+        const pl = await verifyGithubOidc((req.headers.get("authorization") || "").replace(/^Bearer\s+/i, ""));
+        if (!pl) return json({ error: "forbidden" }, 403);
+        const key = await globalRiotKey(env);
+        return key ? json({ key }) : json({ error: "kein Server-Key gesetzt" }, 404);
+      }
       if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin") || p.startsWith("/api/push/") || p.startsWith("/api/social/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen.", why: req.jcAuthWhy || "" }, 401);

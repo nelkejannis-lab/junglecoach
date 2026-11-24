@@ -1,2 +1,2 @@
 { "name": "junglecoach-server", "private": true, "type": "module",
-  "scripts": { "test": "node --test test/worker.test.js test/push.test.js test/social.test.js", "deploy": "wrangler deploy" } }
+  "scripts": { "test": "node --test test/worker.test.js test/push.test.js test/social.test.js test/crawlerkey.test.js", "deploy": "wrangler deploy" } }
