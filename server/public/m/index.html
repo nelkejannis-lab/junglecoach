@@ -164,6 +164,7 @@ async function api(path, opt = {}) {
 }
 const riot = (host, path) => api(`/riot/${host}${path}`);
 function login(p) {
+  S.err = ""; LS.set("jc_token", null); MEM_TOKEN = null; render();
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin) return window.webkit.messageHandlers.jcLogin.postMessage(p);
   location.href = `/auth/${p}?redirect=${encodeURIComponent(location.origin + "/m/")}`;
 }

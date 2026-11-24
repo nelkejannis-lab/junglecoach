@@ -80,7 +80,7 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
         var comps = URLComponents(string: SERVER + "/auth/" + provider)!
         comps.queryItems = [URLQueryItem(name: "redirect", value: "junglecoach://auth")]
         let s = ASWebAuthenticationSession(url: comps.url!, callbackURLScheme: "junglecoach") { [weak self] url, error in
-            if let e = error as? ASWebAuthenticationSessionError, e.code == .canceledLogin { return }
+            if let e = error as? ASWebAuthenticationSessionError, e.code == .canceledLogin { self?.reportError("Login-Fenster geschlossen, bevor die Anmeldung fertig war"); return }
             if let e = error { self?.reportError("Login-Fenster: \(e.localizedDescription)"); return }
             guard let url = url else { self?.reportError("keine Rückmeldung vom Login"); return }
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

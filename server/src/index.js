@@ -109,10 +109,20 @@ async function secret(env) {
   return cachedSecret;
 }
 
+// Why a token was rejected (for the login screen) – never reveals the secret.
+async function tokenWhy(token, env) {
+  const parts = (token || "").split(".");
+  if (parts.length !== 3) return `Token unvollständig (${parts.length} Teile, ${token.length} Zeichen)`;
+  let pl = null;
+  try { pl = fromB64url(parts[1]); } catch (e) { return "Token nicht lesbar"; }
+  if (!pl.exp || pl.exp < Date.now() / 1000) return "Token abgelaufen";
+  return "Signatur passt nicht (Server-Schlüssel geändert?)";
+}
+
 async function authUser(req, env) {
   const h = req.headers.get("authorization") || "";
   const p = await verify(h.replace(/^Bearer\s+/i, ""), await secret(env));
-  if (!p) { req.jcAuthWhy = h ? "Token ungültig oder abgelaufen" : "kein Token gesendet"; return null; }
+  if (!p) { req.jcAuthWhy = h ? await tokenWhy(h.replace(/^Bearer\s+/i, ""), env) : "kein Token gesendet"; return null; }
   const u = await env.DB.prepare("SELECT id, provider, name, riot_id, created_at FROM users WHERE id = ?").bind(p.uid).first();
   if (!u) req.jcAuthWhy = "Konto nicht gefunden";
   return u;
