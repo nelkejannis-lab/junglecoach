@@ -31,11 +31,12 @@ def riot_cred(cfg):
     """Own developer key if set, otherwise the logged-in session via the Jungle Coach server."""
     key = (cfg.get("riot_api_key") or "").strip()
     logged_in = bool(cfg.get("auth_token") and cfg.get("server_url"))
-    # a key the user typed in himself wins; otherwise everything goes through the Moosi server (admin keeps its key current)
-    if key.startswith("RGAPI-") and "xxxx" not in key:
-        return key
+    # logged in: always through the Moosi server – it uses the admin's key (or the user's own key stored there),
+    # so an old, expired key left in config.json can no longer break everything
     if logged_in:
         return f"jc:{cfg['auth_token']}@{cfg['server_url']}"
+    if key.startswith("RGAPI-") and "xxxx" not in key:
+        return key
     return None
 
 
@@ -679,6 +680,26 @@ def attach_clips(games, sessions):
             g["session_id"], g["clips"] = best["id"], best["clips"]
 
 
+def poll_login(cfg, base, lid, tries=100):
+    """Login without a redirect to localhost: the server keeps the session under a random id until we fetch it
+    (firewalls, IPv6 'localhost', browser settings can block http://127.0.0.1 callbacks on Windows)."""
+    for _ in range(tries):
+        time.sleep(3)
+        if cfg.get("_login_lid_done") == lid:
+            return
+        try:
+            with urllib.request.urlopen(f"{base}/auth/poll?lid={lid}", timeout=10) as r:
+                tok = json.loads(r.read().decode("utf-8")).get("token") or ""
+        except Exception:  # noqa: BLE001
+            continue
+        if tok.count(".") == 2:
+            cfg["auth_token"] = tok
+            save_config(cfg)
+            profile._mem.clear()
+            sync_on_start(cfg)
+            return
+
+
 def make_handler(gd, cfg, lcu):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -820,9 +841,13 @@ def make_handler(gd, cfg, lcu):
                 if prov not in ("discord", "google") or not cfg.get("server_url"):
                     return self._send(400, {"error": "Anmeldung ist noch nicht eingerichtet."})
                 port = cfg.get("port", 8765)
-                cb = urllib.parse.quote(f"http://localhost:{port}/auth/callback", safe="")
+                cb = urllib.parse.quote(f"http://127.0.0.1:{port}/auth/callback", safe="")
+                import secrets
                 import webbrowser
-                webbrowser.open(f"{cfg['server_url'].rstrip('/')}/auth/{prov}?redirect={cb}")
+                lid = secrets.token_urlsafe(32)
+                base = cfg["server_url"].rstrip("/")
+                webbrowser.open(f"{base}/auth/{prov}?redirect={cb}&lid={lid}")
+                threading.Thread(target=poll_login, args=(cfg, base, lid), daemon=True).start()
                 return self._send(200, {"ok": True})
             if self.path.startswith("/auth/callback"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)

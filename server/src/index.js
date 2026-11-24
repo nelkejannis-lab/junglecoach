@@ -187,7 +187,9 @@ async function startLogin(provider, url, env) {
   const P = PROVIDERS[provider];
   const redirect = url.searchParams.get("redirect") || "";
   if (!allowedRedirect(redirect, url.origin)) return json({ error: "invalid redirect" }, 400);
-  const state = await sign({ r: redirect, n: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + 600 }, await secret(env));
+  // PC app: a random login id it polls with (works even when the browser can't reach localhost)
+  const lid = /^[A-Za-z0-9_-]{32,64}$/.test(url.searchParams.get("lid") || "") ? url.searchParams.get("lid") : null;
+  const state = await sign({ r: redirect, l: lid, n: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + 600 }, await secret(env));
   const q = new URLSearchParams({
     client_id: P.id(env), redirect_uri: `${url.origin}/auth/${provider}/callback`, response_type: "code",
     scope: P.scope, state, prompt: provider === "google" ? "select_account" : "consent",
@@ -215,6 +217,12 @@ async function finishLogin(provider, url, env) {
     .bind(provider, u.id, u.name, now, now).run();
   const row = await env.DB.prepare("SELECT id FROM users WHERE provider = ? AND provider_id = ?").bind(provider, u.id).first();
   const session = await sign({ uid: row.id, exp: now + SESSION_DAYS * 86400 }, await secret(env));
+  if (state.l) {   // the PC app picks the session up via /auth/poll – no redirect to localhost needed
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS logins (lid TEXT PRIMARY KEY, token TEXT, at INTEGER)").run();
+    await env.DB.prepare("DELETE FROM logins WHERE at < ?").bind(now - 900).run();
+    await env.DB.prepare("INSERT OR REPLACE INTO logins (lid, token, at) VALUES (?, ?, ?)").bind(state.l, session, now).run();
+    return page("Angemeldet ✓", "Du bist angemeldet. Du kannst dieses Fenster schließen – Moosi übernimmt die Anmeldung in ein paar Sekunden.");
+  }
   return Response.redirect(`${state.r}?token=${encodeURIComponent(session)}`, 302);
 }
 
@@ -416,6 +424,15 @@ export default {
         google: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET), db: !!env.DB });
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
+      if (p === "/auth/poll") {   // PC app: returns the session once, then forgets it
+        const lid = url.searchParams.get("lid") || "";
+        if (!/^[A-Za-z0-9_-]{32,64}$/.test(lid)) return json({ error: "bad id" }, 400);
+        await env.DB.prepare("CREATE TABLE IF NOT EXISTS logins (lid TEXT PRIMARY KEY, token TEXT, at INTEGER)").run();
+        const row = await env.DB.prepare("SELECT token, at FROM logins WHERE lid = ?").bind(lid).first();
+        if (!row || row.at < Math.floor(Date.now() / 1000) - 900) return json({ pending: true });
+        await env.DB.prepare("DELETE FROM logins WHERE lid = ?").bind(lid).run();
+        return json({ token: row.token });
+      }
       if (url.hostname === "www.moosi.app") return Response.redirect(`https://moosi.app${p}${url.search}`, 301);
       if (p === "/m" || p === "/web" || p === "/app") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
