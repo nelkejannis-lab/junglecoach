@@ -1,7 +1,7 @@
 """Desktop app entry point: backend + app window + in-game overlay.
 
-  JungleCoach.exe            -> app window (dashboard) + overlay process
-  JungleCoach.exe --overlay  -> overlay only (started automatically)
+  Moosi.exe            -> app window (dashboard) + overlay process
+  Moosi.exe --overlay  -> overlay only (started automatically)
 """
 import atexit
 import subprocess

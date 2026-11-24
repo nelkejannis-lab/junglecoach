@@ -28,11 +28,11 @@ Liest Rang und LP alle 60 s aus dem League Client (außerhalb von Spielen) und s
 ## Installation (Windows)
 **Variante A – auf deinem PC (empfohlen):**
 1. Ordner entpacken.
-2. **`Installer bauen.bat`** doppelklicken. Installiert bei Bedarf Python und Inno Setup automatisch (winget), baut die App und erzeugt `dist\JungleCoach-Setup.exe`. Dauert beim ersten Mal ca. 5–10 Minuten.
-3. `JungleCoach-Setup.exe` ausführen → Jungle Coach steht im Startmenü (optional Desktop-Verknüpfung), Deinstallation über Windows-Einstellungen.
+2. **`Installer bauen.bat`** doppelklicken. Installiert bei Bedarf Python und Inno Setup automatisch (winget), baut die App und erzeugt `dist\Moosi-Setup.exe`. Dauert beim ersten Mal ca. 5–10 Minuten.
+3. `Moosi-Setup.exe` ausführen → Moosi steht im Startmenü (optional Desktop-Verknüpfung), Deinstallation über Windows-Einstellungen.
 4. App öffnen → Einstellungen: Riot ID, API Key (kostenlos auf developer.riotgames.com), Champion-Pool.
 
-**Variante B – in der Cloud:** Ordner als GitHub-Repo hochladen → Actions → „Build installer“ → Run → `JungleCoach-Setup.exe` als Artefakt herunterladen.
+**Variante B – in der Cloud:** Ordner als GitHub-Repo hochladen → Actions → „Build installer“ → Run → `Moosi-Setup.exe` als Artefakt herunterladen.
 
 Hinweise:
 - Windows SmartScreen warnt beim ersten Start (nicht signiert): „Weitere Informationen“ → „Trotzdem ausführen“.

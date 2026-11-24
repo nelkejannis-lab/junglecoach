@@ -24,7 +24,7 @@ if errorlevel 1 ( echo Fehler bei pip install. & pause & exit /b 1 )
 
 rem 3) App bauen (Ordner-Variante: startet schneller, weniger Virenscanner-Fehlalarme)
 echo [3/4] Baue App...
-python -m PyInstaller --noconfirm --clean --windowed --name JungleCoach --icon assets\icon.ico ^
+python -m PyInstaller --noconfirm --clean --windowed --name Moosi --icon assets\icon.ico ^
   --add-data "jc\static;jc\static" --add-data "config.json;." ^
   --collect-all webview --collect-all imageio_ffmpeg --collect-all pyaudiowpatch --collect-submodules jc run_app.py
 if errorlevel 1 ( echo Fehler beim Bauen der App. & pause & exit /b 1 )
@@ -44,6 +44,6 @@ if errorlevel 1 ( echo Fehler beim Installer. & pause & exit /b 1 )
 
 echo.
 echo === Fertig! ===
-echo Installer: %cd%\dist\JungleCoach-Setup.exe
+echo Installer: %cd%\dist\Moosi-Setup.exe
 explorer dist
 pause
