@@ -314,7 +314,7 @@ def deep_analyze(match, timeline, puuid):
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
         "overall": _grade(sum(cats.values()) / len(cats)),
-        "priorities": [{"name": k, "grade": _grade(v), "advice": advice[k]} for k, v in ranked[:3]],
+        "priorities": [{"name": k, "grade": _grade(v), "score": v, "advice": advice[k]} for k, v in ranked[:3]],
         "curve": curve, "deaths": deaths, "death_causes": causes, "death_cost": sum(d["cost"] for d in deaths), "objectives": objectives, "ganks": ganks,
         "stats": {"kp": round(kp * 100), "vision_per_min": round(vpm, 2), "jungle_cs_10": jcs10,
                   "gold_diff_10": gd10, "enemy_jungle_cs_taken": ch.get("enemyJungleMonsterKills"),

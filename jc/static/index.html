@@ -354,6 +354,10 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const sign = v => v == null ? "–" : (v > 0 ? "+" : "") + v;
 const col = v => v > 0 ? "green" : v < 0 ? "red" : "muted";
 const gradeCol = g => g === "A" ? "green" : g === "B" ? "acc" : g === "C" ? "orange" : "red";
+// one scale everywhere: points 1–10 (internal values are 0–100)
+const pts = v => v == null ? "–" : Math.max(1, Math.min(10, v / 10)).toFixed(1);
+const GRADE_PTS = {A: 85, B: 70, C: 55, D: 35};   // older analyses only have letters
+const ptsCol = v => v >= 70 ? "green" : v >= 55 ? "acc" : v >= 40 ? "orange" : "red";
 const scoreCol = s => s >= 65 ? "var(--green)" : s >= 50 ? "var(--orange)" : "var(--red)";
 const card = (title, hint, body, wide) => `<div class="card${wide ? " wide" : ""}">${title ? `<h3>${esc(title)}</h3>` : ""}${hint ? `<p class="hint">${hint}</p>` : ""}${body}</div>`;
 const empty = (ico, t, d) => `<div class="empty"><div class="ico">${ico}</div><b>${esc(t)}</b>${d}</div>`;
@@ -716,7 +720,7 @@ function renderRanked() {
   h += card("Was besser werden muss", `Durchschnitt aus ${r.games} analysierten Games. Pfeil = Trend deiner neuesten Games.`,
     imp.length ? imp.map((c, i) => `<div style="padding:8px 0;${i < imp.length - 1 ? "border-bottom:1px solid var(--sep)" : ""}">
       <div class="row" style="border:0;padding:0"><span>${i < 2 ? "<b>" + esc(c.name) + "</b>" : esc(c.name)}</span>
-      <span><b>${c.score}</b> <span class="small ${col(c.trend)}">${c.trend > 0 ? "▲" : c.trend < 0 ? "▼" : ""}${c.trend ? Math.abs(c.trend) : ""}</span></span></div>
+      <span><b>${pts(c.score)}</b> <span class="small ${col(c.trend)}">${c.trend > 0 ? "▲" : c.trend < 0 ? "▼" : ""}${c.trend ? (Math.abs(c.trend) / 10).toFixed(1) : ""}</span></span></div>
       <div class="meter"><i style="width:${c.score}%;background:${scoreCol(c.score)}"></i></div></div>`).join("")
       : empty("📊", "Noch keine Analysen", 'Öffne <a href="#" onclick="go(\'analyse\');return false">Analyse</a> und lade deine letzten Games.'));
   h += card("Deine schlechtesten Matchups", "Gegen diese Jungler verlierst du in deinen eigenen Games am meisten.",
@@ -907,12 +911,12 @@ function sessionsCards() {
 }
 function deepCard(g) {
   const D = g.deep, clipFor = t => (g.clips || []).find(c => Math.abs(c.t - t) < 6);
-  return card(`Deep-Analyse · ${g.champion} vs ${g.enemy_jungler}`, "Noten A–D je Bereich, verglichen mit Richtwerten für Jungler.", `
+  return card(`Deep-Analyse · ${g.champion} vs ${g.enemy_jungler}`, "Punkte 1–10 je Bereich, verglichen mit Richtwerten für Jungler.", `
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px">
-      <div><div class="muted small">Gesamtnote</div><div class="huge ${gradeCol(D.overall)}">${D.overall}</div>
-        ${D.categories.map(c => `<div style="padding:7px 0"><div class="row" style="border:0;padding:0"><span>${esc(c.name)}</span><b class="${gradeCol(c.grade)}">${c.grade}</b></div>
+      <div><div class="muted small">Gesamt</div><div class="huge ${ptsCol(D.categories.reduce((t, c) => t + c.score, 0) / D.categories.length)}">${pts(D.categories.reduce((t, c) => t + c.score, 0) / D.categories.length)}<span class="muted" style="font-size:.4em"> / 10</span></div>
+        ${D.categories.map(c => `<div style="padding:7px 0"><div class="row" style="border:0;padding:0"><span>${esc(c.name)}</span><b class="${ptsCol(c.score)}">${pts(c.score)}</b></div>
           <div class="meter"><i style="width:${c.score}%;background:${scoreCol(c.score)}"></i></div></div>`).join("")}</div>
-      <div><b>Deine 3 Prioritäten</b>${D.priorities.map((p, i) => `<div class="item"><div class="num">${i + 1}</div><div><div class="n">${esc(p.name)} <span class="${gradeCol(p.grade)}">${p.grade}</span></div><div class="w">${esc(p.advice)}</div></div></div>`).join("")}</div>
+      <div><b>Deine 3 Prioritäten</b>${D.priorities.map((p, i) => `<div class="item"><div class="num">${i + 1}</div><div><div class="n">${esc(p.name)} <span class="${ptsCol(p.score ?? GRADE_PTS[p.grade])}">${pts(p.score ?? GRADE_PTS[p.grade])}</span></div><div class="w">${esc(p.advice)}</div></div></div>`).join("")}</div>
       <div><b>Gold vs Gegner-Jungler</b>${lineChart(D.curve.map(c => c.gold_diff), [0, 5, 10, 15, 20, 25, 30].filter(m => m < D.curve.length).map(m => [m, m + "'"]), {zero: true, h: 130})}
         <div class="stats"><div class="stat"><b>${D.stats.kp}%</b><span>Kill-Beteiligung</span></div><div class="stat"><b>${D.stats.vision_per_min}</b><span>Vision / Min</span></div><div class="stat"><b>${D.stats.jungle_cs_10}</b><span>Jungle-CS @10</span></div></div></div>
       <div><b>Tode verstehen</b>${D.death_cost ? ` <span class="muted small">· zusammen ≈ ${D.death_cost.toLocaleString("de-DE")} Gold-Wert, teuerster zuerst</span>` : ""}${D.death_causes && Object.keys(D.death_causes).length ? `<div class="chips" style="margin:8px 0 4px">${Object.entries(D.death_causes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip" style="${k === "trade" ? "" : "border-color:rgba(251,113,133,.35)"}">${esc({trade: "Tausch", outnumbered: "Unterzahl", deep: "Tief im Gegner-Jungle", gold: "Gold nicht ausgegeben", level: "Level-Nachteil", vision: "Ohne Sicht", jungler: "Gegner-Jungler-Gank", duel: "Duell verloren"}[k] || k)} · ${n}×</span>`).join("")}</div>` : ""}
@@ -942,7 +946,7 @@ function replayCard(g) {
 function renderAnalyse() {
   const r = reviewData;
   const loadBtn = `<button class="btn" onclick="loadReview()">${r ? "Neu laden" : "Letzte Games analysieren"}</button> <span class="small muted">${esc(msg.review || "")}</span>`;
-  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.",
+  if (!r) return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Punkte 1–10, Fehler und Clips.",
     card("", "", empty("🔍", "Noch nichts analysiert", `<p>Lädt deine letzten Ranked-Games über die Riot API.<br>Voraussetzung: Riot ID und API Key in den <a href="#" onclick="go('settings');return false">Einstellungen</a>.</p>${loadBtn}`), true) + sessionsCards());
   const s = r.summary;
   let h = card("Überblick", `${s.games || 0} Jungle-Games`, (s.games ? `
@@ -950,12 +954,12 @@ function renderAnalyse() {
     <div class="stat"><b>${s.avg_jungle_cs_5}</b><span>Ø Jungle-CS @5</span></div><div class="stat"><b>${esc(s.objectives_pre20)}</b><span>Objectives vor 20'</span></div></div>` : "") + `<div style="margin-top:14px">${loadBtn}</div>`);
   h += card("Was du ändern musst", "Muster über alle analysierten Games.", list(s.tips, t => `<li class="small">${esc(t)}</li>`));
   h += card("Games", "Antippen für Deep-Analyse und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
-    <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · Note " + g.deep.overall : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
+    <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · " + pts(g.deep.categories.reduce((t, c) => t + c.score, 0) / g.deep.categories.length) + "/10" : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
   h += deathCompareCard(r.games);
   const g = r.games[selGame];
   if (g && g.deep) h += deepCard(g);
   if (!r.games.some(x => x.clips)) h += sessionsCards();
-  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.", h);
+  return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Punkte 1–10, Fehler und Clips.", h);
 }
 
 // your death causes per game vs. better players (winners one elo bracket higher, same role, from the crawler)
@@ -997,7 +1001,7 @@ function ring(v, label, size = 128) {
     <defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#c084fc"/></linearGradient></defs>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="rgba(255,255,255,.07)" stroke-width="10" fill="none"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="url(#rg)" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/></svg>
-    <b style="font-size:${size / 3.8}px">${v ?? "–"}</b>${label ? `<span>${esc(label)}</span>` : ""}</div>`;
+    <b style="font-size:${size / 3.8}px">${label === "Analyse" ? (v ?? "–") + "%" : pts(v)}</b>${label ? `<span>${esc(label)}${label === "Analyse" ? "" : " · von 10"}</span>` : ""}</div>`;
 }
 const pbar = (label, p, val) => `<div class="pbar"><div class="lab">${esc(label)}</div><div class="val"><span class="muted">${esc(val || "")}</span> · <b style="color:${pctCol(p)}">${p}%</b></div><div class="track"><i style="width:${p}%;background:${pctCol(p)}"></i></div></div>`;
 
@@ -1103,9 +1107,9 @@ function coachBody(c, who) {
   h += card("Du im Vergleich", `Besser als x % der ${esc(c.scope)} Spieler. Strich in der Mitte = Durchschnitt.`,
     c.profile.map(p => pbar(p.label, p.percentile, `${p.you} · Top: ${p.top}`)).join(""));
   if (cons) h += card("Konstanz", esc(cons.verdict), `<div class="stats" style="margin-top:0">
-      <div class="stat"><b>${cons.avg}</b><span>Ø Leistung</span></div><div class="stat"><b class="${cons.floor < 35 ? "red" : ""}">${cons.floor}</b><span>Dein Boden (schwächstes Viertel)</span></div>
-      <div class="stat"><b>±${cons.spread}</b><span>Schwankung</span></div><div class="stat"><b class="green">${cons.great_games}</b><span>Top-Games</span></div><div class="stat"><b class="red">${cons.bad_games}</b><span>Ausrutscher</span></div></div>
-      ${cons.wobbly ? `<p class="small" style="margin-top:12px">Am stärksten schwankt: <b>${esc(cons.wobbly.label)}</b> (±${cons.wobbly.spread} Punkte)</p>` : ""}
+      <div class="stat"><b>${pts(cons.avg)}</b><span>Ø Leistung (von 10)</span></div><div class="stat"><b class="${cons.floor < 35 ? "red" : ""}">${pts(cons.floor)}</b><span>Dein Boden (schwächstes Viertel)</span></div>
+      <div class="stat"><b>±${(cons.spread / 10).toFixed(1)}</b><span>Schwankung</span></div><div class="stat"><b class="green">${cons.great_games}</b><span>Top-Games</span></div><div class="stat"><b class="red">${cons.bad_games}</b><span>Ausrutscher</span></div></div>
+      ${cons.wobbly ? `<p class="small" style="margin-top:12px">Am stärksten schwankt: <b>${esc(cons.wobbly.label)}</b> (±${(cons.wobbly.spread / 10).toFixed(1)} Punkte)</p>` : ""}
       <div class="muted small" style="margin-top:10px">Leistung pro Game (grün = Sieg)</div>
       <div class="bars">${c.trend.map(g => `<i title="${esc(g.champion || "")} · ${g.score ?? "–"}" style="height:${Math.max(4, g.score || 0)}%;background:${g.win ? "var(--green)" : "var(--red)"}"></i>`).join("")}</div>`);
   if (t) h += card("Tilt & Sessions", `${t.sessions} Sessions · Ø ${t.avg_games_per_session} Games pro Session`, `
