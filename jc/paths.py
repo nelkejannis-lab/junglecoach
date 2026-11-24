@@ -17,6 +17,27 @@ STATIC = os.path.join(BUNDLE, "jc", "static")
 DEFAULT_CONFIG = os.path.join(BUNDLE, "config.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Cloudflare (moosi.app) blocks the default "Python-urllib" user agent with 403 -> every request of the app
+# (login check, login polling, sync) carries a normal one. Requests that set their own keep it.
+import urllib.request as _ur  # noqa: E402
+_op = _ur.build_opener()
+_op.addheaders = [("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Moosi/1.0 (+https://moosi.app)")]
+_ur.install_opener(_op)
+
+
+def log_error(where, exc=None):
+    """Small error log (%APPDATA%\\JungleCoach\\moosi.log) so problems on a user's PC can be found."""
+    import time
+    import traceback
+    try:
+        path = os.path.join(DATA_DIR, "moosi.log")
+        if os.path.exists(path) and os.path.getsize(path) > 300_000:
+            os.replace(path, path + ".old")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {where}\n{traceback.format_exc() if exc is None else repr(exc)}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def ensure_config():
     """First start of the installed app: copy the default config into the user folder.

@@ -690,7 +690,9 @@ def poll_login(cfg, base, lid, tries=100):
         try:
             with urllib.request.urlopen(f"{base}/auth/poll?lid={lid}", timeout=10) as r:
                 tok = json.loads(r.read().decode("utf-8")).get("token") or ""
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            from .paths import log_error
+            log_error("login poll", e)
             continue
         if tok.count(".") == 2:
             cfg["auth_token"] = tok

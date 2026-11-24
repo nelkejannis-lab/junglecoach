@@ -647,6 +647,7 @@ def run(url, cfg):
     else:
         pos = {"x": ocfg["x"] if ocfg["x"] >= 0 else sw + int(ocfg["x"] * scale), "y": int(ocfg["y"] * scale)}
     root.geometry(f"{int(W * scale)}x60+{pos['x']}+{pos['y']}")
+    root.withdraw()   # never show the empty (white) Tk window – it only appears once an image is ready
     icons = {}
     label = None if win else tk.Label(root, bd=0, bg=BG)
     if label:
@@ -712,7 +713,7 @@ def run(url, cfg):
         ppos["x"], ppos["y"] = x, pos["y"]
         pick_win.geometry(f"{im.size[0]}x{im.size[1]}+{x}+{pos['y']}")
         if win:
-            _ulw(phwnd, im, x, pos["y"])
+            _ulw(phwnd, im.convert("RGBA"), x, pos["y"])
         else:
             from PIL import ImageTk
             ph = ImageTk.PhotoImage(im)
@@ -774,7 +775,7 @@ def run(url, cfg):
         st["img"] = im
         root.geometry(f"{im.size[0]}x{im.size[1]}+{pos['x']}+{pos['y']}")
         if win:
-            _ulw(hwnd, im, pos["x"], pos["y"])
+            _ulw(hwnd, im.convert("RGBA"), pos["x"], pos["y"])
         else:
             from PIL import ImageTk
             ph = ImageTk.PhotoImage(im)
@@ -865,7 +866,17 @@ def run(url, cfg):
         apply_visibility()
 
     def refresh_loop():
-        refresh_now()
+        try:
+            refresh_now()
+        except Exception:  # noqa: BLE001 - never leave a blank (white) window: hide it and log why
+            from .paths import log_error
+            log_error("overlay refresh")
+            st["has"], st["img"], st["last"] = False, None, None
+            try:
+                root.withdraw()
+                st["shown"] = False
+            except Exception:  # noqa: BLE001
+                pass
         root.after(1000, refresh_loop)
 
     root.withdraw()
