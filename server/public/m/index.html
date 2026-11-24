@@ -150,13 +150,18 @@ window.jcSetToken = t => { MEM_TOKEN = t; LS.set("jc_token", t); S.err = ""; boo
 window.jcLoginError = m => { S.err = "Anmeldung fehlgeschlagen: " + m; render(); };
 const token = () => LS.get("jc_token") || MEM_TOKEN;
 async function api(path, opt = {}) {
-  const r = await fetch(path, {...opt, headers: {...(opt.headers || {}), Authorization: "Bearer " + token(), "Content-Type": "application/json"}});
+  const sent = token();
+  if (!sent) throw new Error("nicht angemeldet");   // never send "Bearer null" (background timers while logged out)
+  const r = await fetch(path, {...opt, headers: {...(opt.headers || {}), Authorization: "Bearer " + sent, "Content-Type": "application/json"}});
   if (r.status === 401) {
     const j = await r.json().catch(() => ({}));
-    LS.set("jc_token", null); MEM_TOKEN = null;
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage("");
-    S.err = "Server hat die Anmeldung abgelehnt" + (j.why ? ` (${j.why})` : "") + " – bitte erneut anmelden."; render();
-    throw new Error(S.err);
+    if (token() === sent) {   // only drop the token this request used – not a newer one from a fresh login
+      LS.set("jc_token", null); MEM_TOKEN = null;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage("");
+      S.me = null;
+      S.err = "Server hat die Anmeldung abgelehnt" + (j.why ? ` (${j.why})` : "") + " – bitte erneut anmelden."; render();
+    }
+    throw new Error("Anmeldung abgelehnt");
   }
   if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
