@@ -73,7 +73,20 @@
   .enter .card:nth-child(2) { animation-delay:.04s } .enter .card:nth-child(3) { animation-delay:.08s } .enter .card:nth-child(4) { animation-delay:.12s }
   .enter .card:nth-child(5) { animation-delay:.16s } .enter .card:nth-child(n+6) { animation-delay:.2s }
   .enter .title, .enter .subtitle { animation:rise .4s var(--ease) both; }
-  @keyframes rise { from { opacity:0; transform:translateY(10px) scale(.995); } to { opacity:1; transform:none; } }
+  @keyframes rise { from { opacity:0; transform:translateY(12px) scale(.99); } to { opacity:1; transform:none; } }
+  /* v1.9.3 motion: springy, staggered, bars grow, numbers count; calm with "reduce motion" */
+  .enter .card { animation:rise .5s cubic-bezier(.2,.9,.25,1.15) both; }
+  .enter .stat, .enter .row, .enter tr, .enter .lb, .enter .fcard { animation:rise .45s cubic-bezier(.2,.9,.25,1.15) both; animation-delay:calc(var(--i, 0) * 35ms + 80ms); }
+  .enter .meter i { animation:grow .9s cubic-bezier(.2,.8,.2,1) both; transform-origin:left; animation-delay:.25s; }
+  @keyframes grow { from { transform:scaleX(0); } }
+  @keyframes modalIn { from { opacity:0; transform:translateY(22px) scale(.97); } 70% { transform:translateY(-2px) scale(1.004); } }
+  .mmodal > .card { animation:modalIn .4s cubic-bezier(.2,1,.3,1); }
+  .mmodal tr { animation:rise .4s cubic-bezier(.2,.9,.25,1.15) both; animation-delay:calc(var(--i, 0) * 30ms + 120ms); }
+  .mmodal .meter i { animation:grow .9s cubic-bezier(.2,.8,.2,1) both; transform-origin:left; animation-delay:.35s; }
+  button, .lb, #nav button, .row[onclick], tr[onclick] { transition:transform .22s cubic-bezier(.3,1.6,.5,1), background-color .2s, opacity .2s; }
+  button:active, .lb:active, #nav button:active { transform:scale(.96); }
+  #nav button.act svg { animation:navPop .4s cubic-bezier(.3,1.6,.5,1); } @keyframes navPop { 0% { transform:scale(.7); } 60% { transform:scale(1.15); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 
   .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--sep); }
   .row:last-child { border-bottom:0; }
@@ -635,7 +648,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && (matchData
 const spellImg = s => s ? img(`${DD()}/img/spell/${s}.png`, 18) : "";
 const runeImg = (ic, sz) => ic ? img(`https://ddragon.leagueoflegends.com/cdn/img/${ic}`, sz, true) : "";
 function matchModal() {
-  const wrap = inner => `<div onclick="if(event.target===this)closeMatch()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);z-index:50;overflow:auto;padding:30px 16px">
+  const wrap = inner => `<div class="mmodal" onclick="if(event.target===this)closeMatch()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);z-index:50;overflow:auto;padding:30px 16px">
     <div class="card" style="max-width:1080px;margin:auto;position:relative"><button class="btn sec" style="position:absolute;right:16px;top:16px" onclick="closeMatch()">Schließen</button>${inner}</div></div>`;
   if (matchLoading) return wrap(empty("⏳", "Lade Game…", "Scoreboard und Analyse werden geholt."));
   const d = matchData;
@@ -646,7 +659,7 @@ function matchModal() {
       <span class="small muted">${t.kills} Kills · ${(t.gold / 1000).toFixed(1)}k Gold · 🐉 ${o.dragon || 0} · 🪱 ${o.horde || 0} · 👁 ${o.riftHerald || 0} · 🟣 ${o.baron || 0} · 🗼 ${o.tower || 0}${t.bans.length ? " · Bans: " + t.bans.map(b => champImg(b, 18)).join("") : ""}</span></div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
       <tr class="muted" style="text-align:left"><th style="padding:6px 4px">Spieler</th><th>Score</th><th>KDA</th><th>Schaden</th><th>CS</th><th>Gold</th><th>Vision</th><th>Items</th></tr>
-      ${t.players.map(r => `<tr style="border-top:1px solid var(--sep);${r.me ? "background:rgba(0,113,227,.08)" : ""}">
+      ${t.players.map((r, ri) => `<tr style="--i:${ri + (t.team_id === 100 ? 0 : 5)};border-top:1px solid var(--sep);${r.me ? "background:rgba(0,113,227,.08)" : ""}">
         <td style="padding:6px 4px;white-space:nowrap"><div style="display:flex;gap:6px;align-items:center">${champImg(r.champion, 32)}
           <div style="display:flex;flex-direction:column;gap:1px">${spellImg(r.spells[0])}${spellImg(r.spells[1])}</div>
           <div style="display:flex;flex-direction:column;gap:1px">${runeImg(r.keystone_icon, 18)}${runeImg(r.sub_icon, 14)}</div>
@@ -1378,6 +1391,23 @@ function morph(a, b) {   // update DOM a to look like b without rebuilding it: n
   }
   for (let i = ac.length - 1; i >= bc.length; i--) a.removeChild(ac[i]);
 }
+// stagger list items and count numbers up when a view appears
+const RM = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(el) {
+  const t = el.textContent, m = t.match(/^(\D{0,2}?)(\d+(?:[.,]\d+)?)(.*)$/s);
+  if (!m || RM()) return;
+  const dec = (m[2].split(/[.,]/)[1] || "").length, sep = m[2].includes(",") ? "," : ".", end = parseFloat(m[2].replace(",", "."));
+  if (!isFinite(end) || end === 0) return;
+  const t0 = performance.now(), dur = 650 + Math.min(400, end * 2);
+  const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = m[1] + (end * e).toFixed(dec).replace(".", sep) + m[3]; if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function motionIn(root) {
+  if (RM()) return;
+  let i = 0; root.querySelectorAll(".stat, .row, tr, .lb, .fcard").forEach(el => el.style.setProperty("--i", Math.min(i++, 18)));
+  root.querySelectorAll(".stat b, .ring b, .big").forEach(el => { if (!el.children.length) countUp(el); });
+}
 function render() {
   const ph = state.phase || "…";
   const label = {InGame: "Im Spiel", ChampSelect: "Champ Select", Lobby: "Lobby", None: "Client bereit", Matchmaking: "Suche läuft", ReadyCheck: "Match gefunden", EndOfGame: "Spielende"}[ph] || ph;
@@ -1394,7 +1424,7 @@ function render() {
   const tmp = document.createElement("div"); tmp.innerHTML = html; translateTree(tmp);
   if (renderedView !== vkey) {
     main.replaceChildren(...tmp.childNodes); renderedView = vkey; window.scrollTo({top: 0});
-    main.classList.remove("enter"); void main.offsetWidth; main.classList.add("enter");
+    main.classList.remove("enter"); void main.offsetWidth; main.classList.add("enter"); motionIn(main);
     clearTimeout(render._t); render._t = setTimeout(() => main.classList.remove("enter"), 900);
   } else {
     morph(main, tmp);

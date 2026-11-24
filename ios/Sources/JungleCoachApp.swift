@@ -27,6 +27,7 @@ struct WebContainer: UIViewRepresentable {
         cfg.websiteDataStore = .default()          // keeps the login token between app starts
         cfg.userContentController.add(context.coordinator, name: "jcLogin")
         cfg.userContentController.add(context.coordinator, name: "jcToken")
+        cfg.userContentController.add(context.coordinator, name: "jcHaptic")
         // The login token is also kept natively (UserDefaults) and handed to the page before it starts,
         // so a lost WebView storage never sends the user back to the login screen.
         if let t = UserDefaults.standard.string(forKey: "jc_token"), Coordinator.validToken(t) {
@@ -82,6 +83,14 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
 
     // The page asks for a login: open Google / Discord in the system login sheet, get the token back.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "jcHaptic" {   // graded haptics: light taps, medium tab switch, success on check-off
+            switch message.body as? String {
+            case "success": UINotificationFeedbackGenerator().notificationOccurred(.success)
+            case "medium": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            default: UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.7)
+            }
+            return
+        }
         if message.name == "jcToken" {   // page logged out or the server rejected the token
             UserDefaults.standard.removeObject(forKey: "jc_token")
             return

@@ -48,13 +48,99 @@
     .tabs button { flex:none; flex-direction:row; justify-content:flex-start; gap:12px; font-size:15px; padding:11px 12px; border-radius:12px; }
     .tabs button.on { background:rgba(45,212,191,.1); }
     .sheet .in { max-width:640px; margin:0 auto; }
-    .sheet .in:has(.teams2) { max-width:1120px; }
+
   }
-  /* both teams next to each other, lane by lane like the in-game scoreboard */
-  @media (min-width: 760px) {
-    .teams2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
-    .teams2 .team { margin-top:0; }
-    .teams2 .pl2 { min-height:86px; }
+
+
+  /* ---------- game detail ---------- */
+  .mh { display:flex; gap:16px; align-items:center; justify-content:space-between; padding:18px; border-radius:22px; margin-bottom:12px;
+    background:radial-gradient(120% 140% at 0% 0%, rgba(251,113,133,.22), rgba(255,255,255,.02) 60%); border:1px solid var(--line); }
+  .mh.win { background:radial-gradient(120% 140% at 0% 0%, rgba(52,211,153,.22), rgba(255,255,255,.02) 60%); }
+  .mhl { display:flex; gap:14px; align-items:center; min-width:0; } .mhl img.big { width:68px; height:68px; border-radius:18px; flex:none; box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  .res2 { font-size:12px; font-weight:900; letter-spacing:1.2px; text-transform:uppercase; color:var(--red); } .mh.win .res2 { color:var(--green); }
+  .kda2 { font-size:30px; font-weight:900; letter-spacing:-.8px; line-height:1.1; } .kda2 i { color:var(--sec); font-style:normal; margin:0 2px; }
+  .items.big { margin-top:10px; gap:5px; } .items.big img, .items.big i { width:30px; height:30px; border-radius:8px; }
+  .ring { position:relative; width:84px; height:84px; flex:none; } .ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+  .ring circle { fill:none; stroke-width:7; stroke-linecap:round; } .ring .tr { stroke:rgba(255,255,255,.08); }
+  .ring .pr.w { stroke:var(--green); } .ring .pr.l { stroke:var(--orange); }
+  .ring .rv { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; }
+  .ring .rv b { font-size:24px; font-weight:900; letter-spacing:-.5px; } .ring .rv small { font-size:10px; color:var(--sec); font-weight:700; margin-top:2px; }
+  .stats.six { margin-bottom:6px; }
+  @media (max-width: 899px) {
+    .mh { position:relative; padding:14px 100px 14px 14px; align-items:flex-start; } .mhr { position:absolute; right:12px; top:14px; width:80px; }
+    .mhr .ring { width:72px; height:72px; margin:0 auto; } .mhr .ring .rv b { font-size:20px; } .mhr .small { font-size:11px; }
+    .mhl { flex-direction:column; align-items:flex-start; gap:10px; } .mhl img.big { width:52px; height:52px; border-radius:15px; }
+    .kda2 { font-size:26px; } .items.big img, .items.big i { width:26px; height:26px; }
+  }
+  @media (min-width: 900px) { .in.mx .mh { margin-right:48px; } }
+  .tb { margin-top:14px; border:1px solid var(--line); border-radius:20px; padding:6px 10px 4px; background:rgba(255,255,255,.015); }
+  .tb.win { border-color:rgba(52,211,153,.22); } .tb.loss { border-color:rgba(251,113,133,.18); }
+  .tbh { display:flex; align-items:center; gap:8px; padding:8px 4px 8px; border-bottom:1px solid var(--line); }
+  .tbh b { font-size:15px; } .tb.win .tbh b { color:var(--green); } .tb.loss .tbh b { color:var(--red); }
+  .side { font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:7px; } .side.blue { background:rgba(96,165,250,.16); color:#93c5fd; } .side.red { background:rgba(251,113,133,.14); color:#fda4af; }
+  .tbo { margin-left:auto; font-size:12px; color:var(--sec); display:flex; gap:10px; white-space:nowrap; }
+  .sr { display:grid; grid-template-columns:28px auto minmax(0,1fr) auto; grid-template-areas:"r c w k" "r c i n"; column-gap:10px; row-gap:6px;
+    align-items:center; padding:11px 6px; border-bottom:1px solid var(--line); cursor:pointer; border-radius:12px; }
+  .sr:last-child { border-bottom:0; } .sr.me { background:rgba(45,212,191,.09); }
+  .sr .rkn { grid-area:r; } .sr .chs { grid-area:c; } .sr .who { grid-area:w; } .sr .nk { grid-area:k; } .sr .nc { grid-area:n; } .sr .mini { grid-area:i; margin:0; }
+  .chs { position:relative; display:flex; gap:4px; align-items:center; } .chs > img { width:40px; height:40px; border-radius:12px; }
+  .chs .lv { position:absolute; left:26px; top:28px; min-width:16px; height:16px; padding:0 3px; border-radius:6px; background:#0b0f1a; border:1px solid var(--line);
+    font:800 9.5px/14px -apple-system,system-ui,sans-serif; text-align:center; font-style:normal; color:var(--txt); }
+  .who { min-width:0; } .who b { display:block; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .who small { display:block; font-size:11.5px; color:var(--sec); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .who .dmg { display:block; height:4px; border-radius:9px; background:var(--card2); overflow:hidden; margin-top:5px; max-width:180px; } .who .dmg i { display:block; height:100%; background:var(--orange); border-radius:9px; }
+  .nk, .nc { text-align:right; line-height:1.15; } .nk b { font-size:14px; white-space:nowrap; } .nc b { font-size:13px; } .nk small, .nc small { display:block; font-size:11px; color:var(--sec); }
+  @media (min-width: 900px) {
+    .sheet { align-items:center; justify-content:center; padding:24px; }
+    .sheet .in.mx { max-width:1280px; border-radius:28px; border:1px solid var(--line); max-height:92vh; padding:26px 30px 28px; }
+    .sheet .in.mx .grip { display:none; }
+    .stats.six { grid-template-columns:repeat(6,1fr); }
+    .teams2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+    .sr { grid-template-columns:28px auto minmax(0,1fr) 70px 48px auto; grid-template-areas:"r c w k n i"; min-height:68px; }
+    .sr .mini img, .sr .mini i { width:20px; height:20px; }
+  }
+  @media (min-width: 900px) {
+    .card { padding:20px; border-radius:24px; margin-bottom:16px; } .game { padding:14px 18px; margin-bottom:12px; }
+    h1 { font-size:34px; margin-bottom:6px; } .sub { margin-bottom:22px; }
+  }
+
+  /* ---------- motion: short and springy; calm with "reduce motion" ---------- */
+  @keyframes rise { from { opacity:0; transform:translateY(16px) scale(.985); } }
+  @keyframes grow { from { transform:scaleX(0); } }
+  @keyframes ringIn { from { stroke-dashoffset:var(--c); } }
+  @keyframes pageR { from { opacity:.0; transform:translateX(22px); } } @keyframes pageL { from { opacity:0; transform:translateX(-22px); } }
+  @keyframes popIn { 0% { transform:scale(.6); opacity:0; } 60% { transform:scale(1.15); } }
+  @keyframes sheetUp { from { transform:translateY(60px); opacity:.2; } 70% { transform:translateY(-4px); } }
+  @keyframes modalIn { from { transform:translateY(24px) scale(.96); opacity:0; } 70% { transform:translateY(-2px) scale(1.005); } }
+  @keyframes sheetDown { to { transform:translateY(80px); opacity:0; } } @keyframes fadeOut { to { opacity:0; } }
+  .sheet .in { animation:none; }
+  .ani { animation:rise .5s cubic-bezier(.2,.9,.25,1.15) both; animation-delay:calc(var(--i, 0) * 42ms); }
+  .ani .dmg i, .ani .bar i, .ani .meter i, .ani.dmg i, .ani .vsb i, .ani .mbar i { animation:grow .8s cubic-bezier(.2,.8,.2,1) both; transform-origin:left; animation-delay:calc(var(--i, 0) * 42ms + 160ms); }
+  .ani .pr, .ani.ring .pr { animation:ringIn 1.1s cubic-bezier(.2,.8,.2,1) both; animation-delay:.2s; }
+  .ani .dots i { animation:popIn .35s cubic-bezier(.3,1.6,.5,1) both; }
+  .ani .dots i:nth-child(2) { animation-delay:.03s } .ani .dots i:nth-child(3) { animation-delay:.06s } .ani .dots i:nth-child(4) { animation-delay:.09s } .ani .dots i:nth-child(5) { animation-delay:.12s }
+  .ani .dots i:nth-child(6) { animation-delay:.15s } .ani .dots i:nth-child(7) { animation-delay:.18s } .ani .dots i:nth-child(8) { animation-delay:.21s } .ani .dots i:nth-child(9) { animation-delay:.24s } .ani .dots i:nth-child(10) { animation-delay:.27s }
+  #app.pgR { animation:pageR .34s cubic-bezier(.2,.9,.3,1.1); } #app.pgL { animation:pageL .34s cubic-bezier(.2,.9,.3,1.1); }
+  .sheet.opening { animation:fade .2s; } .sheet.opening .in { animation:sheetUp .42s cubic-bezier(.2,1,.3,1); }
+  @media (min-width: 900px) { .sheet.opening .in.mx { animation:modalIn .4s cubic-bezier(.2,1,.3,1); } }
+  .sheet.closing { animation:fadeOut .2s forwards; } .sheet.closing .in { animation:sheetDown .2s ease-in forwards; }
+  .btn, .game, .lb, .sr, .fr, .rk, .stat, .seg button, .tabs button, .xbtn, .chk { transition:transform .22s cubic-bezier(.3,1.6,.5,1), background-color .2s, opacity .2s; }
+  .btn:active, .game:active, .lb:active, .sr:active, .fr:active, .rk:active, .seg button:active, .xbtn:active { transform:scale(.97); }
+  .tabs button:active { transform:scale(.9); } .tabs button.on svg { animation:popIn .4s cubic-bezier(.3,1.6,.5,1); }
+  @media (hover:hover) { .game:hover, .lb:hover, .sr:hover { background-color:rgba(255,255,255,.035); } .game:hover { transform:translateY(-1px); } }
+  /* check-off reward */
+  .chk { flex:none; width:40px; height:40px; border-radius:50%; border:2px solid rgba(45,212,191,.5); background:rgba(45,212,191,.06); padding:0; cursor:pointer; position:relative; }
+  .chk svg { width:100%; height:100%; } .chk path { fill:none; stroke:#061018; stroke-width:3.2; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:24; stroke-dashoffset:24; }
+  .chk.done { background:var(--acc); border-color:var(--acc); } .chk.done path { stroke-dashoffset:0; }
+  .chk.pop { animation:popIn .45s cubic-bezier(.3,1.6,.5,1); } .chk.pop path { transition:stroke-dashoffset .35s .1s cubic-bezier(.6,0,.2,1); }
+  .tt { display:inline; -webkit-box-decoration-break:clone; box-decoration-break:clone; background:linear-gradient(currentColor,currentColor) no-repeat 0 58% / 0 1.6px; transition:background-size .45s cubic-bezier(.6,0,.2,1), opacity .4s; }
+  .tt.done { background-size:100% 1.6px; opacity:.55; }
+  .spark { position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%; pointer-events:none; background:var(--c, #2dd4bf);
+    animation:spark .7s cubic-bezier(.2,.8,.3,1) forwards; }
+  @keyframes spark { to { transform:translate(var(--dx), var(--dy)) scale(.2); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+    .chk path { stroke-dashoffset:0 !important; } .chk:not(.done) path { stroke-dashoffset:24 !important; }
   }
   #rail { display:none; }
   /* wide desktop: right column with your card, Moosi's task and friends (like the PC app) */
@@ -98,8 +184,8 @@
   .fr { display:flex; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
   .fr:last-child { border:0; } .fr img { width:44px; height:44px; border-radius:13px; } .fr b { display:block; }
   .chev { margin-left:auto; color:#4b5563; font-size:20px; }
-  .sheet { position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; animation:fade .2s; }
-  .sheet .in { width:100%; max-height:88vh; overflow:auto; background:#0c111d; border-radius:26px 26px 0 0; border-top:1px solid var(--line); padding:10px 16px calc(var(--safe-b) + 24px); animation:up .28s cubic-bezier(.2,.8,.2,1); }
+  .sheet { position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; }
+  .sheet .in { width:100%; max-height:88vh; overflow:auto; background:#0c111d; border-radius:26px 26px 0 0; border-top:1px solid var(--line); padding:10px 16px calc(var(--safe-b) + 24px); }
   .grip { width:40px; height:5px; border-radius:9px; background:#2b3550; margin:4px auto 12px; }
   .sheet { cursor:pointer; } .sheet .in { cursor:auto; position:relative; transition:transform .2s; }
   .xbtn { position:sticky; top:0; float:right; z-index:2; width:34px; height:34px; border-radius:50%; border:0; background:rgba(255,255,255,.12); color:var(--txt);
@@ -493,7 +579,13 @@ const POS = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "ADC", UTILITY
 const POS_ORDER = {TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4};
 const QUEUE = {420: "Solo/Duo", 440: "Flex", 400: "Normal", 430: "Normal", 450: "ARAM", 490: "Quickplay", 1700: "Arena", 1900: "URF"};
 function openMatch(id, puuid) { S.sheet = {id, puuid}; render(); history.pushState({sheet: 1}, ""); }
-function closeSheet(fromBack) { if (!S.sheet) return; S.sheet = null; render(); if (!fromBack && history.state && history.state.sheet) history.back(); }
+function closeSheet(fromBack) {
+  if (!S.sheet) return;
+  const sh = document.querySelector(".sheet");
+  const done = () => { S.sheet = null; render(); };
+  if (sh && !RM()) { sh.classList.add("closing"); setTimeout(done, 190); } else done();
+  if (!fromBack && history.state && history.state.sheet) history.back();
+}
 addEventListener("popstate", () => closeSheet(true));   // iOS back swipe / Android back closes the sheet
 addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
 // swipe the sheet down to close it (like iOS sheets)
@@ -540,38 +632,40 @@ function matchSheet() {
   const k = n => n >= 1000 ? (n / 1000).toFixed(1).replace(".", ",") + "k" : n;
   const kp = Math.round(100 * (me.kills + me.assists) / Math.max(1, teamK(me.teamId)));
   const dmgShare = Math.round(100 * me.totalDamageDealtToChampions / Math.max(1, P.filter(p => p.teamId === me.teamId).reduce((a, p) => a + p.totalDamageDealtToChampions, 0)));
+  const GS = gameScores(info), my = GS[me.puuid] || {score: 0, rank: "–"};
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
-  const GS = gameScores(info);
   const badge = v => v && v.badge ? `<span class="gsb mvp">${v.badge}</span>` : "";
-  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
-      <span class="rkn ${GS[p.puuid] && GS[p.puuid].rank <= 3 ? "top" : ""}"><b>${GS[p.puuid] ? GS[p.puuid].rank : "–"}</b><small>${GS[p.puuid] ? GS[p.puuid].score.toFixed(1) : ""}</small></span>${cImg(p.championName, "")}
-      <div class="spl">${sImg(p.summoner1Id)}${sImg(p.summoner2Id)}</div>
-      <div style="flex:1;min-width:0"><div class="pl2h"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)} ${badge(GS[p.puuid])}</b><span>${p.kills}/${p.deaths}/${p.assists}</span></div>
-        <div class="muted" style="font-size:11px;margin-top:1px">${POS[p.teamPosition] || "–"} · ${esc(p.championName)}</div>
-        <div class="pl2s"><span>${cs(p)} CS</span><span>${k(p.goldEarned)} G</span><span class="dmg"><i style="width:${100 * p.totalDamageDealtToChampions / maxD}%"></i></span></div>
-        <div class="mini">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div></div>`;
-  const team = tid => { const w = (info.teams.find(t => t.teamId === tid) || {}).win;
-    return `<div class="team"><div class="teamh"><b class="${w ? "green" : "red"}">${w ? "Sieg" : "Niederlage"}</b><span class="muted small">${tid === 100 ? "Blau" : "Rot"} · ${teamK(tid)} Kills · ${k(teamG(tid))} Gold</span></div>${P.filter(p => p.teamId === tid).sort((a, b) => (POS_ORDER[a.teamPosition] ?? 5) - (POS_ORDER[b.teamPosition] ?? 5)).map(row).join("")}</div>`; };
-  const ranking = `<div class="team"><div class="teamh"><b>🏆 Ranking</b><span class="muted small">Wer war am besten?</span></div>
-    ${Object.entries(GS).sort((a, b) => a[1].rank - b[1].rank).map(([u, v]) => { const p = P.find(x => x.puuid === u);
-      return `<div class="rk ${u === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(u)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
-        <span class="n">${v.rank}</span>${cImg(p.championName, "")}<span class="nm">${esc(p.riotIdGameName || p.championName)} ${badge(v)}</span>
-        <span class="bar"><i class="${p.win ? "w" : "l"}" style="width:${v.score * 10}%"></i></span><b>${v.score.toFixed(1)}</b></div>`; }).join("")}
-    <p class="muted small" style="margin:8px 0 0">Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert.</p></div>`;
+  const ring = (v, win) => { const C = 2 * Math.PI * 30; return `<div class="ring"><svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" class="tr"/>
+      <circle cx="36" cy="36" r="30" class="pr ${win ? "w" : "l"}" style="--c:${C};--o:${C * (1 - v / 10)}" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - v / 10)}"/></svg>
+      <div class="rv"><b>${v.toFixed(1)}</b><small>Score</small></div></div>`; };
+  const row = p => { const v = GS[p.puuid] || {}, kda = ((p.kills + p.assists) / Math.max(1, p.deaths)).toFixed(1);
+    return `<div class="sr ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
+      <span class="rkn ${v.rank <= 3 ? "top" : ""}"><b>${v.rank || "–"}</b><small>${v.score != null ? v.score.toFixed(1) : ""}</small></span>
+      <span class="chs">${cImg(p.championName, "")}<i class="lv">${p.champLevel ?? ""}</i><span class="spl">${sImg(p.summoner1Id)}${sImg(p.summoner2Id)}</span></span>
+      <div class="who"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)} ${badge(v)}</b><small>${POS[p.teamPosition] || "–"} · ${esc(p.championName)} · ${k(p.goldEarned)} G</small>
+        <span class="dmg" title="Schaden an Champions"><i style="width:${100 * p.totalDamageDealtToChampions / maxD}%"></i></span></div>
+      <div class="nk"><b>${p.kills}/<span class="red">${p.deaths}</span>/${p.assists}</b><small>${kda} KDA</small></div>
+      <div class="nc"><b>${cs(p)}</b><small>${(cs(p) / min).toFixed(1)}/m</small></div>
+      <div class="mini">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div>`; };
+  const team = tid => { const w = (info.teams.find(t => t.teamId === tid) || {}).win, o = ((info.teams.find(t => t.teamId === tid) || {}).objectives) || {};
+    const ob = (key, ic) => o[key] ? `<span>${ic} ${o[key].kills}</span>` : "";
+    return `<div class="tb ${w ? "win" : "loss"}"><div class="tbh"><b>${w ? "Sieg" : "Niederlage"}</b><span class="side ${tid === 100 ? "blue" : "red"}">${tid === 100 ? "Blau" : "Rot"}</span>
+      <span class="tbo">${teamK(tid)} Kills · ${k(teamG(tid))} Gold ${ob("dragon", "🐉")}${ob("baron", "🟣")}${ob("tower", "🗼")}</span></div>
+      ${P.filter(p => p.teamId === tid).sort((a, b) => (POS_ORDER[a.teamPosition] ?? 5) - (POS_ORDER[b.teamPosition] ?? 5)).map(row).join("")}</div>`; };
   const mine = me.teamId;
-  return `<div class="sheet" onclick="if(event.target===this)closeSheet()"><div class="in" id="sheet-in"><button class="xbtn" onclick="closeSheet()" aria-label="Schließen">✕</button><div class="grip" onclick="closeSheet()"></div>
-    <p class="muted small" style="margin:0 0 10px">${QUEUE[info.queueId] || "Spiel"} · ${Math.round(min)} min · ${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleDateString("de-DE")}</p>
-    <div class="mecard ${me.win ? "win" : ""}"><div style="display:flex;gap:12px;align-items:center">${cImg(me.championName, "big")}
-      <div><div class="${me.win ? "green" : "red"}" style="font-weight:800;font-size:13px">${me.win ? "SIEG" : "NIEDERLAGE"}</div>
-        <div style="font-size:24px;font-weight:800;letter-spacing:-.5px">${me.kills}/${me.deaths}/${me.assists}</div>
-        <div class="muted small">${me.championName} · Level ${me.champLevel ?? "–"}</div></div></div>
-      <div class="stats" style="margin-top:12px">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
-        ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}${stat((GS[me.puuid] ? GS[me.puuid].score.toFixed(1) : "–") + "/10", "Game-Score · #" + (GS[me.puuid] ? GS[me.puuid].rank : "–") + (GS[me.puuid] && GS[me.puuid].badge ? " " + GS[me.puuid].badge : ""))}</div>
-      <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
+  return `<div class="sheet" onclick="if(event.target===this)closeSheet()"><div class="in mx" id="sheet-in"><button class="xbtn" onclick="closeSheet()" aria-label="Schließen">✕</button><div class="grip" onclick="closeSheet()"></div>
+    <div class="mh ${me.win ? "win" : ""}">
+      <div class="mhl">${cImg(me.championName, "big")}<div><div class="res2">${me.win ? "Sieg" : "Niederlage"}</div>
+        <div class="kda2">${me.kills}<i>/</i><span class="red">${me.deaths}</span><i>/</i>${me.assists}</div>
+        <div class="muted small">${me.championName} · ${POS[me.teamPosition] || "–"} · Lvl ${me.champLevel ?? "–"} · ${QUEUE[info.queueId] || "Spiel"} · ${Math.round(min)} min · ${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleDateString("de-DE")}</div>
+        <div class="items big">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div></div>
+      <div class="mhr">${ring(my.score, me.win)}<div class="small" style="text-align:center;margin-top:4px">Platz <b>${my.rank}</b> von 10 ${badge(my)}</div></div>
+    </div>
+    <div class="stats six">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
+      ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>
     <div class="teams2">${team(mine)}${team(mine === 100 ? 200 : 100)}</div>
-    <p class="muted small" style="margin:4px 0 10px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert.</p>
-    <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button>
-    <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
+    <p class="muted small" style="margin:12px 2px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert. Spieler antippen für Rang und letzte Games.</p>
+    <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button></div></div>`;
 }
 function vHome() {
   const c = S.coach, r = solo(S.league), gs = S.games || [];
@@ -583,7 +677,9 @@ function vHome() {
   let h = `<div class="hero"><div class="art" style="background-image:url('${pr.banner ? splash(pr.banner) : main ? splash(main) : ""}')"></div><div class="in">
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pr.avatar, "hav", main)}<span class="tag">${c && c.player_type ? "✦ " + esc(c.player_type.name) : "Dein Profil"}</span></div>
     <h2>${esc(pr.name || (S.me.riot_id || S.me.name || "").split("#")[0])} ${roleChip(pr.role)}</h2>${pr.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pr.bio)}</div>` : ""}<div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
-  h += `<div class="card moosi-card">${moosi(c && c.score >= 60 ? "proud" : "happy", 84)}<div class="bubble"><b>${task ? "Deine Aufgabe" : "Moosi"}</b>${task ? esc(task.title + ": " + task.drill)
+  const tdone = task && !!LS.get(taskKey(task.title));
+  h += `<div class="card moosi-card">${moosi(c && c.score >= 60 ? "proud" : "happy", 84)}<div class="bubble"><b>${task ? "Deine Aufgabe" : "Moosi"}</b>${task ? `<div style="display:flex;gap:10px;align-items:center"><div style="flex:1"><span class="tt ${tdone ? "done" : ""}">${esc(task.title + ": " + task.drill)}</span></div>
+      <button class="chk ${tdone ? "done" : ""}" onclick="event.stopPropagation();toggleTask(this)" aria-label="Erledigt"><svg viewBox="0 0 40 40"><path d="M12 20.5l5.5 5.5L28.5 14.5"/></svg></button></div>`
     : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal mit deinem Konto – dann zeige ich dir hier deine Coaching-Aufgabe."}</div></div>`;
   if (gs.length) h += `<div class="card"><h3>Letzte ${gs.length} Games</h3><div class="stats"><div class="stat"><b class="${wins / gs.length >= .5 ? "green" : "red"}">${Math.round(100 * wins / gs.length)}%</b><span>Winrate</span></div>
       <div class="stat"><b>${(gs.reduce((a, g) => a + g.p.kills + g.p.assists, 0) / Math.max(1, gs.reduce((a, g) => a + g.p.deaths, 0))).toFixed(2)}</b><span>KDA</span></div>
@@ -904,6 +1000,75 @@ function vLogin() {
 const TAB_IC = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', games: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7.5 11v3M6 12.5h3"/><circle cx="15.5" cy="11.5" r=".9"/><circle cx="17.5" cy="13.7" r=".9"/>',
   stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   friends: '<circle cx="9" cy="8.5" r="3.4"/><path d="M2.8 19.5c1-3.2 3.5-4.8 6.2-4.8s5.2 1.6 6.2 4.8"/><path d="M15.5 5.6a3.2 3.2 0 0 1 0 6M17.6 14.9c1.8.6 3 2.1 3.6 4.6"/>', more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+// ---------- motion + haptics ----------
+const RM = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function hap(kind = "light") {
+  try {
+    const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcHaptic;
+    if (h) return h.postMessage(kind);
+    if (navigator.vibrate) navigator.vibrate(kind === "success" ? [12, 60, 22] : kind === "medium" ? 14 : 6);
+  } catch (e) {}
+}
+document.addEventListener("pointerdown", e => {
+  if (e.target.closest(".tabs button")) return;   // tabs give a stronger tap themselves
+  if (e.target.closest("button, .game, .lb, .sr, .fr, .rk, .seg button, [onclick]")) hap("light");
+}, {passive: true});
+// count numbers up from 0 (only the leading number, keeps "%", "k", "/10" …)
+function countUp(el) {
+  const t = el.textContent, m = t.match(/^(\D{0,2}?)(\d+(?:[.,]\d+)?)(.*)$/s);
+  if (!m || RM()) return;
+  const dec = (m[2].split(/[.,]/)[1] || "").length, sep = m[2].includes(",") ? "," : ".", end = parseFloat(m[2].replace(",", "."));
+  if (!isFinite(end) || end === 0) return;
+  const t0 = performance.now(), dur = 650 + Math.min(400, end * 2);
+  const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = m[1] + (end * e).toFixed(dec).replace(".", sep) + m[3]; if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+// stagger everything that just appeared
+function enter(root) {
+  if (!root || RM()) return;
+  const els = [...root.children, ...root.querySelectorAll(".game, .lb, .sr, .stat, .fr, .focus, .tb, .rk")];
+  let i = 0;
+  els.forEach(el => { if (el.classList.contains("xbtn") || el.classList.contains("grip")) return;
+    el.style.setProperty("--i", Math.min(i++, 16)); el.classList.add("ani"); });
+  root.querySelectorAll(".stat b, .rv b, .lbv b, .kda2, .rkn small").forEach(el => { if (!el.children.length) countUp(el); });
+  setTimeout(() => els.forEach(el => el.classList.remove("ani")), 1500);
+}
+const TAB_ORDER = ["home", "games", "stats", "friends", "more"];
+let lastView = "", lastSheet = null, lastPlayer = null;
+function afterRender(app) {
+  const view = S.tab + "|" + (S.view && S.view.friend || "");
+  if (view !== lastView) {
+    const dir = TAB_ORDER.indexOf(S.tab) - TAB_ORDER.indexOf(lastView.split("|")[0]);
+    if (lastView && !RM()) { app.classList.remove("pgR", "pgL"); void app.offsetWidth; app.classList.add(dir < 0 ? "pgL" : "pgR"); setTimeout(() => app.classList.remove("pgR", "pgL"), 400); }
+    lastView = view; enter(app);
+  }
+  const sk = S.sheet ? S.sheet.id : null, pk = S.player ? S.player.puuid : null;
+  const open = sh => { if (sh) { sh.classList.add("opening"); setTimeout(() => sh.classList.remove("opening"), 500); enter(sh.querySelector(".in")); } };
+  const sheets = [...app.querySelectorAll(".sheet")];
+  if (sk && sk !== lastSheet) open(sheets[0]);
+  if (pk && pk !== lastPlayer) open(sheets[sheets.length - 1]);
+  lastSheet = sk; lastPlayer = pk;
+}
+// Moosi's task: tick it off as a small reward
+const taskKey = t => "jc_done_" + new Date().toISOString().slice(0, 10) + "_" + (t || "").slice(0, 40);
+function toggleTask(btn) {
+  const task = S.coach && S.coach.session_task; if (!task) return;
+  const k = taskKey(task.title), done = !LS.get(k);
+  LS.set(k, done ? "1" : null);
+  btn.classList.toggle("done", done);
+  const tt = btn.parentElement.querySelector(".tt"); if (tt) tt.classList.toggle("done", done);
+  if (!done) return hap("light");
+  hap("success");
+  btn.classList.remove("pop"); void btn.offsetWidth; btn.classList.add("pop");
+  if (RM()) return;
+  const cols = ["#2dd4bf", "#34d399", "#fbbf24", "#818cf8", "#f472b6"];
+  for (let i = 0; i < 14; i++) {
+    const sp = document.createElement("i"), a = (i / 14) * Math.PI * 2 + Math.random() * .4, d = 26 + Math.random() * 22;
+    sp.className = "spark"; sp.style.cssText = `--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px;--c:${cols[i % cols.length]}`;
+    btn.appendChild(sp); setTimeout(() => sp.remove(), 750);
+  }
+}
 function renderRail() {
   const el = $("#rail"); if (!el) return;
   if (!S.me || innerWidth < 1240) { el.innerHTML = ""; return; }
@@ -929,8 +1094,9 @@ function render() {
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
+  afterRender(app);
   if (document.activeElement && document.activeElement.id === "radd") return;   // don't wipe what is being typed
   renderRail();
 }
