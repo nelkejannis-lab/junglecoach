@@ -382,6 +382,12 @@ function liveTxt(rid) {
 }
 const ROLE_DE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
 const roleChip = r => r && ROLE_DE[r] ? `<span class="rchip">${ROLE_DE[r]}</span>` : "";
+// main role from the games themselves (works for every player, also without Moosi): most played position
+function gamesRole(games) {
+  const n = {}; (games || []).forEach(g => { const r = g.p.teamPosition; if (r) n[r] = (n[r] || 0) + 1; });
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : null;
+}
 const nameOf = id => (CHAMPS.find(c => c.id === id) || {name: id}).name;
 const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
 function avatar(av, cls = "", fallback) {
@@ -512,7 +518,7 @@ async function openPlayer(puuid, rid) {
 function playerSheet() {
   const P = S.player, r = solo(P.league), name = P.rid.split("#")[0] || "Spieler", isF = (S.friends || []).some(f => f.toLowerCase() === P.rid.toLowerCase());
   return `<div class="sheet" style="z-index:45" onclick="if(event.target===this){S.player=null;render()}"><div class="in"><button class="xbtn" onclick="S.player=null;render()" aria-label="Schließen">✕</button><div class="grip"></div>
-    <h2 style="margin:4px 0 2px">${esc(name)} <span class="muted" style="font-size:15px;font-weight:600">#${esc(P.rid.split("#")[1] || "")}</span></h2>
+    <h2 style="margin:4px 0 2px">${esc(name)} <span class="muted" style="font-size:15px;font-weight:600">#${esc(P.rid.split("#")[1] || "")}</span> ${roleChip(gamesRole(P.games))}</h2>
     <p style="margin:0 0 12px">${P.league ? rankTxt(r) : '<span class="muted">Rang lädt …</span>'}${r ? ` · <span class="muted">${r.wins}S ${r.losses}N · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR</span>` : ""}</p>
     <div class="teamh" style="margin-bottom:4px"><b>Letzte 3 Spiele</b></div>
     ${P.games ? P.games.map(g => gameRow(g, `S.player=null;openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") || '<p class="muted small">Keine Spiele gefunden.</p>' : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'}
@@ -697,7 +703,7 @@ function vFriends() {
       ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
         return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
           <span class="pos ${i < 3 ? "p" + i : ""}">${i === 0 ? "👑" : i + 1}</span>${avatar(e.me ? (S.prof || {}).avatar : ((S.pub || {})[e.rid.toLowerCase()] || {}).avatar, "", main)}
-          <div style="flex:1;min-width:0"><b>${esc((e.me ? (S.prof || {}).name : ((S.pub || {})[e.rid.toLowerCase()] || {}).name) || e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""} ${roleChip((e.me ? S.prof : (S.pub || {})[e.rid.toLowerCase()] || {}) ? (e.me ? (S.prof || {}).role : ((S.pub || {})[e.rid.toLowerCase()] || {}).role) : null)}</b>
+          <div style="flex:1;min-width:0"><b>${esc((e.me ? (S.prof || {}).name : ((S.pub || {})[e.rid.toLowerCase()] || {}).name) || e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""} ${roleChip((e.me ? (S.prof || {}).role : ((S.pub || {})[e.rid.toLowerCase()] || {}).role) || gamesRole(e.g))}</b>
             ${!e.me && liveTxt(e.rid) ? `<div class="live">${liveTxt(e.rid)}</div>` : ""}
             <div class="dots sm">${e.a ? e.a.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("") : '<span class="muted small">' + (e.err ? esc(e.err) : "lädt …") + "</span>"}</div></div>
           <div class="lbv">${L.show(e)}</div></div>`; }).join("")}
@@ -720,7 +726,7 @@ function vFriend(rid) {
   return `<button class="btn sec" style="width:auto;padding:10px 16px;margin-bottom:12px" onclick="S.view=null;render()">‹ Freunde</button>
     <div class="hero"><div class="art" style="background-image:url('${pub.banner ? splash(pub.banner) : A && A.champs[0] ? splash(A.champs[0].c) : ""}')"></div><div class="in">
       <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pub.avatar, "hav", A && A.champs[0] ? A.champs[0].c : null)}<span class="tag">${lv || "Freund"}</span></div>
-      <h2>${esc(name)} ${roleChip(pub.role)}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
+      <h2>${esc(name)} ${roleChip(pub.role || gamesRole(d.games))}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
       ${(pub.favs || []).length ? `<div style="display:flex;gap:5px;margin:4px 0">${pub.favs.map(c => cImg(c, "fav")).join("")}</div>` : ""}<div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
@@ -913,7 +919,7 @@ function renderRail() {
     <div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b>Freunde</b><span class="muted small">${live ? live + " im Spiel · " : ""}${fl.length}</span></div>
       ${fl.map(rid => { const d = S.fdata[rid] || {}, pub = (S.pub || {})[rid.toLowerCase()] || {}, fa = agg(d.games), fr = solo(d.league), lt = liveTxt(rid);
         return `<div class="fr" onclick='S.tab="friends";S.view={friend:${JSON.stringify(rid)}};render();scrollTo(0,0)'><span class="avw" style="width:38px;height:38px">${avatar(pub.avatar, "", fa && fa.champs[0] ? fa.champs[0].c : null)}</span>
-          <div style="min-width:0"><div class="nm">${esc(pub.name || rid.split("#")[0])}</div><div class="st">${lt ? `<span style="color:var(--acc);font-weight:700">${lt}</span>` : (fa ? `Ø Score ${fa.score.toFixed(1)}` : "lädt …")}</div></div>
+          <div style="min-width:0"><div class="nm">${esc(pub.name || rid.split("#")[0])} ${roleChip(pub.role || gamesRole(d.games))}</div><div class="st">${lt ? `<span style="color:var(--acc);font-weight:700">${lt}</span>` : (fa ? `Ø Score ${fa.score.toFixed(1)}` : "lädt …")}</div></div>
           <span class="rk2">${fr ? rankTxt(fr).split(" · ")[0] : '<span class="muted">–</span>'}</span></div>`; }).join("") || '<p class="muted small">Noch keine Freunde.</p>'}
       <div style="display:flex;gap:8px;margin-top:8px"><input id="radd" placeholder="Name#TAG" style="padding:10px 12px"><button class="btn" style="width:auto;padding:0 16px" onclick="const v=$('#radd').value.trim();if(!/^[^#]{1,24}#[^#]{1,8}$/.test(v))return toast('Riot ID im Format Name#TAG');saveFriends([...(S.friends||[]),v])">+</button></div></div>`;
 }
