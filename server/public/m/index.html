@@ -159,9 +159,10 @@ async function api(path, opt = {}) {
       LS.set("jc_token", null); MEM_TOKEN = null;
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage("");
       S.me = null;
-      S.err = "Server hat die Anmeldung abgelehnt" + (j.why ? ` (${j.why})` : "") + " – bitte erneut anmelden."; render();
+      S.err = `Server hat die Anmeldung abgelehnt (${path.split("?")[0]} · ${j.why || "ohne Grund"} · Token ${sent.length} Zeichen/${sent.split(".").length} Teile) – bitte erneut anmelden.`; render();
     }
-    throw new Error("Anmeldung abgelehnt");
+    const info = `${path.split("?")[0]} · ${j.why || "ohne Grund"} · Token ${sent.length} Zeichen/${sent.split(".").length} Teile`;
+    throw new Error("Anmeldung abgelehnt: " + info);
   }
   if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
