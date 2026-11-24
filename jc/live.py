@@ -62,11 +62,25 @@ def _fmt(sec):
     return f"{sec // 60}:{sec % 60:02d}"
 
 
-def _gold_diff(gd, allies, enemies):
+LANES = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
+
+
+def _gold_diff(gd, allies, enemies, me=None):
+    """Item value (what everyone sees on the Tab scoreboard): whole team and every lane matchup
+    (top vs top, jungle vs jungle, mid vs mid …), plus your own lane."""
     team = sum(item_gold(gd, p) for p in allies) - sum(item_gold(gd, p) for p in enemies)
     aj = next((p for p in allies if _is_jungler(p)), None)
     ej = next((p for p in enemies if _is_jungler(p)), None)
-    return {"team": team, "jungle": item_gold(gd, aj) - item_gold(gd, ej) if aj and ej else None}
+    pos = lambda p: (p.get("position") or "").upper()
+    lanes = {}
+    for ln in LANES:
+        a = aj if ln == "JUNGLE" else next((p for p in allies if pos(p) == ln), None)
+        e = ej if ln == "JUNGLE" else next((p for p in enemies if pos(p) == ln), None)
+        if a and e:
+            lanes[ln] = item_gold(gd, a) - item_gold(gd, e)
+    mine = "JUNGLE" if me is not None and _is_jungler(me) else pos(me) if me is not None else ""
+    return {"team": team, "jungle": lanes.get("JUNGLE"), "lanes": lanes,
+            "mine": {"pos": mine, "v": lanes[mine]} if mine in lanes else None}
 
 
 def analyze(gd, data, timers=None, preset_lookup=None):
@@ -186,7 +200,7 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             "enemy": {"profile": prof, "fed": fed, "armor_stackers": armor_st, "mr_stackers": mr_st},
             "build": build, "sim": sim_res, "enemy_jungler": jungle, "objectives": objectives,
             "allies": [gd.champ_name(_champ(gd, p)) for p in allies],
-            "gold_diff": _gold_diff(gd, allies, enemies),
+            "gold_diff": _gold_diff(gd, allies, enemies, me),
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,
             "_owned": [i for i in owned if i], "_gold": (data.get("activePlayer") or {}).get("currentGold"),

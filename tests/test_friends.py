@@ -49,6 +49,18 @@ class GoldDiffTests(unittest.TestCase):
         self.assertEqual(d["team"], 3100 - 1000)
         self.assertEqual(d["jungle"], 2000)
 
+    def test_lane_matchups(self):
+        from jc import live
+
+        class G:
+            items = {1: {"gold": {"total": 3000}}, 2: {"gold": {"total": 1000}}}
+        me = {"position": "MIDDLE", "items": [{"itemID": 1}]}
+        allies = [me, {"position": "TOP", "items": []}]
+        enemies = [{"position": "MIDDLE", "items": [{"itemID": 2}]}, {"position": "TOP", "items": [{"itemID": 2}]}]
+        d = live._gold_diff(G(), allies, enemies, me)
+        self.assertEqual(d["lanes"], {"TOP": -1000, "MIDDLE": 2000})
+        self.assertEqual(d["mine"], {"pos": "MIDDLE", "v": 2000})
+
 
 class GpmTests(unittest.TestCase):
     def test_rating(self):

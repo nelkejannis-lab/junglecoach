@@ -16,10 +16,10 @@ KEY = "#010203"  # transparent key colour for the rounded corners
 
 L = {"de": {"now": "JETZT", "item": "Nächstes Item", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
             "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
-            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "gpm": "Gold/min", "r_good": "gut", "r_bad": "niedrig", "itemg": "Item-Wert", "next_s": "Nächster Fokus", "move": "Mit der Maus ziehen – Strg+Shift+K oder „Fertig“ in der App speichert die Position"},
+            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "lane": "{} vs {}", "lanes": {"TOP": "Top", "JUNGLE": "JG", "MIDDLE": "Mid", "BOTTOM": "Bot", "UTILITY": "Sup"}, "gpm": "Gold/min", "r_good": "gut", "r_bad": "niedrig", "itemg": "Item-Wert", "next_s": "Nächster Fokus", "move": "Mit der Maus ziehen – Strg+Shift+K oder „Fertig“ in der App speichert die Position"},
      "en": {"next_s": "Next focus", "now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
             "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
-            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "gpm": "Gold/min", "r_good": "good", "r_bad": "low", "itemg": "item value", "move": "Drag with the mouse – Ctrl+Shift+K or “Done” in the app saves the position"}}
+            "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "lane": "{} vs {}", "lanes": {"TOP": "Top", "JUNGLE": "JG", "MIDDLE": "Mid", "BOTTOM": "Bot", "UTILITY": "Sup"}, "gpm": "Gold/min", "r_good": "good", "r_bad": "low", "itemg": "item value", "move": "Drag with the mouse – Ctrl+Shift+K or “Done” in the app saves the position"}}
 
 
 def layout(state):
@@ -272,7 +272,11 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
 
     # ---- gold differences (team / jungle, item value): value + small centred bar
     df = m.get("diff") or {}
-    cols = [(m["t"]["team"], df.get("team")), (m["t"]["jg"], df.get("jungle"))]
+    LN = m["t"].get("lanes", {})
+    mine = df.get("mine") or {}
+    own = (m["t"]["lane"].format(LN.get(mine["pos"], mine["pos"]), LN.get(mine["pos"], mine["pos"])), mine["v"]) if mine.get("v") is not None \
+        else (m["t"]["jg"], df.get("jungle"))
+    cols = [(m["t"]["team"], df.get("team")), own]
     cols = [c for c in cols if c[1] is not None]
     if cols:
         gap = 8 * k
@@ -293,7 +297,25 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
             if abs(ext) > 2 * k:
                 u.rounded_rectangle([min(mid, mid + ext), by, max(mid, mid + ext), by + 4 * k], 2 * k, fill=_rgb(col))
             u.rectangle([mid - 0.5 * k, by - 2 * k, mid + 0.5 * k, by + 6 * k], fill=_rgb("#ffffff", 120))
+        y += ch + 6 * k
+    # every lane matchup (top vs top, jungle vs jungle …) as one compact row
+    lanes = [(ln, v) for ln, v in (df.get("lanes") or {}).items()]
+    if len(lanes) >= 2:
+        gap = 5 * k
+        cw = (Wp - 2 * pad - gap * (len(lanes) - 1)) / len(lanes)
+        ch = 34 * k
+        for i, (ln, v) in enumerate(lanes):
+            x0 = pad + i * (cw + gap)
+            me_l = ln == mine.get("pos")
+            u.rounded_rectangle([x0, y, x0 + cw, y + ch], 9 * k, fill=fill2, outline=_rgb("#ffffff", 70) if me_l else None, width=max(1, int(k)))
+            col = A_GREEN if v > 150 else A_RED if v < -150 else "#ebebf5"
+            lab = LN.get(ln, ln)
+            txt = ("+" if v > 0 else "−" if v < 0 else "±") + (f"{abs(v) / 1000:.1f}k" if abs(v) >= 1000 else f"{abs(v)}")
+            d.text((x0 + cw / 2, y + 4 * k), lab, font=F["cap"], fill=SEC, anchor="ma")
+            d.text((x0 + cw / 2, y + 4 * k + lh(F["cap"])), txt, font=F["cap"], fill=_rgb(col), anchor="ma")
         y += ch + 12 * k
+    elif cols:
+        y += 6 * k
 
     # ---- NOW: tinted card with a symbol (colour + shape)
     if m["now"]:

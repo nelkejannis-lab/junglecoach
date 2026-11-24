@@ -18,6 +18,7 @@
  * Data minimisation: we store only provider, provider user id, display name, optional Riot ID
  * and timestamps. No e-mail, no password.
  */
+import { accountsApi, socialApi, socialDelete, rememberAccount, ensureSocial } from "./social.js";
 import { pushApi, pushInbox, scheduled as pushScheduled } from "./push.js";
 
 const APP_REDIRECTS = [/^http:\/\/(localhost|127\.0\.0\.1):87\d\d\/auth\/callback$/, /^junglecoach:\/\/auth$/];
@@ -382,14 +383,19 @@ async function publicProfiles(url, env) {
   await ensureData(env);
   const ids = (url.searchParams.get("ids") || "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => RIOT_ID.test(x)).slice(0, 50);
   if (!ids.length) return json({ profiles: {} });
-  const rows = await env.DB.prepare(`SELECT u.riot_id AS rid, d.profile AS p, d.status AS s, d.status_at AS sa
-      FROM users u JOIN user_data d ON d.user_id = u.id WHERE lower(u.riot_id) IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
+  await ensureSocial(env);
+  const qs = ids.map(() => "?").join(",");
+  const rows = await env.DB.prepare(`SELECT u.riot_id AS rid, d.accounts AS acc, d.profile AS p, d.status AS s, d.status_at AS sa
+      FROM users u JOIN user_data d ON d.user_id = u.id WHERE lower(u.riot_id) IN (${qs})
+      OR EXISTS (SELECT 1 FROM json_each(COALESCE(d.accounts, '[]')) j WHERE lower(json_extract(j.value, '$.rid')) IN (${qs}))`).bind(...ids, ...ids).all();
   const now = Math.floor(Date.now() / 1000), out = {};
   for (const r of rows.results || []) {
     const p = cleanProfile(r.p ? JSON.parse(r.p) : {});
     if (!p.visible) continue;
     const st = p.show_status && r.s && now - (r.sa || 0) <= 180 ? JSON.parse(r.s) : null;
-    out[r.rid.toLowerCase()] = { name: p.name, bio: p.bio, avatar: p.avatar, banner: p.banner, favs: p.favs, role: p.role, status: st };
+    const card = { name: p.name, bio: p.bio, avatar: p.avatar, banner: p.banner, favs: p.favs, role: p.role, status: st };
+    const all = [r.rid, ...(r.acc ? JSON.parse(r.acc) : []).map((a) => a.rid)].filter(Boolean).map((x) => x.toLowerCase());
+    for (const k of all) if (ids.includes(k)) out[k] = card;
   }
   return json({ profiles: out });
 }
@@ -413,7 +419,7 @@ export default {
       if (p === "/m" || p === "/web" || p === "/app") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
       if (p === "/api/push/inbox") return await pushInbox(url, env);
-      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin") || p.startsWith("/api/push/")) {
+      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin") || p.startsWith("/api/push/") || p.startsWith("/api/social/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen.", why: req.jcAuthWhy || "" }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
@@ -421,6 +427,8 @@ export default {
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
         if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
+        if (p === "/api/sync/accounts") return await accountsApi(req, env, user);
+        if (p.startsWith("/api/social/")) return await socialApi(req, env, user, p, url);
         if (p === "/api/sync/notes") return await sync(req, env, user, "notes");
         if (p === "/api/sync/avatar") return await avatarPut(req, env, user);
         if (p === "/api/sync/riotkey") return await riotKeyEndpoint(req, env, user);
@@ -435,9 +443,11 @@ export default {
           const body = await req.json().catch(() => ({}));
           const rid = String(body.riot_id || "").slice(0, 40);
           await env.DB.prepare("UPDATE users SET riot_id = ? WHERE id = ?").bind(rid || null, user.id).run();
+          if (/^[^#]{1,24}#[^#]{1,8}$/.test(rid)) await rememberAccount(env, user.id, rid);
           return json({ ok: true });
         }
         if (req.method === "DELETE") {
+          await socialDelete(env, user.id);
           await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
           await ensureData(env);
           await env.DB.prepare("DELETE FROM user_data WHERE user_id = ?").bind(user.id).run();

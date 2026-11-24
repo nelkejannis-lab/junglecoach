@@ -1089,7 +1089,7 @@ def make_handler(gd, cfg, lcu):
                         (hide.discard if b[key] else hide.add)(key)
                 if "riot_safe" in b:   # one switch: only what Riot allows for overlays
                     # objective timers stay: dragon/baron kills are announced to everyone, the timer is not hidden info
-                    hide = (hide | {"gold_diff", "enemy_jg"}) if b["riot_safe"] else (hide - {"gold_diff", "enemy_jg"})
+                    hide = (hide | {"enemy_jg"}) if b["riot_safe"] else (hide - {"enemy_jg"})   # gold = item value from the Tab scoreboard, always allowed
                 oc["hide"] = sorted(hide)
                 if isinstance(b.get("notes"), str):   # own focus notes, shown in game while Tab is held
                     oc["notes"], oc["notes_at"] = b["notes"][:500], int(time.time())
@@ -1097,7 +1097,7 @@ def make_handler(gd, cfg, lcu):
                 if "sound" in b:
                     oc["sound"] = bool(b["sound"])
                 if isinstance(b.get("sound_every"), (int, float)):
-                    oc["sound_every"] = int(max(30, min(600, b["sound_every"])))
+                    oc["sound_every"] = int(max(15, min(900, b["sound_every"])))
                 if isinstance(b.get("sound_volume"), (int, float)):
                     oc["sound_volume"] = max(0.05, min(1.0, float(b["sound_volume"])))
                 if "sound_death" in b:

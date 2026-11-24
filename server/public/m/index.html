@@ -38,6 +38,17 @@
     background:rgba(9,12,20,.82); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-top:1px solid var(--line); z-index:20; }
   .tabs button { flex:1; border:0; background:none; color:#6b7590; font:inherit; font-size:11px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; }
   .tabs button.on { color:var(--acc); }
+  .btn.mini { width:auto; height:34px; padding:0 14px; font-size:13px; margin:0; flex:none; }
+  .x { width:32px; height:32px; border:0; border-radius:10px; background:rgba(255,255,255,.06); color:#9aa4bd; font-size:18px; line-height:1; flex:none; }
+  .acct { display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:14px; background:rgba(255,255,255,.03); margin-top:6px; border:1px solid transparent; }
+  .acct.on { border-color:rgba(45,212,191,.45); background:rgba(45,212,191,.07); }
+  .adot { width:9px; height:9px; border-radius:50%; background:#3a4256; flex:none; } .acct.on .adot { background:var(--acc); box-shadow:0 0 8px var(--acc); }
+  .aswitch { display:flex; gap:8px; margin:0 0 12px; }
+  .chip { border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04); color:#c9d2e6; border-radius:999px; padding:7px 14px; font:inherit; font-size:13px; font-weight:700; white-space:nowrap; }
+  .chip.on { background:rgba(45,212,191,.14); border-color:rgba(45,212,191,.5); color:var(--acc); }
+  .card.hi { border:1px solid rgba(45,212,191,.4); }
+  .badge { display:inline-grid; place-items:center; min-width:20px; height:20px; padding:0 6px; border-radius:10px; background:var(--acc); color:#06231f; font-size:12px; vertical-align:2px; }
+  .tabs button.dotb { position:relative; } .tabs button.dotb::after { content:""; position:absolute; top:2px; left:calc(50% + 8px); width:8px; height:8px; border-radius:50%; background:#ff5a6e; }
   /* desktop browser: sidebar navigation on the left, wider content */
   @media (min-width: 900px) {
     #app { max-width:820px; padding:32px 32px 60px; margin-left:max(240px, calc(50vw - 410px + 110px)); margin-right:auto; }
@@ -430,10 +441,11 @@ async function boot() {
     S.me = await api("/api/me"); render();
     api("/api/sync/coach").then(c => { S.coach = c.coach; render(); snapSave(); }).catch(() => {});
     api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); loadPublic(); snapSave(); }).catch(() => { if (!S.friends) S.friends = []; });
+    loadAccts(); loadSocial();
     api("/api/sync/profile").then(p => { S.prof = p.profile || {}; render(); snapSave(); }).catch(() => { if (!S.prof) S.prof = {}; });
     loadChamps();
     if (S.me.riot_id && S.me.riot_id.includes("#")) {
-      if (had && S.games && S.games.length && S.acct) await refreshGames(); else await loadMe();
+      if (had && S.games && S.games.length && sameAcct()) await refreshGames(); else { S.games = null; S.league = null; await loadMe(); }
     }
   } catch (e) { S.err = e.message; render(); }
 }
@@ -452,7 +464,7 @@ async function loadPublic() {
   if (!(S.friends || []).length) return;
   try { S.pub = (await api("/api/public/profiles?ids=" + encodeURIComponent(S.friends.join(",")))).profiles || {}; render(); } catch (e) {}
 }
-setInterval(() => { if (!document.hidden && token() && S.me) { loadPublic(); (S.friends || []).forEach(rid => liveCheck(rid)); } }, 60000);
+setInterval(() => { if (!document.hidden && token() && S.me) { loadPublic(); loadSocial(); (S.friends || []).forEach(rid => liveCheck(rid)); } }, 60000);
 // "playing right now" via Riot's official spectator API (works for every friend, also without Jungle Coach)
 async function liveCheck(rid) {
   const d = S.fdata[rid]; if (!d || !d.acct) return;
@@ -547,6 +559,100 @@ async function moreFriendGames(rid) {
 }
 async function saveFriends(list) {  // returns after the server confirmed
   S.friends = (await api("/api/sync/friends", {method: "PUT", body: JSON.stringify({friends: list})})).friends; render();
+}
+
+
+// ---- several LoL accounts per Moosi account
+const sameAcct = () => S.acct && S.me && `${S.acct.gameName}#${S.acct.tagLine}`.toLowerCase() === (S.me.riot_id || "").toLowerCase();
+async function loadAccts() { try { S.accts = await api("/api/sync/accounts"); render(); } catch (e) {} }
+async function putAccts(accounts, main) {
+  S.accts = await api("/api/sync/accounts", {method: "PUT", body: JSON.stringify({accounts, main})});
+  if ((S.accts.main || "") !== (S.me.riot_id || "")) {
+    S.me.riot_id = S.accts.main;
+    const a = S.accts.accounts.find(x => x.rid === S.accts.main);
+    if (a && a.plat) LS.set("jc_platform", a.plat);
+    S.acct = null; S.games = null; S.league = null; S.gamesMore = 20; S.gamesEnd = false; S.coach = S.coach;
+    render.toTop = true; render(); if (S.me.riot_id) loadMe();
+  } else render();
+}
+async function switchAcct(rid) { if (rid === S.me.riot_id) return; try { await putAccts(S.accts.accounts, rid); toast("Konto: " + rid.split("#")[0]); } catch (e) { toast("Fehler: " + e.message); } }
+async function addAcct() {
+  const v = $("#aadd").value.trim(), plat = $("#aplat").value;
+  if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return toast("Riot ID im Format Name#TAG");
+  const list = (S.accts && S.accts.accounts) || [];
+  if (list.length >= 5) return toast("Maximal 5 Konten");
+  try { await putAccts([...list, {rid: v, plat}], S.me.riot_id || v); $("#aadd").value = ""; toast("Konto hinzugefügt"); } catch (e) { toast("Fehler: " + e.message); }
+}
+function delAcct(rid) {
+  ask(`${rid} aus deinem Moosi-Konto entfernen?`, "Entfernen", async () => {
+    const list = S.accts.accounts.filter(a => a.rid !== rid);
+    try { await putAccts(list, rid === S.me.riot_id ? (list[0] || {}).rid : S.me.riot_id); } catch (e) { toast("Fehler: " + e.message); }
+  });
+}
+function acctsCard() {
+  const list = (S.accts && S.accts.accounts) || [];
+  return `<div class="card"><h3>Deine LoL-Konten</h3><p class="muted small" style="margin:0 0 8px">Bis zu 5 Konten (z. B. Main und Smurf). Tippen zum Wechseln.</p>
+    ${list.map(a => `<div class="acct ${a.rid === S.me.riot_id ? "on" : ""}" onclick='switchAcct(${JSON.stringify(a.rid)})'>
+      <span class="adot"></span><div style="flex:1;min-width:0"><b>${esc(a.rid.split("#")[0])}</b><span class="muted small"> #${esc(a.rid.split("#")[1] || "")} · ${PLATFORMS[a.plat || platform()] || ""}</span></div>
+      ${a.rid === S.me.riot_id ? '<span class="rchip">Aktiv</span>' : ""}<button class="x" onclick='event.stopPropagation();delAcct(${JSON.stringify(a.rid)})' aria-label="Entfernen">×</button></div>`).join("")}
+    ${list.length < 5 ? `<div style="display:flex;gap:8px;margin-top:10px"><input id="aadd" placeholder="Weiteres Konto: Name#TAG" style="flex:1;min-width:0">
+      <select id="aplat" style="width:86px">${Object.entries(PLATFORMS).map(([k, v]) => `<option value="${k}" ${k === platform() ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <button class="btn sec" style="margin-top:8px" onclick="addAcct()">Konto hinzufügen</button>` : ""}</div>`;
+}
+function acctSwitch() {   // small switcher on Home / Games when more than one account
+  const list = (S.accts && S.accts.accounts) || [];
+  if (list.length < 2) return "";
+  return `<div class="hscroll aswitch">${list.map(a => `<button class="chip ${a.rid === S.me.riot_id ? "on" : ""}" onclick='switchAcct(${JSON.stringify(a.rid)})'>${esc(a.rid.split("#")[0])}</button>`).join("")}</div>`;
+}
+
+// ---- Moosi friends: request -> accept
+S.soc = {friends: [], incoming: [], outgoing: []}; S.socQ = ""; S.socRes = null;
+async function loadSocial() {
+  try {
+    const before = (S.soc.friends || []).length;
+    S.soc = await api("/api/social/list");
+    if (S.soc.friends.length !== before) api("/api/sync/friends").then(f => { S.friends = f.friends || []; loadPublic(); snapSave(); render(); }).catch(() => {});
+    render();
+  } catch (e) {}
+}
+let socT = 0;
+function socSearch(v) {
+  S.socQ = v; clearTimeout(socT);
+  if (v.trim().length < 3) { S.socRes = null; return render(); }
+  socT = setTimeout(async () => {
+    try { const r = await api("/api/social/search?q=" + encodeURIComponent(v.trim())); if (S.socQ === v) { S.socRes = r.results; render(); } } catch (e) {}
+  }, 300);
+}
+async function socAct(kind, uid, accept) {
+  try {
+    const r = await api("/api/social/" + kind, {method: "POST", body: JSON.stringify({uid, accept})});
+    if (S.socRes) S.socRes = S.socRes.map(x => x.uid === uid ? {...x, rel: r.rel} : x);
+    hap("success");
+    toast(r.rel === "friend" ? "Ihr seid jetzt Freunde" : r.rel === "out" ? "Anfrage gesendet" : "Erledigt");
+    await loadSocial();
+    if (r.rel === "friend" || kind === "remove") { const f = await api("/api/sync/friends"); S.friends = f.friends || []; loadPublic(); render(); }
+  } catch (e) { toast("Fehler: " + e.message); }
+}
+const socRow = (u, btns) => `<div class="lb">${avatar(u.avatar, "", null)}<div style="flex:1;min-width:0"><b>${esc(u.name)} ${roleChip(u.role)}</b>
+  <div class="muted small">${esc(u.riot_id || "noch keine Riot ID")}</div></div>${btns}</div>`;
+function relBtn(u) {
+  if (u.rel === "friend") return '<span class="rchip">Freund</span>';
+  if (u.rel === "out") return `<button class="btn sec mini" onclick="socAct('remove',${u.uid})">Angefragt ✓</button>`;
+  if (u.rel === "in") return `<button class="btn mini" onclick="socAct('respond',${u.uid},true)">Annehmen</button>`;
+  return `<button class="btn mini" onclick="socAct('request',${u.uid})">Anfragen</button>`;
+}
+function socialCards() {
+  const inc = S.soc.incoming || [], out = S.soc.outgoing || [], q = S.socQ.trim(), isRid = /^[^#]{1,24}#[^#]{1,8}$/.test(q);
+  let h = "";
+  if (inc.length) h += `<div class="card hi ani"><h3>Freundschaftsanfragen <span class="badge">${inc.length}</span></h3>
+    ${inc.map(u => socRow(u, `<button class="btn mini" onclick="socAct('respond',${u.uid},true)">Annehmen</button><button class="x" onclick="socAct('respond',${u.uid},false)" aria-label="Ablehnen">×</button>`)).join("")}</div>`;
+  h += `<div class="card"><h3>Freunde finden</h3><p class="muted small" style="margin:0 0 8px">Suche nach Moosi-Name oder Riot ID. Die andere Person muss annehmen.</p>
+    <input id="fadd" placeholder="Name oder Name#TAG" value="${esc(S.socQ)}" oninput="socSearch(this.value)" autocapitalize="off" spellcheck="false">
+    ${S.socRes ? (S.socRes.length ? S.socRes.map(u => socRow(u, relBtn(u))).join("") : `<p class="muted small" style="margin:10px 0 0">Kein Moosi-Spieler gefunden.</p>`) : ""}
+    ${isRid ? `<button class="btn sec" style="margin-top:10px" onclick="addF()">${esc(q)} ohne Moosi hinzufügen (nur Stats)</button>` : ""}
+    ${out.length ? `<div class="muted small" style="margin-top:12px">Offene Anfragen</div>${out.map(u => socRow(u, `<button class="btn sec mini" onclick="socAct('remove',${u.uid})">Zurückziehen</button>`)).join("")}` : ""}
+    ${S.friends && !S.friends.length && !q ? '<p class="muted small" style="margin:10px 0 0">Noch keine Freunde – such jemanden und vergleicht euch.</p>' : ""}</div>`;
+  return h;
 }
 
 // ---- views
@@ -741,12 +847,14 @@ function vHome() {
       ${c.confidence ? `<p class="muted small" style="margin:4px 0 0">⚖️ ${esc(c.confidence)}</p>` : ""}</div>`;
   if (c && (c.progress || []).length) h += `<div class="card"><h3>Fortschritt</h3>${c.progress.slice(0, 2).map(pr => spark(pr)).join("")}</div>`;
   if (!S.me.riot_id) h += setupCard();
+  h = acctSwitch() + h;
   return h;
 }
 function vGames() {
   if (!S.me.riot_id) return `<h1>Games</h1>${setupCard()}`;
+  const sw = acctSwitch();
   const gs = S.games;
-  return `<h1>Deine <span class="g">Games</span></h1><p class="sub">Alle Queues · tippe für Details</p>${S.err ? `<div class="card red">${esc(S.err)}</div>` : ""}
+  return `<h1>Deine <span class="g">Games</span></h1><p class="sub">Alle Queues · tippe für Details</p>${sw}${S.err ? `<div class="card red">${esc(S.err)}</div>` : ""}
     ${gs ? gs.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") + `<button class="btn sec" onclick="moreGames()" ${S.moreBusy ? "disabled" : ""}>${S.moreBusy ? "Lädt …" : S.gamesEnd ? "Keine älteren Games" : "Mehr laden"}</button>`
       : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'}`;
 }
@@ -856,8 +964,7 @@ function vFriends() {
             <div class="dots sm">${e.a ? e.a.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("") : '<span class="muted small">' + (e.err ? esc(e.err) : "lädt …") + "</span>"}</div></div>
           <div class="lbv">${L.show(e)}</div></div>`; }).join("")}
       ${top.length > 1 ? `<button class="btn sec" style="margin-top:12px" onclick="share(shareBoard())">Rangliste teilen</button>` : ""}</div>
-    <div class="card"><h3>Freund hinzufügen</h3><div style="display:flex;gap:8px"><input id="fadd" placeholder="Name#TAG"><button class="btn" style="width:auto;padding:0 18px" onclick="addF()">+</button></div>
-      ${fl && !fl.length ? '<p class="muted small" style="margin:10px 0 0">Noch keine Freunde – füge eine Riot ID hinzu und vergleicht euch.</p>' : ""}</div>`;
+    ${socialCards()}`;
 }
 function shareBoard() {
   const L = leaderboard();
@@ -902,11 +1009,12 @@ function ask(text, okLabel, onOk) {
 }
 async function removeF(rid) {
   ask(`${rid.split("#")[0]} aus deinen Freunden entfernen?`, "Entfernen", async () => {
-    try { await saveFriends(S.friends.filter(f => f !== rid)); delete S.fdata[rid]; S.view = null; render(); toast("Entfernt"); }
+    try { const mf = (S.soc.friends || []).find(u => (u.riot_id || "").toLowerCase() === rid.toLowerCase()); if (mf) await api("/api/social/remove", {method: "POST", body: JSON.stringify({uid: mf.uid})});
+      await saveFriends(S.friends.filter(f => f !== rid)); delete S.fdata[rid]; S.view = null; render(); toast("Entfernt"); }
     catch (e) { toast("Fehler: " + e.message); }
   });
 }
-function addF() { const v = $("#fadd").value.trim(); if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return toast("Riot ID im Format Name#TAG"); saveFriends([...(S.friends || []), v]); }
+function addF() { const v = $("#fadd").value.trim(); if (!/^[^#]{1,24}#[^#]{1,8}$/.test(v)) return toast("Riot ID im Format Name#TAG"); saveFriends([...(S.friends || []), v]).then(() => { S.socQ = ""; S.socRes = null; render(); }); }
 function setupCard() {
   return `<div class="card"><h3>Riot ID verbinden</h3><p class="muted small" style="margin:0">Damit ich deine Games laden kann.</p>
     <label>Riot ID</label><input id="rid" placeholder="Name#TAG" value="${esc(S.me.riot_id || "")}">
@@ -1100,8 +1208,8 @@ function keyCard() {
 }
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
-    <div class="row"><span>Riot ID</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
-    ${notesCard()}${pushCard()}${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
+    <div class="row"><span>Aktives Konto</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
+    ${acctsCard()}${notesCard()}${pushCard()}${keyCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
     <p class="muted small" style="text-align:center;margin-top:18px"><a style="color:var(--sec)" href="/datenschutz.html">Datenschutz</a> · <a style="color:var(--sec)" href="/impressum.html">Impressum</a><br>Moosi ist nicht mit Riot Games verbunden.</p>`;
 }
 function vLogin() {
@@ -1232,7 +1340,7 @@ function renderInner() {
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""} ${k === "friends" && (S.soc.incoming || []).length ? "dotb" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
   afterRender(app);
   if (document.activeElement && document.activeElement.id === "radd") return;   // don't wipe what is being typed
