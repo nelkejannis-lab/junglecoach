@@ -39,9 +39,11 @@ def ensure_config():
             if k not in user or (k in ("champion_pool", "server_url") and not user.get(k)):
                 user[k] = v
                 changed = True
-        built_in = default.get("riot_api_key", "")
-        if built_in and (not user.get("riot_api_key") or user.get("_key_from_build") and user["riot_api_key"] != built_in):
-            user["riot_api_key"], user["_key_from_build"] = built_in, True
+        # Riot's policy: no API key inside a distributed app. Older versions shipped one – remove it again
+        # (a key the user typed in himself stays). Riot data then comes through the Moosi server after login.
+        if user.get("_key_from_build"):
+            user.pop("_key_from_build", None)
+            user["riot_api_key"] = ""
             changed = True
         if changed:
             with open(path, "w", encoding="utf-8") as f:

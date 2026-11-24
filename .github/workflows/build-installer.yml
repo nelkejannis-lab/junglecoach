@@ -23,11 +23,6 @@ jobs:
       - name: Check ffmpeg GPU capture support
         run: python -c "import imageio_ffmpeg,subprocess;e=imageio_ffmpeg.get_ffmpeg_exe();f=subprocess.run([e,'-hide_banner','-filters'],capture_output=True,text=True).stdout;c=subprocess.run([e,'-hide_banner','-encoders'],capture_output=True,text=True).stdout;print('FFMPEG', subprocess.run([e,'-version'],capture_output=True,text=True).stdout.splitlines()[0]);print('DDAGRAB', 'ddagrab' in f, 'NVENC', 'h264_nvenc' in c, 'AMF', 'h264_amf' in c, 'QSV', 'h264_qsv' in c)"
       - run: python -m unittest discover tests
-      - name: Built-in Riot API key (from repo secret RIOT_API_KEY)
-        env:
-          RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
-        run: |
-          python -c "import json,os; k=os.environ.get('RIOT_API_KEY','').strip(); c=json.load(open('config.json',encoding='utf-8')); c['riot_api_key']=k; json.dump(c,open('config.json','w',encoding='utf-8'),indent=2); print('key built in' if k else 'no key secret set')"
       - run: >
           python -m PyInstaller --noconfirm --clean --windowed --name Moosi --icon assets\icon.ico
           --add-data "jc\static;jc\static" --add-data "config.json;."
