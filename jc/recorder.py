@@ -156,7 +156,23 @@ def game_region():
         h = min(win[3], m[3]) - max(win[1], m[1])
         w, h = w - w % 2, h - h % 2
         full = w >= (m[2] - m[0]) - 2 and h >= (m[3] - m[1]) - 2
-        return {"idx": idx, "x": x, "y": y, "w": w, "h": h, "full": full} if w > 200 and h > 200 else None
+        return {"idx": idx, "x": x, "y": y, "w": w, "h": h, "full": full,
+                "ax": max(win[0], m[0]), "ay": max(win[1], m[1])} if w > 200 and h > 200 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def primary_size():
+    """Physical size of the main screen (starts at 0,0) – recorded when the game window isn't found."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        try:
+            u.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:  # noqa: BLE001
+            pass
+        w, h = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+        return (w - w % 2, h - h % 2) if w > 200 and h > 200 else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -206,8 +222,13 @@ def pick_pipeline(exe, fps, width, region=None):
         if _probe(exe, ["-f", "lavfi", "-i", "color=black:s=320x240"] + ["-c:v", e]):
             enc = e
             break
-    target = f"title={GAME_TITLE}" if r else "desktop"  # only the game window, never all screens
-    _PIPE[key] = (["-f", "gdigrab", "-framerate", str(fps), "-draw_mouse", "1", "-i", target],
+    # only the game's rectangle (or the main screen) – "desktop" alone would record every monitor
+    if r and r.get("ax") is not None:
+        area = ["-offset_x", str(r["ax"]), "-offset_y", str(r["ay"]), "-video_size", f"{r['w']}x{r['h']}"]
+    else:
+        ps = primary_size()
+        area = ["-offset_x", "0", "-offset_y", "0", "-video_size", f"{ps[0]}x{ps[1]}"] if ps else []
+    _PIPE[key] = (["-f", "gdigrab", "-framerate", str(fps), "-draw_mouse", "1"] + area + ["-i", "desktop"],
                   ["-vf", f"scale={width}:-2"], enc, "nv12" if enc == "h264_qsv" else "yuv420p")
     return _PIPE[key]
 
@@ -232,11 +253,19 @@ class Recorder:
         exe = ffmpeg_exe()
         if not exe or not self.cfg["enabled"]:
             return False
+        region = game_region()
         sid = time.strftime("%Y-%m-%d_%H-%M-%S")
         d = os.path.join(REC_DIR, sid)
-        os.makedirs(d, exist_ok=True)
         full = os.path.join(d, "full.mp4")
-        region = game_region()
+        if not region and sys.platform == "win32":
+            # the game window appears a moment after loading: try again on the next tick (max. 20 s),
+            # instead of recording the whole desktop
+            first = getattr(self, "_wait_since", None) or time.time()
+            self._wait_since = first
+            if time.time() - first < 20:
+                return False
+        self._wait_since = None
+        os.makedirs(d, exist_ok=True)
         exe_ok = exe
         fps = 30 if self.cfg["fps"] == "auto" else int(self.cfg["fps"])
         inp, vf, enc, pix = pick_pipeline(exe_ok, fps, int(self.cfg.get("width") or 1280), region)
