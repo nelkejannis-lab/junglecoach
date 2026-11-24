@@ -46,7 +46,7 @@ def gold_per_min(live, gold, bench=None, role=None):
     return {"value": gpm, "rate": rate, "target": round(p50 * f)}
 
 
-def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None):
+def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None, hide=()):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
     prompts = []  # (priority, text, color)
@@ -63,6 +63,8 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
         o["soon"] = left <= 60
         if o["in"] in ("jetzt", "now"):
             o["in"] = T("jetzt", "now")
+        if "timers" in hide:   # Riot-safe mode: no objective timers, also not inside hints
+            continue
         if left <= 60:
             prompts.append((1, T(f"{o['label']} in {o['in']} – Wave pushen lassen, Sicht setzen, mit vollem Leben hin",
                                   f"{o['label']} in {o['in']} – have lanes push, set vision, arrive with full health"), "warn"))
@@ -98,6 +100,8 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
     # ---- enemy jungler (kill feed)
     ej = live.get("enemy_jungler") or {}
     seen = (ej.get("last_seen") or [])
+    if "enemy_jg" in hide:   # Riot-safe mode: nothing about the enemy jungler in hints
+        seen, ej = [], {}
     if seen and seen[0]["where"] not in ("gestorben", "?"):
         ago = t - seen[0].get("t", t)
         if ago <= 45:

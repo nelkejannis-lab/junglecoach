@@ -163,6 +163,9 @@ class Tests(unittest.TestCase):
         self.assertTrue(any("Clear-Tempo" in t for t in lines))
         self.assertTrue(out["hud"]["now"]["text"])
         self.assertEqual(overlay.format_lines({"live": None}), [])
+        safe = hud.build(out, GD, 5000, out["_owned"], None, hide={"timers", "enemy_jg"})
+        texts = [safe["now"]["text"]] + [m["text"] for m in safe["more"]]
+        self.assertFalse(any("Gegner-Jungler" in t or "Drache in" in t for t in texts))
 
     def test_review(self):
         def frame(m, x, y, gold, jcs):

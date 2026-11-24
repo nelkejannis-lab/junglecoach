@@ -629,7 +629,8 @@ def poll_loop(gd, cfg, lcu):
                             except Exception:  # noqa: BLE001
                                 pass
                         live_state["hud"] = hud.build(live_state, gd, live_state.get("_gold"), live_state.get("_owned") or [],
-                                                      focus, step, GPM_BENCH.get(key), role, OVERLAY.get("pick"))
+                                                      focus, step, GPM_BENCH.get(key), role, OVERLAY.get("pick"),
+                                                      set((cfg.get("overlay") or {}).get("hide") or []))
                     except Exception as e:  # noqa: BLE001
                         live_state["hud"] = {"error": str(e)}
             # ---- automatic recording + mistake clips
