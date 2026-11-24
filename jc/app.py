@@ -30,9 +30,12 @@ EDITABLE = ["language", "role_auto", "main_role", "riot_id", "platform", "riot_a
 def riot_cred(cfg):
     """Own developer key if set, otherwise the logged-in session via the Jungle Coach server."""
     key = (cfg.get("riot_api_key") or "").strip()
-    if key.startswith("RGAPI-") and "xxxx" not in key:
+    logged_in = bool(cfg.get("auth_token") and cfg.get("server_url"))
+    # the key baked into the installer goes stale (dev keys: 24 h) – when logged in, the server's key
+    # (kept current by the admin in the app) is used instead; a key the user typed in still wins
+    if key.startswith("RGAPI-") and "xxxx" not in key and not (cfg.get("_key_from_build") and logged_in):
         return key
-    if cfg.get("auth_token") and cfg.get("server_url"):
+    if logged_in:
         return f"jc:{cfg['auth_token']}@{cfg['server_url']}"
     return None
 

@@ -13,7 +13,11 @@ function mockDB() {
         bind(...a) { args = a; return this; },
         async run() {
           if (sql.startsWith("CREATE TABLE")) return {};
+          if (sql.includes("INTO config (key, value) VALUES ('riot_key")) { (globalThis.__conf ||= {})[sql.match(/'(riot_key(?:_at)?)'/)[1]] = args[0]; return {}; }
+          if (sql.startsWith("DELETE FROM config")) { globalThis.__conf = {}; return {}; }
           if (sql.includes("INTO config")) { globalThis.__cfg = globalThis.__cfg || args[0]; return {}; }
+          if (sql.startsWith("UPDATE users SET is_admin")) { users.find((u) => u.id === args[0]).is_admin = 1; return {}; }
+          if (sql.startsWith("ALTER TABLE users")) return {};
           if (sql.startsWith("INSERT INTO users")) {
             const [provider, pid, name, c, l] = args;
             const ex = users.find((u) => u.provider === provider && u.provider_id === pid);
@@ -44,6 +48,8 @@ function mockDB() {
           return { results: [] };
         },
         async first() {
+          if (sql.includes("FROM config WHERE key = 'riot_key")) { const k = sql.match(/'(riot_key(?:_at)?)'/)[1]; const v = (globalThis.__conf || {})[k]; return v ? { value: v } : null; }
+          if (sql.includes("WHERE is_admin = 1")) return users.find((u) => u.is_admin) || null;
           if (sql.includes("FROM config")) return this.cfg ?? (globalThis.__cfg ? { value: globalThis.__cfg } : null);
           if (sql.includes("FROM avatars")) return avatars.get(args[0]) || null;
           if (sql.includes("FROM user_data")) {
@@ -201,4 +207,31 @@ test("own riot key per user: stored, used by the proxy, expired key -> 502 not 4
   assert.equal((await r.json()).own, true);
   r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "DELETE", headers: H }), env, ctx);
   assert.equal((await r.json()).set, false);
+});
+
+test("admin: one-time claim, global riot key used for everyone", async () => {
+  env.DB.users.push({ id: 201, provider: "google", provider_id: "adm", name: "A", riot_id: null, created_at: 1, last_login: 1 });
+  env.DB.users.push({ id: 202, provider: "google", provider_id: "oth", name: "B", riot_id: null, created_at: 1, last_login: 1 });
+  const cfgRow = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  const HA = { authorization: "Bearer " + await sign({ uid: 201, exp: Date.now() / 1000 + 600 }, cfgRow.value) };
+  const HB = { authorization: "Bearer " + await sign({ uid: 202, exp: Date.now() / 1000 + 600 }, cfgRow.value) };
+  let r = await worker.fetch(new Request("https://jc.dev/api/admin/riotkey", { headers: HA }), env, ctx);
+  assert.equal(r.status, 403);
+  r = await worker.fetch(new Request("https://jc.dev/api/admin/claim", { method: "POST", headers: HA }), env, ctx);
+  assert.equal(r.status, 200);
+  r = await worker.fetch(new Request("https://jc.dev/api/admin/claim", { method: "POST", headers: HB }), env, ctx);
+  assert.equal(r.status, 403);
+  const key = "RGAPI-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  globalThis.fetch = async () => new Response("{}", { status: 200 });
+  r = await worker.fetch(new Request("https://jc.dev/api/admin/riotkey", { method: "PUT", headers: HA, body: JSON.stringify({ key }) }), env, ctx);
+  const j = await r.json();
+  assert.equal(j.set, true); assert.equal(j.tail, "eeee");
+  r = await worker.fetch(new Request("https://jc.dev/api/admin/riotkey", { method: "PUT", headers: HB, body: JSON.stringify({ key }) }), env, ctx);
+  assert.equal(r.status, 403);
+  let used = null;
+  globalThis.fetch = async (u, opt) => { used = opt.headers["X-Riot-Token"]; return new Response("{}", { status: 200 }); };
+  r = await worker.fetch(new Request("https://jc.dev/riot/euw1/lol/league/v4/entries/by-puuid/other", { headers: HB }), env, ctx);
+  assert.equal(used, key);
+  r = await worker.fetch(new Request("https://jc.dev/api/me", { headers: HA }), env, ctx);
+  assert.equal((await r.json()).is_admin, true);
 });

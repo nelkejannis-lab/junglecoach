@@ -109,6 +109,55 @@ async function secret(env) {
   return cachedSecret;
 }
 
+// ------------------------------------------------------------------ admin: server-wide Riot key from inside the app
+// There is exactly one admin: the first account that claims it (one time, while no admin exists).
+let adminColDone = false;
+async function ensureAdminCol(env) {
+  if (adminColDone) return;
+  try { await env.DB.prepare("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0").run(); } catch { /* exists */ }
+  adminColDone = true;
+}
+async function adminClaim(env, user) {
+  const any = await env.DB.prepare("SELECT id FROM users WHERE is_admin = 1").first();
+  if (any && any.id !== user.id) return json({ error: "Es gibt bereits einen Admin." }, 403);
+  await env.DB.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").bind(user.id).run();
+  return json({ ok: true, is_admin: true });
+}
+async function adminInfo(env) {
+  const any = await env.DB.prepare("SELECT id FROM users WHERE is_admin = 1").first();
+  return json({ has_admin: !!any });
+}
+
+// Server-wide Riot key set by the admin (D1 config), falls back to the Cloudflare secret.
+let gKey = { v: null, at: 0 };
+async function globalRiotKey(env) {
+  if (Date.now() - gKey.at < 30000) return gKey.v || env.RIOT_API_KEY;
+  try {
+    const row = await env.DB.prepare("SELECT value FROM config WHERE key = 'riot_key'").first();
+    gKey = { v: row && RIOT_KEY.test(row.value) ? row.value : null, at: Date.now() };
+  } catch { gKey = { v: null, at: Date.now() }; }
+  return gKey.v || env.RIOT_API_KEY;
+}
+async function adminRiotKey(req, env, user) {
+  if (!user.is_admin) return json({ error: "Nur für den Admin." }, 403);
+  if (req.method === "PUT") {
+    const key = String((await req.json().catch(() => ({}))).key || "").trim();
+    if (!RIOT_KEY.test(key)) return json({ error: "Das ist kein gültiger Riot-Key (Format RGAPI-xxxxxxxx-…)." }, 400);
+    // check that Riot accepts it before switching everyone over
+    const t = await fetch("https://euw1.api.riotgames.com/lol/status/v4/platform-data", { headers: { "X-Riot-Token": key } });
+    if (t.status === 401 || t.status === 403) return json({ error: `Riot lehnt diesen Key ab (${t.status}). Neu erzeugen und erneut eintragen.` }, 400);
+    await env.DB.prepare("INSERT INTO config (key, value) VALUES ('riot_key', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key).run();
+    await env.DB.prepare("INSERT INTO config (key, value) VALUES ('riot_key_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(String(Math.floor(Date.now() / 1000))).run();
+    gKey = { v: key, at: Date.now() };
+  } else if (req.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM config WHERE key IN ('riot_key', 'riot_key_at')").run();
+    gKey = { v: null, at: 0 };
+  }
+  const k = await env.DB.prepare("SELECT value FROM config WHERE key = 'riot_key'").first();
+  const at = await env.DB.prepare("SELECT value FROM config WHERE key = 'riot_key_at'").first();
+  return json({ set: !!(k && k.value), tail: k && k.value ? k.value.slice(-4) : null, at: at ? Number(at.value) : null });
+}
+
 // Why a token was rejected (for the login screen) – never reveals the secret.
 async function tokenWhy(token, env) {
   const parts = (token || "").split(".");
@@ -123,7 +172,9 @@ async function authUser(req, env) {
   const h = req.headers.get("authorization") || "";
   const p = await verify(h.replace(/^Bearer\s+/i, ""), await secret(env));
   if (!p) { req.jcAuthWhy = h ? await tokenWhy(h.replace(/^Bearer\s+/i, ""), env) : "kein Token gesendet"; return null; }
-  const u = await env.DB.prepare("SELECT id, provider, name, riot_id, created_at FROM users WHERE id = ?").bind(p.uid).first();
+  await ensureAdminCol(env);
+  const u = await env.DB.prepare("SELECT id, provider, name, riot_id, created_at, is_admin FROM users WHERE id = ?").bind(p.uid).first();
+  if (u) u.is_admin = !!u.is_admin;
   if (!u) req.jcAuthWhy = "Konto nicht gefunden";
   return u;
 }
@@ -177,7 +228,7 @@ async function riotProxy(req, url, env, ctx, user) {
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
   const own = await userRiotKey(env, user);
-  const r = await fetch(target, { headers: { "X-Riot-Token": own || env.RIOT_API_KEY, "User-Agent": "Moosi/1.0", Accept: "application/json" } });
+  const r = await fetch(target, { headers: { "X-Riot-Token": own || await globalRiotKey(env), "User-Agent": "Moosi/1.0", Accept: "application/json" } });
   // Riot rejecting OUR key (expired dev key) must not look like "your login is invalid" to the apps
   if (r.status === 401 || r.status === 403) {
     return json({ error: own ? "Dein eigener Riot-API-Key ist ungültig oder abgelaufen." : "Riot-API-Key des Servers ist ungültig oder abgelaufen.", riot_key: true, own: !!own,
@@ -354,7 +405,7 @@ export default {
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
       if (p === "/m") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
-      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/")) {
+      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen.", why: req.jcAuthWhy || "" }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
@@ -364,6 +415,9 @@ export default {
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
         if (p === "/api/sync/avatar") return await avatarPut(req, env, user);
         if (p === "/api/sync/riotkey") return await riotKeyEndpoint(req, env, user);
+        if (p === "/api/admin/riotkey") return await adminRiotKey(req, env, user);
+        if (p === "/api/admin/claim" && req.method === "POST") return await adminClaim(env, user);
+        if (p === "/api/admin") return await adminInfo(env);
         if (p === "/api/public/profiles" && req.method === "GET") return await publicProfiles(url, env);
         if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);

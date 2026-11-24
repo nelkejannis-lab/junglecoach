@@ -602,14 +602,52 @@ async function saveRK() {
   render();
 }
 function delRK() { ask("Eigenen Riot-Key entfernen? Dann wird wieder der Server-Key genutzt.", "Entfernen", async () => { try { RK = await api("/api/sync/riotkey", {method: "DELETE"}); RKmsg = "Entfernt."; } catch (e) {} render(); }); }
+// Admin: one account keeps the server-wide Riot key current for everyone, right here in the app
+let ADM = null, AK = null, AKmsg = "";
+async function loadAdm() {
+  try { ADM = await api("/api/admin"); if (S.me && S.me.is_admin) AK = await api("/api/admin/riotkey"); } catch (e) { ADM = {has_admin: true}; }
+  if (S.tab === "more") render();
+}
+function claimAdmin() {
+  ask("Dieses Konto zum Admin machen? Das geht nur einmal – danach kann nur dieses Konto den Server-Key ändern.", "Admin werden", async () => {
+    try { await api("/api/admin/claim", {method: "POST"}); S.me.is_admin = true; AKmsg = "Du bist jetzt Admin."; ADM = null; } catch (e) { AKmsg = "Geht nicht – es gibt schon einen Admin."; }
+    render();
+  });
+}
+async function saveAK() {
+  const v = (($("#akin") || {}).value || "").trim();
+  AKmsg = "Prüfe Key bei Riot …"; render();
+  const r = await fetch("/api/admin/riotkey", {method: "PUT", headers: {Authorization: "Bearer " + token(), "Content-Type": "application/json"}, body: JSON.stringify({key: v})});
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) { AK = j; AKmsg = "Gespeichert – gilt ab sofort für alle Nutzer, Handy und PC."; S.games = null; boot(); } else AKmsg = j.error || "Fehler " + r.status;
+  render();
+}
+function adminCard() {
+  if (ADM === null) { loadAdm(); return ""; }
+  if (S.me.is_admin) {
+    const ago = AK && AK.at ? Math.round((Date.now() / 1000 - AK.at) / 3600) : null;
+    return `<div class="card" style="border-color:rgba(45,212,191,.35)"><h3>👑 Admin · Server-Key für alle</h3>
+      <p class="muted small">Gilt sofort für alle Nutzer (Handy + PC) – kein Cloudflare, kein neuer Installer. Riot prüft den Key, bevor er übernommen wird.</p>
+      <div class="row"><span>Aktiv</span><b style="margin-left:auto">${AK && AK.set ? "…" + esc(AK.tail) + (ago != null ? ` · vor ${ago} h` : "") : "Cloudflare-Key"}</b></div>
+      ${ago != null && ago >= 20 ? `<p class="small" style="color:var(--orange,#fb923c)">Dev-Keys laufen nach 24 h ab – bald erneuern.</p>` : ""}
+      <input id="akin" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="RGAPI-…" style="width:100%;margin-top:10px">
+      <button class="btn" style="width:100%;margin-top:10px" onclick="saveAK()">Für alle übernehmen</button>
+      ${AKmsg ? `<p class="small" style="margin-top:8px">${esc(AKmsg)}</p>` : ""}</div>`;
+  }
+  if (!ADM.has_admin) return `<div class="card"><h3>Admin</h3><p class="muted small">Noch kein Admin festgelegt. Der Admin kann den Riot-Key für alle Nutzer direkt hier in der App aktualisieren.</p>
+    <button class="btn sec" style="width:100%" onclick="claimAdmin()">Dieses Konto zum Admin machen</button>${AKmsg ? `<p class="small">${esc(AKmsg)}</p>` : ""}</div>`;
+  return "";
+}
 function keyCard() {
-  if (RK === null) { loadRK(); return ""; }
-  return `<div class="card"><h3>Riot-API-Key</h3>
+  if (RK === null) { loadRK(); return adminCard(); }
+  const admin = adminCard();
+  const own = `<div class="card"><h3>Eigener Riot-API-Key</h3>
     <p class="muted small">Optional. Trag hier deinen Key von developer.riotgames.com ein, wenn der Server-Key abgelaufen ist. Er wird verschlüsselt übertragen, nur für dein Konto genutzt und nie wieder komplett angezeigt. Entwickler-Keys laufen nach 24 Stunden ab.</p>
     ${RK.set ? `<div class="row"><span>Eigener Key aktiv</span><b style="margin-left:auto">…${esc(RK.tail)}</b></div>` : `<div class="row"><span>Aktuell</span><b style="margin-left:auto">Server-Key</b></div>`}
     <input id="rkin" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="RGAPI-…" style="width:100%;margin-top:10px">
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" style="flex:1" onclick="saveRK()">Speichern</button>${RK.set ? `<button class="btn sec" style="flex:1" onclick="delRK()">Entfernen</button>` : ""}</div>
     ${RKmsg ? `<p class="small" style="margin-top:8px">${esc(RKmsg)}</p>` : ""}</div>`;
+  return admin + own;
 }
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
