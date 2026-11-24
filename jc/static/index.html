@@ -79,6 +79,9 @@
   .enter .stat, .enter .row, .enter tr, .enter .lb, .enter .fcard { animation:rise .45s cubic-bezier(.2,.9,.25,1.15) both; animation-delay:calc(var(--i, 0) * 35ms + 80ms); }
   .enter .meter i { animation:grow .9s cubic-bezier(.2,.8,.2,1) both; transform-origin:left; animation-delay:.25s; }
   @keyframes grow { from { transform:scaleX(0); } }
+  .tgl { flex:none; width:46px; height:28px; border-radius:99px; border:0; background:rgba(255,255,255,.14); position:relative; cursor:pointer; padding:0; transition:background .2s; }
+  .tgl i { position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.3); transition:transform .25s cubic-bezier(.3,1.5,.5,1); }
+  .tgl.on { background:var(--green, #30d158); } .tgl.on i { transform:translateX(18px); }
   @keyframes modalIn { from { opacity:0; transform:translateY(22px) scale(.97); } 70% { transform:translateY(-2px) scale(1.004); } }
   .mmodal > .card { animation:modalIn .4s cubic-bezier(.2,1,.3,1); }
   .mmodal tr { animation:rise .4s cubic-bezier(.2,.9,.25,1.15) both; animation-delay:calc(var(--i, 0) * 30ms + 120ms); }
@@ -912,10 +915,11 @@ function deepCard(g) {
       <div><b>Deine 3 Prioritäten</b>${D.priorities.map((p, i) => `<div class="item"><div class="num">${i + 1}</div><div><div class="n">${esc(p.name)} <span class="${gradeCol(p.grade)}">${p.grade}</span></div><div class="w">${esc(p.advice)}</div></div></div>`).join("")}</div>
       <div><b>Gold vs Gegner-Jungler</b>${lineChart(D.curve.map(c => c.gold_diff), [0, 5, 10, 15, 20, 25, 30].filter(m => m < D.curve.length).map(m => [m, m + "'"]), {zero: true, h: 130})}
         <div class="stats"><div class="stat"><b>${D.stats.kp}%</b><span>Kill-Beteiligung</span></div><div class="stat"><b>${D.stats.vision_per_min}</b><span>Vision / Min</span></div><div class="stat"><b>${D.stats.jungle_cs_10}</b><span>Jungle-CS @10</span></div></div></div>
-      <div><b>Tode verstehen</b>${D.death_causes && Object.keys(D.death_causes).length ? `<div class="chips" style="margin:8px 0 4px">${Object.entries(D.death_causes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip" style="${k === "trade" ? "" : "border-color:rgba(251,113,133,.35)"}">${esc({trade: "Tausch", outnumbered: "Unterzahl", deep: "Tief im Gegner-Jungle", gold: "Gold nicht ausgegeben", level: "Level-Nachteil", vision: "Ohne Sicht", jungler: "Gegner-Jungler-Gank", duel: "Duell verloren"}[k] || k)} · ${n}×</span>`).join("")}</div>` : ""}
+      <div><b>Tode verstehen</b>${D.death_cost ? ` <span class="muted small">· zusammen ≈ ${D.death_cost.toLocaleString("de-DE")} Gold-Wert, teuerster zuerst</span>` : ""}${D.death_causes && Object.keys(D.death_causes).length ? `<div class="chips" style="margin:8px 0 4px">${Object.entries(D.death_causes).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip" style="${k === "trade" ? "" : "border-color:rgba(251,113,133,.35)"}">${esc({trade: "Tausch", outnumbered: "Unterzahl", deep: "Tief im Gegner-Jungle", gold: "Gold nicht ausgegeben", level: "Level-Nachteil", vision: "Ohne Sicht", jungler: "Gegner-Jungler-Gank", duel: "Duell verloren"}[k] || k)} · ${n}×</span>`).join("")}</div>` : ""}
         ${(D.deaths || []).length ? D.deaths.map(d => { const c = clipFor(d.t);
         return `<div style="padding:10px 12px;border-radius:14px;background:var(--card2);border:1px solid var(--sep);margin-top:8px">
-          <div class="row" style="border:0;padding:0"><span><b>${d.min}'</b> · ${esc(d.area)}</span>${d.cause_label ? `<span class="badge ${d.cause === "trade" ? "team" : "mu"}">${esc(d.cause_label)}</span>` : ""}</div>
+          <div class="row" style="border:0;padding:0"><span>${d.cost_rank === 1 && D.deaths.length > 1 ? '<span class="badge" style="background:rgba(255,69,58,.16);color:var(--red)">Teuerster Tod</span> ' : ""}<b>${d.min}'</b> · ${esc(d.area)}</span>${d.cause_label ? `<span class="badge ${d.cause === "trade" ? "team" : "mu"}">${esc(d.cause_label)}</span>` : ""}</div>
+          ${d.cost != null ? `<div class="small" style="margin-top:4px"><b class="${d.cost >= 1200 ? "red" : ""}">≈ ${d.cost.toLocaleString("de-DE")} Gold-Wert</b> <span class="muted">· ${d.dead_s}s tot (${d.missed} G verpasst) · ${d.bounty} G Kopfgeld${(d.lost || []).length ? " · danach verloren: " + esc(d.lost.join(", ")) : ""}</span></div>` : ""}
           ${d.facts ? `<div class="muted small" style="margin-top:4px">${esc(d.facts.join(" · "))}</div>` : `<div class="muted small">${esc(d.tags.join(" · "))}</div>`}
           ${d.tip ? `<div class="small" style="margin-top:6px">💡 ${esc(d.tip)}</div>` : ""}
           ${c ? `<a class="small" href="#" onclick='selClip={sid:${JSON.stringify(g.session_id)},file:${JSON.stringify(c.file)}};render();return false'>▶ Clip ansehen</a>` : ""}</div>`; }).join("") : '<p class="muted small">Keine Tode – stark!</p>'}
@@ -947,11 +951,39 @@ function renderAnalyse() {
   h += card("Was du ändern musst", "Muster über alle analysierten Games.", list(s.tips, t => `<li class="small">${esc(t)}</li>`));
   h += card("Games", "Antippen für Deep-Analyse und Clips.", list(r.games, (g, i) => `<li class="click ${i === selGame ? "sel" : ""}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
     <span class="${g.win ? "green" : "red"}">${g.win ? "Sieg" : "Niederlage"}</span> · ${esc(g.champion)} vs ${esc(g.enemy_jungler)} <span class="muted small">${esc(g.kda)}${g.deep ? " · Note " + g.deep.overall : ""}${g.clips ? " · 🎬" : ""}</span></li>`));
+  h += deathCompareCard(r.games);
   const g = r.games[selGame];
   if (g && g.deep) h += deepCard(g);
   if (!r.games.some(x => x.clips)) h += sessionsCards();
   return page("Analyse", "Deine letzten Ranked-Jungle-Games im Detail: Noten, Fehler und Clips.", h);
 }
+
+// your death causes per game vs. better players (winners one elo bracket higher, same role, from the crawler)
+let deathBench, deathBenchLoading = false;
+function deathCompareCard(games) {
+  const gs = (games || []).filter(g => g.deep && g.deep.death_causes);
+  if (!gs.length) return "";
+  if (deathBench === undefined && !deathBenchLoading) { deathBenchLoading = true;
+    getJson("/api/death-bench?role=JUNGLE").then(r => { deathBench = r.bench || null; deathBenchLoading = false; render(); }).catch(() => { deathBench = null; deathBenchLoading = false; }); }
+  const mine = {}; gs.forEach(g => Object.entries(g.deep.death_causes).forEach(([k, n]) => mine[k] = (mine[k] || 0) + n));
+  const B = deathBench && deathBench.per_game || {};
+  const keys = Object.keys(CAUSE_LBL).filter(k => (mine[k] || 0) > 0 || (B[k] || 0) >= .3);
+  const rows = keys.map(k => ({k, me: (mine[k] || 0) / gs.length, them: B[k]})).sort((a, b) => (b.me - (b.them || 0)) - (a.me - (a.them || 0)));
+  const max = Math.max(1, ...rows.map(r => Math.max(r.me, r.them || 0)));
+  const worst = rows.find(r => r.them != null && r.me - r.them >= .4);
+  const costly = gs.reduce((t, g) => t + (g.deep.death_cost || 0), 0) / gs.length;
+  return card("Tode: du vs. bessere Spieler", deathBench ? `Tode pro Game nach Ursache · ${gs.length} deiner Games vs. ${esc(deathBench.scope)} (${deathBench.games} Games)` :
+      `Tode pro Game nach Ursache · ${gs.length} deiner Games${deathBench === null ? " · Vergleichsdaten sammelt der Meta-Crawler gerade erst" : ""}`, `
+    ${rows.map(r => `<div style="padding:7px 0"><div class="row" style="border:0;padding:0"><span>${esc(CAUSE_LBL[r.k])}</span>
+      <span class="small"><b class="${r.them != null && r.me - r.them >= .4 ? "red" : ""}">${r.me.toFixed(1)}</b>${r.them != null ? ` <span class="muted">vs ${r.them.toFixed(1)}</span>` : ""}</span></div>
+      <div class="meter" style="height:6px"><i style="width:${100 * r.me / max}%;background:var(--orange)"></i></div>
+      ${r.them != null ? `<div class="meter" style="height:4px;margin-top:3px"><i style="width:${100 * r.them / max}%;background:var(--green)"></i></div>` : ""}</div>`).join("")}
+    <p class="small" style="margin-top:10px">${worst ? `👉 Größter Unterschied: <b>${esc(CAUSE_LBL[worst.k])}</b> – du ${worst.me.toFixed(1)}× pro Game, bessere Spieler ${worst.them.toFixed(1)}×.` : "Kein großer Unterschied zu besseren Spielern bei den Todesursachen."}
+      ${costly ? ` Deine Tode kosten im Schnitt ≈ ${Math.round(costly).toLocaleString("de-DE")} Gold-Wert pro Game.` : ""}</p>
+    <p class="muted small">Orange = du, grün = bessere Spieler. Ursachen aus Riots Match-Timeline geschätzt (Positionen nur minütlich).</p>`);
+}
+const CAUSE_LBL = {trade: "Tausch", outnumbered: "Unterzahl", deep: "Tief im Gegner-Jungle", gold: "Gold nicht ausgegeben",
+  level: "Level-Nachteil", vision: "Ohne Sicht", jungler: "Gegner-Jungler-Gank", duel: "Duell verloren"};
 
 // ------------------------------------------------------------ shared visuals
 const VER = () => state.version || (tierData[tierRole] || {}).version || (profData && profData.version) || "16.23.1";
@@ -1026,6 +1058,24 @@ function progCard(p) {
       ${pts.map(x => `<circle cx="${X(x.t)}" cy="${Y(x.v)}" r="3.2" fill="${x.win ? "var(--green)" : "var(--red)"}"/>`).join("")}</svg>
     <div class="row small" style="border:0;padding:4px 0 0"><span class="muted">Ziel ${esc(p.target_txt || "")} · im Ziel ${esc(p.hit)}</span><span class="muted">${p.games} Games</span></div></div>`;
 }
+// session recap on the PC (exact LP from the ranked tracker)
+let recapLoad = false;
+function pcRecap() {
+  if (!rankedData && !recapLoad) { recapLoad = true; getJson("/api/ranked").then(r => { rankedData = r; render(); }).catch(() => {}); }
+  const sm = rankedData && rankedData.summary; if (!sm) return "";
+  const d = new Date(); d.setHours(5, 0, 0, 0); if (new Date().getHours() < 5) d.setDate(d.getDate() - 1);
+  const gs = (sm.recent || []).filter(g => g.ts * 1000 >= d.getTime());
+  if (!gs.length) return "";
+  const w = gs.filter(g => g.win).length, l = gs.length - w, lp = gs.reduce((t, g) => t + g.lp, 0);
+  const mood = w > l ? "proud" : l >= w + 2 ? "worried" : gs.length >= 6 ? "sleepy" : "happy";
+  const say = mood === "proud" ? "Starke Session – genau so weiter." : mood === "worried" ? `${l} Niederlagen – kurze Pause, bevor es ein Tilt-Abend wird.`
+    : mood === "sleepy" ? `${gs.length} Games heute – die Konzentration lässt nach.` : "Solide Session – bleib bei deiner Aufgabe.";
+  return card("Heute", `${gs.length} Ranked-${gs.length === 1 ? "Game" : "Games"} seit 5 Uhr`, `<div style="display:flex;gap:18px;align-items:center">${moosi(mood, 84)}
+    <div style="flex:1"><div class="stats" style="margin-top:0"><div class="stat"><b><span class="green">${w}</span> – <span class="red">${l}</span></b><span>Sieg – Niederlage</span></div>
+      <div class="stat"><b class="${lp >= 0 ? "green" : "red"}">${lp > 0 ? "+" : ""}${lp}</b><span>LP heute</span></div>
+      <div class="stat"><b>${sm.streak > 0 ? sm.streak + "× W" : sm.streak < 0 ? -sm.streak + "× L" : "–"}</b><span>Serie</span></div></div>
+      <p class="small" style="margin:10px 0 0">${esc(say)}</p></div></div>`, true);
+}
 function coachBody(c, who) {
   const pt = c.player_type, cons = c.consistency, t = c.tilt;
   const counts = {}; (c.trend || []).forEach(g => g.champion && (counts[g.champion] = (counts[g.champion] || 0) + 1));
@@ -1036,6 +1086,7 @@ function coachBody(c, who) {
         <div class="meta"><span>${c.games} Games${(c.roles || []).length > 1 ? " · " + c.roles.map(r => ROLE_DE[r] || r).join(", ") : ""}</span>${c.account ? `<span>${esc(c.account)}</span>` : ""}
           <span>vs ${esc(c.scope)} · ${c.bench_games.toLocaleString("de-DE")} Games</span>${c.confidence ? `<span title="${esc(c.confidence)}">⚖️ ${esc(c.confidence.split(" – ")[0])}</span>` : ""}</div></div>
       ${cons ? ring(cons.score, "Konstanz", 110) : ""}</div></div>`;
+  if (!who) h += pcRecap();
   if (c.session_task) h += card("", "",
     `<div style="display:flex;gap:18px;align-items:center">${moosi(c.score >= 60 ? "proud" : "happy", 92)}<div style="flex:1"><div class="fcard"><div class="k">${who ? `Moosis Aufgabe für ${esc(who)}s nächste Session` : "Moosis Aufgabe für deine nächste Session"}</div><h4>${esc(c.session_task.title)}</h4><div class="drill">🎯 ${esc(c.session_task.drill)}</div>
       <div class="small muted">${esc(c.session_task.check)}</div></div></div></div>`, true);
@@ -1162,12 +1213,18 @@ async function ovSet(patch) {
 }
 function overlayCard() {
   const o = ovData, seg = (v, l) => `<button class="chip ${o.mode === v ? "on" : ""}" onclick="ovSet({mode:'${v}'})">${l}</button>`;
+  const hide = o.hide || [], rs = ["gold_diff", "enemy_jg", "timers"].every(k => hide.includes(k));
+  const tog = (on, js) => `<button class="tgl ${on ? "on" : ""}" onclick="${js}" aria-pressed="${on}"><i></i></button>`;
   return card("In-Game-Overlay", "Wann es erscheint, wo es steht, wie groß und durchsichtig es ist. Tab halten zeigt die Item-Auswahl: Item anklicken = wird als nächstes Item angezeigt. Strg+Shift+J blendet alles ein/aus.", `
     <div class="switch" style="border:0"><span>Anzeigen</span><div class="chips">${seg("always", "Immer sichtbar")}${seg("tab", "Nur solange Tab gedrückt")}</div></div>
     <div class="switch"><span>Größe <b>${Math.round((o.size || 1) * 100)}%</b></span>
       <input type="range" min="0.8" max="1.4" step="0.05" value="${o.size || 1}" onchange="ovSet({size:+this.value})"></div>
     <div class="switch"><span>Hintergrund-Deckkraft <b>${Math.round(o.opacity * 100)}%</b></span>
       <input type="range" min="0.3" max="1" step="0.02" value="${o.opacity}" onchange="ovSet({opacity:+this.value})"></div>
+    <div class="switch"><span>Riot-konformer Modus<br><span class="small muted">Blendet alles aus, was Riot für Overlays nicht erlaubt (Infos, die du im Spiel nicht selbst siehst). Empfohlen, sobald du einen Production Key beantragst.</span></span>
+      ${tog(rs, `ovSet({riot_safe:${!rs}})`)}</div>
+    ${[["gold_diff", "Team-/Jungle-Gold-Unterschied"], ["enemy_jg", "Gegner-Jungler & gefütterte Gegner"], ["timers", "Drachen-/Herold-/Baron-Timer"]].map(([k, l]) =>
+      `<div class="switch" style="padding-left:14px"><span class="small">${l}</span>${tog(!hide.includes(k), `ovSet({${k}:${hide.includes(k)}})`)}</div>`).join("")}
     <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
       <button class="btn ${o.move ? "" : "sec"}" onclick="ovSet({move:${!o.move}})">${o.move ? "Fertig – Position speichern" : "Position verschieben"}</button></div>`);
 }

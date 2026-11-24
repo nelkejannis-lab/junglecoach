@@ -18,6 +18,7 @@
  * Data minimisation: we store only provider, provider user id, display name, optional Riot ID
  * and timestamps. No e-mail, no password.
  */
+import { pushApi, pushInbox, scheduled as pushScheduled } from "./push.js";
 
 const APP_REDIRECTS = [/^http:\/\/(localhost|127\.0\.0\.1):87\d\d\/auth\/callback$/, /^junglecoach:\/\/auth$/];
 const allowedRedirect = (r, origin) => APP_REDIRECTS.some((re) => re.test(r)) || r === `${origin}/m/`;
@@ -393,6 +394,9 @@ async function publicProfiles(url, env) {
 
 // ------------------------------------------------------------------ router
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(pushScheduled(env, await globalRiotKey(env)).catch(() => {}));
+  },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
@@ -406,7 +410,8 @@ export default {
       if (url.hostname === "www.moosi.app") return Response.redirect(`https://moosi.app${p}${url.search}`, 301);
       if (p === "/m" || p === "/web" || p === "/app") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
-      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin")) {
+      if (p === "/api/push/inbox") return await pushInbox(url, env);
+      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin") || p.startsWith("/api/push/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen.", why: req.jcAuthWhy || "" }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
@@ -419,6 +424,7 @@ export default {
         if (p === "/api/admin/riotkey") return await adminRiotKey(req, env, user);
         if (p === "/api/admin/claim" && req.method === "POST") return await adminClaim(env, user);
         if (p === "/api/admin") return await adminInfo(env);
+        if (p.startsWith("/api/push/")) return await pushApi(req, env, user, p, url);
         if (p === "/api/public/profiles" && req.method === "GET") return await publicProfiles(url, env);
         if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);

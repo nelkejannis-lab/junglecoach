@@ -52,6 +52,13 @@
   }
 
 
+  .recap { background:linear-gradient(160deg,rgba(129,140,248,.14),rgba(45,212,191,.06)); border-color:rgba(129,140,248,.28); }
+  .rch { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; } .rch b { font-size:17px; }
+  .rcb { display:flex; gap:12px; align-items:flex-start; } .stats.four { grid-template-columns:repeat(2,1fr); }
+  @media (min-width: 600px) { .stats.four { grid-template-columns:repeat(4,1fr); } }
+  .tgl { flex:none; width:50px; height:30px; border-radius:99px; border:0; background:rgba(255,255,255,.14); position:relative; cursor:pointer; padding:0; margin-left:12px; }
+  .tgl i { position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.3); transition:transform .25s cubic-bezier(.3,1.5,.5,1); }
+  .tgl.on { background:var(--green); } .tgl.on i { transform:translateX(20px); }
   /* ---------- game detail ---------- */
   .mh { display:flex; gap:16px; align-items:center; justify-content:space-between; padding:18px; border-radius:22px; margin-bottom:12px;
     background:radial-gradient(120% 140% at 0% 0%, rgba(251,113,133,.22), rgba(255,255,255,.02) 60%); border:1px solid var(--line); }
@@ -564,8 +571,10 @@ function gameScores(info) {
       obj: cap((p.damageDealtToObjectives || 0) / Math.max(1, t.obj) / GS_REF.obj)};
     const pos = Object.entries(w).filter(([kk]) => kk !== "deaths").reduce((s, [, v]) => s + v, 0);
     const raw = Object.keys(x).reduce((s, kk) => s + w[kk] * x[kk], 0) - w.deaths * cap(d / Math.max(1, t.d) / GS_REF.deaths);
-    out[p.puuid] = {score: Math.round(10 * Math.max(1, Math.min(10, 8.4 * raw / pos + 1.2 + (p.win ? .4 : 0)))) / 10, win: !!p.win};
+    out[p.puuid] = {abs: 8.4 * raw / pos + 1.2 + (p.win ? .4 : 0), win: !!p.win};
   });
+  const mean = Object.values(out).reduce((t, v) => t + v.abs, 0) / Object.keys(out).length;   // same spread as jc/gamescore.py
+  Object.values(out).forEach(v => { v.score = Math.round(10 * Math.max(1, Math.min(10, 5.5 + (v.abs - mean) * 1.9 + (v.win ? .3 : -.3)))) / 10; delete v.abs; });
   const order = Object.keys(out).sort((a, b) => out[b].score - out[a].score);
   order.forEach((u, i) => { out[u].rank = i + 1; out[u].badge = null; });
   const bw = order.find(u => out[u].win);
@@ -667,6 +676,36 @@ function matchSheet() {
     <p class="muted small" style="margin:12px 2px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert. Spieler antippen für Rang und letzte Games.</p>
     <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button></div></div>`;
 }
+// ---- session recap: what happened today (games, LP, score, task) with Moosi's verdict
+function dayStart() { const d = new Date(); d.setHours(5, 0, 0, 0); if (new Date().getHours() < 5) d.setDate(d.getDate() - 1); return d.getTime(); }
+function lpToday() {
+  const c = S.coach, today = new Date().toISOString().slice(0, 10);
+  if (c && c.today_lp != null && c.lp_day === today) return c.today_lp;   // exact value from the PC tracker
+  const r = solo(S.league); if (!r) return null;
+  let snap; try { snap = JSON.parse(LS.get("jc_lp_day") || "null"); } catch (e) { snap = null; }
+  if (!snap || snap.day !== today) { LS.set("jc_lp_day", JSON.stringify({day: today, v: rankScore(r)})); return null; }
+  return rankScore(r) - snap.v;
+}
+function recapCard() {
+  const t0 = dayStart(), gs = (S.games || []).filter(g => (g.m.info.gameEndTimestamp || g.m.info.gameCreation) >= t0);
+  if (!gs.length) return "";
+  const w = gs.filter(g => g.p.win).length, l = gs.length - w, sc = gs.map(g => (gameScores(g.m.info)[g.p.puuid] || {}));
+  const avg = sc.reduce((t, v) => t + (v.score || 0), 0) / gs.length, mvp = sc.filter(v => v.badge).length;
+  const lp = lpToday(), task = S.coach && S.coach.session_task, done = task && !!LS.get(taskKey(task.title));
+  const mood = w > l && avg >= 5.5 ? "proud" : l >= w + 2 || avg < 4.2 ? "worried" : gs.length >= 6 ? "sleepy" : "happy";
+  const say = mood === "proud" ? (mvp ? `${mvp}× MVP – genau so weiter!` : "Starke Session – du spielst sauber.")
+    : mood === "worried" ? (l >= 3 ? `${l} Niederlagen – mach eine Pause, bevor es ein Tilt-Abend wird.` : "Zäher Tag. Schau dir den teuersten Tod im letzten Game an.")
+    : mood === "sleepy" ? `${gs.length} Games heute – Konzentration lässt nach, morgen weiter?` : "Solide Session – bleib bei deiner Aufgabe.";
+  return `<div class="card recap"><div class="rch"><b>Heute</b><span class="muted small">${gs.length} ${gs.length === 1 ? "Game" : "Games"} seit 5 Uhr</span></div>
+    <div class="rcb">${moosi(mood, 76)}<div style="flex:1;min-width:0">
+      <div class="stats four">
+        <div class="stat"><b><span class="green">${w}</span><span class="muted">–</span><span class="red">${l}</span></b><span>Sieg–Niederlage</span></div>
+        <div class="stat"><b class="${lp == null ? "" : lp >= 0 ? "green" : "red"}">${lp == null ? "–" : (lp > 0 ? "+" : "") + lp}</b><span>LP heute</span></div>
+        <div class="stat"><b>${avg.toFixed(1)}</b><span>Ø Score${mvp ? ` · ${mvp}× MVP` : ""}</span></div>
+        <div class="stat"><b class="${done ? "green" : "muted"}">${task ? (done ? "✓" : "offen") : "–"}</b><span>Aufgabe</span></div></div>
+      <div class="bubble" style="margin-top:10px">${esc(say)}</div></div></div>
+    <div class="dots" style="margin-top:12px">${gs.slice().reverse().map(g => `<i class="${g.p.win ? "w" : ""}"></i>`).join("")}</div></div>`;
+}
 function vHome() {
   const c = S.coach, r = solo(S.league), gs = S.games || [];
   const wins = gs.filter(g => g.p.win).length, counts = {};
@@ -677,6 +716,7 @@ function vHome() {
   let h = `<div class="hero"><div class="art" style="background-image:url('${pr.banner ? splash(pr.banner) : main ? splash(main) : ""}')"></div><div class="in">
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pr.avatar, "hav", main)}<span class="tag">${c && c.player_type ? "✦ " + esc(c.player_type.name) : "Dein Profil"}</span></div>
     <h2>${esc(pr.name || (S.me.riot_id || S.me.name || "").split("#")[0])} ${roleChip(pr.role)}</h2>${pr.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pr.bio)}</div>` : ""}<div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
+  h += recapCard();
   const tdone = task && !!LS.get(taskKey(task.title));
   h += `<div class="card moosi-card">${moosi(c && c.score >= 60 ? "proud" : "happy", 84)}<div class="bubble"><b>${task ? "Deine Aufgabe" : "Moosi"}</b>${task ? `<div style="display:flex;gap:10px;align-items:center"><div style="flex:1"><span class="tt ${tdone ? "done" : ""}">${esc(task.title + ": " + task.drill)}</span></div>
       <button class="chk ${tdone ? "done" : ""}" onclick="event.stopPropagation();toggleTask(this)" aria-label="Erledigt"><svg viewBox="0 0 40 40"><path d="M12 20.5l5.5 5.5L28.5 14.5"/></svg></button></div>`
@@ -925,6 +965,55 @@ function profEditor() {
     <label class="tg"><span>Zeigen, wenn ich spiele</span><input type="checkbox" id="pe_st" ${PE.show_status !== false ? "checked" : ""}></label>
     <button class="btn" style="margin-top:12px" onclick="saveProf()">Profil speichern</button></div>`;
 }
+// ---- push notifications (web app / home-screen app; not inside the iOS wrapper's web view)
+let PUSH = null;
+const inWrapper = () => !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin);
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const b64ToU8 = b => Uint8Array.from(atob(b.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b.length + 3) % 4)), c => c.charCodeAt(0));
+async function pushState() {
+  if (inWrapper() || !("serviceWorker" in navigator) || !("PushManager" in window)) { PUSH = {supported: false}; return render(); }
+  try {
+    const reg = await navigator.serviceWorker.register("/m/sw.js"), sub = await reg.pushManager.getSubscription();
+    PUSH = {supported: true, on: !!sub, perm: Notification.permission, prefs: JSON.parse(LS.get("jc_push_prefs") || '{"friends":true,"task":true}')};
+  } catch (e) { PUSH = {supported: false}; }
+  render();
+}
+async function pushOn() {
+  try {
+    if ((await Notification.requestPermission()) !== "granted") { PUSH.perm = "denied"; return render(); }
+    const reg = await navigator.serviceWorker.ready, key = (await api("/api/push/key")).key;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToU8(key)});
+    await api("/api/push/subscribe", {method: "POST", body: JSON.stringify({subscription: sub.toJSON(), prefs: PUSH.prefs})});
+    PUSH.on = true; toast("Benachrichtigungen an");
+  } catch (e) { toast("Ging nicht: " + e.message); }
+  render();
+}
+async function pushOff() {
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (sub) { await api("/api/push/subscribe", {method: "DELETE", body: JSON.stringify({endpoint: sub.endpoint})}).catch(() => {}); await sub.unsubscribe(); } } catch (e) {}
+  PUSH.on = false; render();
+}
+async function pushPref(k) {
+  PUSH.prefs[k] = !PUSH.prefs[k]; LS.set("jc_push_prefs", JSON.stringify(PUSH.prefs));
+  if (PUSH.on) try { const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    await api("/api/push/subscribe", {method: "POST", body: JSON.stringify({subscription: sub.toJSON(), prefs: PUSH.prefs})}); } catch (e) {}
+  render();
+}
+function pushCard() {
+  if (PUSH === null) { pushState(); return ""; }
+  const head = `<div class="card"><h3>Benachrichtigungen</h3>`;
+  if (!PUSH.supported) return head + `<p class="muted small" style="margin:0">${inWrapper()
+    ? "In dieser iPhone-App gehen Benachrichtigungen nicht (Apple erlaubt das nur mit Developer-Account). So bekommst du sie trotzdem: <b>moosi.app/web</b> in Safari öffnen → Teilen → „Zum Home-Bildschirm“ → dort hier einschalten (ab iOS 16.4)."
+    : isIOS() ? "Auf dem iPhone gehen Benachrichtigungen nur aus der Home-Bildschirm-App: in Safari Teilen → „Zum Home-Bildschirm“, dann dort einschalten (ab iOS 16.4)."
+    : "Dein Browser unterstützt keine Benachrichtigungen."}</p></div>`;
+  const tg = (on, js, l, d) => `<div class="tg" style="align-items:center"><span>${l}<br><span class="muted small">${d}</span></span><button class="tgl ${on ? "on" : ""}" onclick="${js}"><i></i></button></div>`;
+  return head + (PUSH.perm === "denied" ? `<p class="red small">Benachrichtigungen sind im Browser blockiert – in den Website-Einstellungen für moosi.app erlauben.</p>` : "")
+    + tg(PUSH.on, PUSH.on ? "pushOff()" : "pushOn()", "Benachrichtigungen", "auf diesem Gerät")
+    + (PUSH.on ? tg(PUSH.prefs.friends, "pushPref('friends')", "Freund spielt gerade", "wenn ein Freund ein Spiel startet")
+      + tg(PUSH.prefs.task, "pushPref('task')", "Aufgabe des Tages", "täglich um 17 Uhr")
+      + `<button class="btn sec" style="margin-top:12px" onclick="api('/api/push/test',{method:'POST'}).then(r=>toast(r.sent?'Gesendet':'Nicht angekommen')).catch(e=>toast(e.message))">Test-Benachrichtigung</button>` : "")
+    + `</div>`;
+}
 // Own Riot API key: stored on the Moosi server for this account, used for all your Riot requests (phone + PC)
 let RK = null, RKmsg = "";
 async function loadRK() { try { RK = await api("/api/sync/riotkey"); } catch (e) { RK = {set: false}; } if (S.tab === "more") render(); }
@@ -985,7 +1074,7 @@ function keyCard() {
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
     <div class="row"><span>Riot ID</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
-    ${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
+    ${pushCard()}${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
     <p class="muted small" style="text-align:center;margin-top:18px"><a style="color:var(--sec)" href="/datenschutz.html">Datenschutz</a> · <a style="color:var(--sec)" href="/impressum.html">Impressum</a><br>Moosi ist nicht mit Riot Games verbunden.</p>`;
 }
 function vLogin() {
@@ -1060,6 +1149,7 @@ function toggleTask(btn) {
   LS.set(k, done ? "1" : null);
   btn.classList.toggle("done", done);
   const tt = btn.parentElement.querySelector(".tt"); if (tt) tt.classList.toggle("done", done);
+  setTimeout(() => render(), 900);   // updates the "Heute" card
   if (!done) return hap("light");
   hap("success");
   btn.classList.remove("pop"); void btn.offsetWidth; btn.classList.add("pop");

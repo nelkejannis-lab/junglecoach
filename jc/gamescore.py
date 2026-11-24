@@ -12,6 +12,7 @@ W = {  # weights per role (deaths is a penalty)
     "JUNGLE": {"kp": .22, "kda": .16, "dmg": .14, "gold": .08, "cs": .08, "vis": .08, "tank": .08, "obj": .14, "deaths": .12},
     "UTILITY": {"kp": .26, "kda": .18, "dmg": .08, "gold": .04, "cs": .0, "vis": .24, "tank": .08, "obj": .04, "deaths": .10},
 }
+SPREAD = 1.9
 REF = {"kp": .8, "kda": 8, "dmg": .4, "gold": .3, "cs": 9, "tank": .35, "obj": .4, "deaths": .4}
 
 
@@ -53,8 +54,12 @@ def scores(info):
         }
         pos = sum(v for kk, v in w.items() if kk != "deaths")
         raw = sum(w[kk] * x[kk] for kk in x) - w["deaths"] * _cap(d / max(1, t["d"]) / REF["deaths"])
-        s = 8.4 * raw / pos + 1.2 + (0.4 if p.get("win") else 0)   # an average game lands around 5-6, a stomp ~9.5
-        out[p["puuid"]] = {"score": round(max(1.0, min(10.0, s)), 1), "win": bool(p.get("win"))}
+        out[p["puuid"]] = {"abs": 8.4 * raw / pos + 1.2 + (0.4 if p.get("win") else 0), "win": bool(p.get("win"))}
+    # spread: the absolute value alone bunches up around 5-6. Stretch every player's distance to the lobby
+    # average (x SPREAD) so a carry lands around 8-9 and a feeder around 2-3, while a close game stays close.
+    mean = sum(v["abs"] for v in out.values()) / len(out)
+    for v in out.values():
+        v["score"] = round(max(1.0, min(10.0, 5.5 + (v.pop("abs") - mean) * SPREAD + (0.3 if v["win"] else -0.3))), 1)
     order = sorted(out, key=lambda u: -out[u]["score"])
     for i, u in enumerate(order):
         out[u]["rank"] = i + 1

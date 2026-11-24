@@ -74,19 +74,22 @@ def model(state):
     now = h.get("now") or None
     ej = h.get("enemy_jg") or {}
     it = h.get("item") or None
+    hide = set((state or {}).get("ov_hide") or [])   # parts switched off in the settings (Riot-safe mode)
+    if "enemy_jg" in hide:
+        ej = {}
     return {
         "t": t, "time": h.get("time") or live.get("game_time"), "cs": h.get("cs", live.get("cs_per_min")),
         "cs_ok": h.get("cs_ok", True), "gold": h.get("gold"),
         "now": {"text": now["text"], "col": TONE.get(now.get("tone"), CYAN)} if now else None,
         "more": [m["text"] for m in (h.get("more") or [])][:1],
         "item": {"id": it.get("id"), "name": it["name"], "missing": it.get("missing"), "cost": it.get("cost")} if it else None,
-        "timers": [(o["label"], o["in"], bool(o.get("soon"))) for o in (h.get("timers") or [])][:3],
+        "timers": [] if "timers" in hide else [(o["label"], o["in"], bool(o.get("soon"))) for o in (h.get("timers") or [])][:3],
         "ej": (f"{ej['champion']} · Lvl {ej.get('level')} · " +
                (f"{ej['seen']}" if ej.get("seen") else t["unseen"])) if ej.get("champion") else None,
-        "fed": h.get("fed") or [],
+        "fed": [] if "enemy_jg" in hide else (h.get("fed") or []),
         "focus": f"{h['focus']['title']} · {h['focus']['target']}" if h.get("focus") else None,
         "mood": (now or {}).get("tone") or "calm",
-        "diff": h.get("gold_diff"),
+        "diff": None if "gold_diff" in hide else h.get("gold_diff"),
         "gpm": h.get("gpm"),
         "choices": h.get("choices") or [],
         "focus_t": (h.get("focus") or {}).get("title"),

@@ -250,6 +250,12 @@ def mobile_summary(plan):
                          "v": [round(x["v"], 2) for x in p["points"][-20:]], "w": [x["win"] for x in p["points"][-20:]]})
     if prog:
         out["progress"] = prog
+    try:  # today's LP change (exact, from the PC's ranked tracker) for the session recap on the phone
+        sm = ranked.summary(ranked.load_history(ranked.active_account(plan.get("account"))))
+        if sm:
+            out["today_lp"], out["lp_day"] = sm.get("today"), time.strftime("%Y-%m-%d")
+    except Exception:  # noqa: BLE001
+        pass
     out["at"] = time.time()
     return out
 
@@ -731,7 +737,8 @@ def make_handler(gd, cfg, lcu):
                 with LOCK:
                     from . import i18n
                     light = {k: v for k, v in STATE.items() if k != "review"}  # big analysis is loaded separately
-                    return self._send(200, dict(light, version=gd.version, lang=i18n.LANG["code"]))
+                    return self._send(200, dict(light, version=gd.version, lang=i18n.LANG["code"],
+                                                ov_hide=(cfg.get("overlay") or {}).get("hide", [])))
             if self.path == "/api/review-data":
                 with LOCK:
                     return self._send(200, STATE.get("review") or {})
@@ -840,6 +847,13 @@ def make_handler(gd, cfg, lcu):
                     return self._send(500, {"error": str(e)})
             if self.path.startswith("/api/test-key"):
                 return self._test_key(None)
+            if self.path.startswith("/api/death-bench"):
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    b = meta_stats(gd).death_benchmark((q.get("role") or ["JUNGLE"])[0], current_bracket(cfg))
+                except Exception:  # noqa: BLE001 - no data yet
+                    b = None
+                return self._send(200, {"bench": b})
             if self.path.startswith("/api/ranked"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 accs = ranked.accounts()
@@ -1052,11 +1066,18 @@ def make_handler(gd, cfg, lcu):
                     oc["x"], oc["y"], oc["abs"] = b["x"], b["y"], True
                 if "move" in b:
                     OVERLAY["move"] = bool(b["move"])
+                hide = set(oc.get("hide") or [])
+                for key in ("gold_diff", "enemy_jg", "timers"):   # single overlay parts on/off
+                    if key in b:
+                        (hide.discard if b[key] else hide.add)(key)
+                if "riot_safe" in b:   # one switch: only what Riot allows for overlays
+                    hide = {"gold_diff", "enemy_jg", "timers"} if b["riot_safe"] else set()
+                oc["hide"] = sorted(hide)
                 if "pick" in b:  # item chosen in the Tab picker (None = back to the build path)
                     OVERLAY["pick"] = int(b["pick"]) if str(b.get("pick") or "").isdigit() else None
                 save_config(cfg)
                 return self._send(200, {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
-                                        "size": oc.get("size", 1.0), "move": OVERLAY["move"]})
+                                        "size": oc.get("size", 1.0), "move": OVERLAY["move"], "hide": oc.get("hide", [])})
             if self.path == "/api/clip-feedback":
                 b = self._body()
                 ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))

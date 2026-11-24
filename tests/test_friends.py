@@ -231,3 +231,64 @@ class GameScoreTests(unittest.TestCase):
         self.assertTrue(all(0 <= v["score"] <= 10 for v in s.values()))
         self.assertGreater(s["sup"]["score"], s["l5"]["score"])
         print({k: v["score"] for k, v in s.items()})
+
+
+class DeathCostTests(unittest.TestCase):
+    def _game(self):
+        parts = [{"participantId": i, "teamId": 100 if i <= 5 else 200, "championName": f"C{i}", "puuid": f"p{i}",
+                  "teamPosition": ["JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"][(i - 1) % 5]} for i in range(1, 11)]
+        pf = {str(i): {"position": {"x": 7000 if i in (1, 6, 7) else 1000, "y": 7000 if i in (1, 6, 7) else 1000},
+                       "currentGold": 300, "level": 10} for i in range(1, 11)}
+        frames = [{"participantFrames": pf, "events": []} for _ in range(25)]
+        frames[20]["events"] = [
+            {"type": "CHAMPION_KILL", "victimId": 1, "killerId": 6, "assistingParticipantIds": [7], "timestamp": 1200000,
+             "position": {"x": 7000, "y": 7000}, "bounty": 300, "shutdownBounty": 450},
+            {"type": "ELITE_MONSTER_KILL", "killerTeamId": 200, "monsterType": "BARON_NASHOR", "timestamp": 1230000},
+            {"type": "CHAMPION_KILL", "victimId": 1, "killerId": 6, "assistingParticipantIds": [], "timestamp": 1260000,
+             "position": {"x": 1000, "y": 1000}, "bounty": 300}]
+        return {"info": {"participants": parts, "gameDuration": 1500}}, {"info": {"frames": frames}}
+
+    def test_cost_and_all_causes(self):
+        from jc import deep
+        m, tl = self._game()
+        frames = tl["info"]["frames"]
+        events = frames[20]["events"]
+        c = deep.death_cost(events[0], 1200, frames, 1, events, 100, 400)
+        self.assertEqual(c["bounty"], 750)
+        self.assertIn("Baron", c["lost"])
+        self.assertGreater(c["cost"], 750 + 1500)
+        allc = deep.death_causes_all(m, tl)
+        self.assertEqual(sum(allc[1].values()), 2)
+        self.assertEqual(sum(allc[6].values()), 0)
+
+
+class DeathBenchTests(unittest.TestCase):
+    def test_benchmark_from_crawled_games(self):
+        import json
+        import os
+        import tempfile
+        from jc import meta
+        db = meta.connect(os.path.join(tempfile.mkdtemp(), "m.db"))
+        for i in range(50):
+            st = {"kp": 50, "dc_outnumbered": 1 if i % 2 else 0, "dc_vision": 0, "dc_duel": 1}
+            db.execute("INSERT INTO games (match_id, champ, team, win, items, keystone, enemy, patch, created, tier, perks, enemies, role, stats, build) "
+                       "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (f"M{i}", "Graves", 100, 1, "[]", 0, "", "16.23", 0, "DIAMOND", None, "[]", "JUNGLE", json.dumps(st), None))
+        db.commit()
+        b = meta.MetaStats(None, db).death_benchmark("JUNGLE", "mid")
+        self.assertEqual(b["games"], 50)
+        self.assertAlmostEqual(b["per_game"]["outnumbered"], 0.5)
+        self.assertAlmostEqual(b["per_game"]["duel"], 1.0)
+
+
+class OverlayRiotSafeTests(unittest.TestCase):
+    def test_hidden_parts(self):
+        from jc import overlay
+        hud = {"gold_diff": {"team": 900, "jungle": -200}, "timers": [{"label": "Drache", "in": "0:45", "soon": True}],
+               "enemy_jg": {"champion": "Elise", "level": 9, "seen": "0:20 Top"}, "fed": ["Zed 6/1/2"], "gpm": {"value": 400}}
+        st = {"live": {"hud": hud}}
+        m = overlay.model(st)
+        self.assertTrue(m["diff"] and m["timers"] and m["ej"] and m["fed"])
+        m2 = overlay.model(dict(st, ov_hide=["gold_diff", "enemy_jg", "timers"]))
+        self.assertIsNone(m2["diff"]); self.assertEqual(m2["timers"], []); self.assertIsNone(m2["ej"]); self.assertEqual(m2["fed"], [])
+        self.assertEqual(m2["gpm"], {"value": 400})

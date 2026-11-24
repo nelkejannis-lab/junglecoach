@@ -66,6 +66,58 @@ def _near(frames, minute_a, minute_b, who, xy, radius=2200):
     return best is not None and best <= radius
 
 
+# respawn timer by level (Summoner's Rift, before the late-game time multiplier)
+_BRW = [10, 10, 12, 12, 14, 16, 20, 25, 28, 32.5, 35, 37.5, 40, 42.5, 45, 47.5, 50, 52.5]
+OBJ_VALUE = {"Drache": 600, "Elder-Drache": 1500, "Baron": 1500, "Herold": 500, "Voidgrubs": 300, "Atakhan": 900,
+             "Turm": 550, "Inhibitor": 700}
+
+
+def death_cost(ev, ts, frames, pid, events, team, gpm):
+    """What a death cost, in gold value: shutdown/bounty for the enemy + income missed while dead
+    (respawn timer x own gold/min) + objectives/towers the enemy took within 60 s afterwards."""
+    m = min(int(ts // 60), len(frames) - 1)
+    lvl = frames[m]["participantFrames"].get(str(pid), {}).get("level") or 1
+    dead = _BRW[min(max(lvl, 1), 18) - 1] * (1 + max(0, ts / 60 - 15) * 0.02)   # rough late-game increase
+    bounty = (ev.get("bounty") or 300) + (ev.get("shutdownBounty") or 0)
+    missed = round(dead * gpm / 60)
+    lost = []
+    for e in events:
+        dt = e.get("timestamp", 0) / 1000 - ts
+        if not 0 <= dt <= 60:
+            continue
+        if e.get("type") == "ELITE_MONSTER_KILL" and e.get("killerTeamId") not in (None, team):
+            raw = e.get("monsterSubType") or e.get("monsterType")
+            lost.append(OBJ_NAMES.get(raw, raw))
+        elif e.get("type") == "BUILDING_KILL" and e.get("teamId") == team:
+            lost.append("Turm" if e.get("buildingType") == "TOWER_BUILDING" else "Inhibitor")
+    obj = sum(OBJ_VALUE.get(x, 400) for x in lost)
+    return {"cost": bounty + missed + obj, "dead_s": round(dead), "bounty": bounty, "missed": missed, "lost": lost}
+
+
+def death_causes_all(match, timeline):
+    """Death causes for all 10 players of a game: {participantId: {cause: count}} (used by the crawler
+    to compare your causes with better players)."""
+    info, frames = match["info"], timeline["info"]["frames"]
+    parts = info["participants"]
+    team_of = {p["participantId"]: p["teamId"] for p in parts}
+    events = [ev for fr in frames for ev in fr.get("events", [])]
+    wards = {}
+    for e in events:
+        if e.get("type") == "WARD_PLACED" and e.get("wardType") != "UNDEFINED":
+            wards.setdefault(e.get("creatorId"), []).append(e["timestamp"] / 1000)
+    out = {p["participantId"]: {c: 0 for c in CAUSES} for p in parts}
+    for ev in events:
+        if ev.get("type") != "CHAMPION_KILL" or ev.get("victimId") not in out:
+            continue
+        v = ev["victimId"]
+        try:
+            c = death_context(ev, ev["timestamp"] / 1000, frames, parts, v, team_of[v], events, wards.get(v, []), team_of)["cause"]
+        except Exception:  # noqa: BLE001 - incomplete frames
+            continue
+        out[v][c] += 1
+    return out
+
+
 def death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of):
     """Why did you die? Built only from official timeline data (no visibility data exists there):
     who was involved, who was roughly nearby (minute positions, ±30 s), unspent gold, level gap,
@@ -188,8 +240,13 @@ def deep_analyze(match, timeline, puuid):
         if gd < -1000:
             tags.append(f"{gd} Gold hinten gegen Gegner-Jungler")
         ctx = death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of)
+        cost = death_cost(ev, ts, frames, pid, events, team, me.get("goldEarned", 0) / game_min)
         deaths.append({"min": round(ts / 60, 1), "t": ts, "area": area, "tags": tags or ["kein klares Muster"],
-                       **ctx})
+                       **ctx, **cost})
+    # most expensive first: that is the death worth fixing
+    deaths.sort(key=lambda d: -d["cost"])
+    for i, d in enumerate(deaths):
+        d["cost_rank"] = i + 1
 
     # ---- objectives incl. presence
     objectives = []
@@ -253,12 +310,12 @@ def deep_analyze(match, timeline, puuid):
             advice["Überleben"] += f" Häufigste Todesursache: {CAUSES[top][0]} ({causes[top]}×) – {CAUSES[top][1]}"
     ranked = sorted(cats.items(), key=lambda kv: kv[1])
     return {
-        "v": 2,
+        "v": 3,
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
         "overall": _grade(sum(cats.values()) / len(cats)),
         "priorities": [{"name": k, "grade": _grade(v), "advice": advice[k]} for k, v in ranked[:3]],
-        "curve": curve, "deaths": deaths, "death_causes": causes, "objectives": objectives, "ganks": ganks,
+        "curve": curve, "deaths": deaths, "death_causes": causes, "death_cost": sum(d["cost"] for d in deaths), "objectives": objectives, "ganks": ganks,
         "stats": {"kp": round(kp * 100), "vision_per_min": round(vpm, 2), "jungle_cs_10": jcs10,
                   "gold_diff_10": gd10, "enemy_jungle_cs_taken": ch.get("enemyJungleMonsterKills"),
                   "scuttles": ch.get("scuttleCrabKills"), "damage_share": round((ch.get("teamDamagePercentage") or 0) * 100)},
