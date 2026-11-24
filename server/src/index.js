@@ -403,7 +403,7 @@ export default {
         google: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET), db: !!env.DB });
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
-      if (p === "/m") return Response.redirect(`${url.origin}/m/`, 301);
+      if (p === "/m" || p === "/web" || p === "/app") return Response.redirect(`${url.origin}/m/`, 301);
       if (p.startsWith("/a/") && req.method === "GET") return await avatarGet(p.slice(3), env);
       if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/") || p.startsWith("/api/admin")) {
         const user = await authUser(req, env);
