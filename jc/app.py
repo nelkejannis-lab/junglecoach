@@ -722,6 +722,9 @@ def make_handler(gd, cfg, lcu):
             if self.path in ("/", "/index.html"):
                 with open(os.path.join(STATIC, "index.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html")
+            if self.path in ("/moosi/body.webp", "/moosi/head.webp", "/moosi/logo.webp"):
+                with open(os.path.join(STATIC, "moosi", self.path.rsplit("/", 1)[1]), "rb") as f:
+                    return self._send(200, f.read(), "image/webp")
             if self.path == "/api/state":
                 with LOCK:
                     from . import i18n

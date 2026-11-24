@@ -185,12 +185,12 @@ _MOOSI = {}
 def _moosi_img(mood, px):
     """Moosi artwork (rendered from the app's SVG) for the overlay; None if the file is missing."""
     name = {"good": "proud", "bad": "worried"}.get(mood, "happy")
-    key = (name, px)
+    key = ("head", px)
     if key not in _MOOSI:
         try:
             import os
             from PIL import Image as _I
-            f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "moosi", name + ".png")
+            f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "moosi", "head.png")
             _MOOSI[key] = _I.open(f).convert("RGBA").resize((px, px), _I.LANCZOS)
         except Exception:  # noqa: BLE001 - fall back to the drawn monster
             _MOOSI[key] = None
