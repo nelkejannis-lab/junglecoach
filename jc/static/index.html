@@ -645,12 +645,13 @@ function matchModal() {
     return `<div style="margin-top:16px"><div class="row" style="border:0"><b class="${t.win ? "green" : "red"}" style="font-size:17px">${t.win ? "Sieg" : "Niederlage"} · ${t.team_id === 100 ? "Blau" : "Rot"}</b>
       <span class="small muted">${t.kills} Kills · ${(t.gold / 1000).toFixed(1)}k Gold · 🐉 ${o.dragon || 0} · 🪱 ${o.horde || 0} · 👁 ${o.riftHerald || 0} · 🟣 ${o.baron || 0} · 🗼 ${o.tower || 0}${t.bans.length ? " · Bans: " + t.bans.map(b => champImg(b, 18)).join("") : ""}</span></div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <tr class="muted" style="text-align:left"><th style="padding:6px 4px">Spieler</th><th>KDA</th><th>Schaden</th><th>CS</th><th>Gold</th><th>Vision</th><th>Items</th></tr>
+      <tr class="muted" style="text-align:left"><th style="padding:6px 4px">Spieler</th><th>Score</th><th>KDA</th><th>Schaden</th><th>CS</th><th>Gold</th><th>Vision</th><th>Items</th></tr>
       ${t.players.map(r => `<tr style="border-top:1px solid var(--sep);${r.me ? "background:rgba(0,113,227,.08)" : ""}">
         <td style="padding:6px 4px;white-space:nowrap"><div style="display:flex;gap:6px;align-items:center">${champImg(r.champion, 32)}
           <div style="display:flex;flex-direction:column;gap:1px">${spellImg(r.spells[0])}${spellImg(r.spells[1])}</div>
           <div style="display:flex;flex-direction:column;gap:1px">${runeImg(r.keystone_icon, 18)}${runeImg(r.sub_icon, 14)}</div>
-          <div><b>${esc(r.name)}</b>${r.mvp ? ' <span class="badge gem">MVP</span>' : ""}<div class="muted" style="font-size:11px">${esc(r.champion_name)} · ${esc(r.role)} · Lvl ${r.level}</div></div></div></td>
+          <div><b style="cursor:pointer" title="Profil öffnen" onclick='closeMatch();friendProfile(${JSON.stringify(r.name + "#" + r.tag)})'>${esc(r.name)}</b>${r.badge ? ` <span class="badge ${r.badge === "MVP" ? "gem" : ""}">${r.badge}</span>` : ""}<div class="muted" style="font-size:11px">${esc(r.role || "–")} · ${esc(r.champion_name)} · Lvl ${r.level}</div></div></div></td>
+        <td style="white-space:nowrap"><b style="font-size:15px;color:${r.score >= 7 ? "var(--green)" : r.score < 4.5 ? "var(--red)" : "inherit"}">${r.score != null ? r.score.toFixed(1) : "–"}</b><div class="muted" style="font-size:11px">#${r.rank || "–"} von 10</div></td>
         <td style="white-space:nowrap"><b>${r.kills}/<span class="red">${r.deaths}</span>/${r.assists}</b><div class="muted" style="font-size:11px">${r.kda} KDA</div></td>
         <td style="min-width:90px">${(r.damage / 1000).toFixed(1)}k<div class="meter" style="height:4px;margin-top:3px"><i style="width:${r.damage_pct}%;background:var(--red)"></i></div></td>
         <td>${r.cs}<div class="muted" style="font-size:11px">${r.cs_min}/Min</div></td><td>${(r.gold / 1000).toFixed(1)}k</td><td>${r.vision}</td>

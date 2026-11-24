@@ -201,3 +201,33 @@ class RolePickTests(unittest.TestCase):
         self.assertEqual(set(ids), {"Nami", "Thresh", "Lulu"})  # Graves (jungle) is not suggested for support
         self.assertEqual(out[0]["id"], "Nami")  # your comfort pick on that role
         self.assertEqual(next(p for p in out if p["id"] == "Lulu")["source"], "pool")
+
+
+class GameScoreTests(unittest.TestCase):
+    def _p(self, puuid, team, win, k, d, a, dmg, gold, cs, vis, role="MIDDLE", taken=15000, obj=3000):
+        return {"puuid": puuid, "teamId": team, "win": win, "kills": k, "deaths": d, "assists": a,
+                "totalDamageDealtToChampions": dmg, "goldEarned": gold, "totalMinionsKilled": cs, "neutralMinionsKilled": 0,
+                "visionScore": vis, "teamPosition": role, "totalDamageTaken": taken, "damageSelfMitigated": 0,
+                "damageDealtToObjectives": obj}
+
+    def test_ranking_and_badges(self):
+        from jc.gamescore import scores
+        P = [self._p("carry", 100, True, 12, 1, 8, 32000, 15000, 240, 25),
+             self._p("w2", 100, True, 4, 3, 10, 15000, 10000, 180, 20),
+             self._p("w3", 100, True, 3, 4, 6, 12000, 9000, 160, 18),
+             self._p("w4", 100, True, 2, 5, 9, 9000, 8500, 150, 15),
+             self._p("sup", 100, True, 0, 2, 20, 6000, 7000, 30, 80, role="UTILITY"),
+             self._p("l1", 200, False, 8, 4, 3, 26000, 13000, 230, 15),
+             self._p("l2", 200, False, 2, 6, 4, 10000, 9000, 170, 12),
+             self._p("l3", 200, False, 1, 5, 3, 8000, 8000, 150, 10),
+             self._p("feeder", 200, False, 0, 9, 1, 4000, 6000, 100, 5),
+             self._p("l5", 200, False, 1, 4, 6, 5000, 6000, 20, 40, role="UTILITY")]
+        s = scores({"gameDuration": 1800, "participants": P})
+        self.assertEqual(s["carry"]["rank"], 1)
+        self.assertEqual(s["carry"]["badge"], "MVP")
+        self.assertEqual(s["l1"]["badge"], "ACE")
+        self.assertEqual(s["feeder"]["rank"], 10)
+        self.assertEqual(sorted(v["rank"] for v in s.values()), list(range(1, 11)))
+        self.assertTrue(all(0 <= v["score"] <= 10 for v in s.values()))
+        self.assertGreater(s["sup"]["score"], s["l5"]["score"])
+        print({k: v["score"] for k, v in s.items()})

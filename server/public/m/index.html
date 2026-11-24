@@ -87,6 +87,14 @@
   .mecard .stat span { white-space:nowrap; font-size:11px; } .mecard .stat b { font-size:18px; }
   .mecard img.big { width:60px; height:60px; border-radius:16px; } .mecard .stat b small { font-size:11px; color:var(--sec); font-weight:600; }
   .mecard .items img, .mecard .items i { width:34px; height:34px; border-radius:9px; }
+  .spl { display:flex; flex-direction:column; gap:2px; flex:none; } .spl img, .spl i { width:16px; height:16px; border-radius:4px; display:block; background:var(--card2); }
+  .gsb { font-size:9.5px; font-weight:900; padding:1px 5px; border-radius:6px; vertical-align:1px; letter-spacing:.3px; }
+  .gsb.mvp { background:linear-gradient(135deg,#fde68a,#f59e0b); color:#3b2600; } .gsb.ace { background:linear-gradient(135deg,#c4b5fd,#7c3aed); color:#fff; }
+  .rk { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13px; cursor:pointer; } .rk.me { background:rgba(45,212,191,.08); border-radius:10px; }
+  .rk .n { width:18px; text-align:center; font-weight:800; color:var(--sec); } .rk img { width:26px; height:26px; border-radius:8px; }
+  .rk .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .rk .bar { width:70px; height:6px; border-radius:3px; background:var(--card2); overflow:hidden; }
+  .rk .bar i { display:block; height:100%; } .rk .bar i.w { background:var(--green,#34d399); } .rk .bar i.l { background:var(--red,#f87171); } .rk b { width:30px; text-align:right; }
+  .pl2 { cursor:pointer; }
   .pl2 { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
   .pl2:last-child { border:0; } .pl2 > img { width:36px; height:36px; border-radius:11px; flex:none; }
   .pl2.me { background:rgba(45,212,191,.08); border-radius:12px; padding:8px 6px; }
@@ -411,8 +419,45 @@ function gameRow(g, onclick) {
     <div style="min-width:0"><div class="k">${p.kills}/${p.deaths}/${p.assists} <span class="muted small" style="font-weight:600">${p.championName}</span></div>
       <div class="meta">${QUEUE[m.queueId] || "Spiel"} · ${Math.round(min)} min · ${(cs / min).toFixed(1)} CS/min</div>
       <div class="items">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div>
-    <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span><div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
+    <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span>${(() => { const v = gameScores(m)[p.puuid]; return v ? `<div style="margin-top:2px">${v.badge ? `<span class="gsb ${v.badge === "MVP" ? "mvp" : "ace"}">${v.badge}</span>` : `<span class="muted small" style="font-weight:700">#${v.rank}</span>`} <b style="font-size:12px">${v.score.toFixed(1)}</b></div>` : ""; })()}<div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
 }
+// ---- who played best: same formula as jc/gamescore.py (keep in sync)
+const GS_W = {
+  DEFAULT: {kp: .20, kda: .18, dmg: .20, gold: .10, cs: .10, vis: .07, tank: .05, obj: .05, deaths: .12},
+  TOP: {kp: .15, kda: .16, dmg: .18, gold: .10, cs: .12, vis: .06, tank: .12, obj: .06, deaths: .12},
+  JUNGLE: {kp: .22, kda: .16, dmg: .14, gold: .08, cs: .08, vis: .08, tank: .08, obj: .14, deaths: .12},
+  UTILITY: {kp: .26, kda: .18, dmg: .08, gold: .04, cs: 0, vis: .24, tank: .08, obj: .04, deaths: .10}};
+const GS_REF = {kp: .8, kda: 8, dmg: .4, gold: .3, cs: 9, tank: .35, obj: .4, deaths: .4};
+function gameScores(info) {
+  const P = info.participants || [], cap = x => Math.max(0, Math.min(1, x)), mins = Math.max(1, (info.gameDuration || 0) / 60), T = {};
+  if (P.length < 2) return {};
+  P.forEach(p => { const t = T[p.teamId] ||= {k: 0, d: 0, dmg: 0, gold: 0, tank: 0, obj: 0};
+    t.k += p.kills || 0; t.d += p.deaths || 0; t.dmg += p.totalDamageDealtToChampions || 0; t.gold += p.goldEarned || 0;
+    t.tank += (p.totalDamageTaken || 0) + (p.damageSelfMitigated || 0); t.obj += p.damageDealtToObjectives || 0; });
+  const out = {};
+  P.forEach(p => {
+    const t = T[p.teamId], role = p.teamPosition || "", w = GS_W[role] || GS_W.DEFAULT, k = p.kills || 0, d = p.deaths || 0, a = p.assists || 0;
+    const cs = (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0);
+    const x = {kp: cap((k + a) / Math.max(1, t.k) / GS_REF.kp), kda: cap((k + a) / Math.max(1, d) / GS_REF.kda),
+      dmg: cap((p.totalDamageDealtToChampions || 0) / Math.max(1, t.dmg) / GS_REF.dmg), gold: cap((p.goldEarned || 0) / Math.max(1, t.gold) / GS_REF.gold),
+      cs: cap(cs / mins / GS_REF.cs), vis: cap((p.visionScore || 0) / mins / (role === "UTILITY" ? 2.5 : 1.5)),
+      tank: cap(((p.totalDamageTaken || 0) + (p.damageSelfMitigated || 0)) / Math.max(1, t.tank) / GS_REF.tank),
+      obj: cap((p.damageDealtToObjectives || 0) / Math.max(1, t.obj) / GS_REF.obj)};
+    const pos = Object.entries(w).filter(([kk]) => kk !== "deaths").reduce((s, [, v]) => s + v, 0);
+    const raw = Object.keys(x).reduce((s, kk) => s + w[kk] * x[kk], 0) - w.deaths * cap(d / Math.max(1, t.d) / GS_REF.deaths);
+    out[p.puuid] = {score: Math.round(10 * Math.max(1, Math.min(10, 8.4 * raw / pos + 1.2 + (p.win ? .4 : 0)))) / 10, win: !!p.win};
+  });
+  const order = Object.keys(out).sort((a, b) => out[b].score - out[a].score);
+  order.forEach((u, i) => { out[u].rank = i + 1; out[u].badge = null; });
+  const bw = order.find(u => out[u].win), bl = order.find(u => !out[u].win);
+  if (bw) out[bw].badge = "MVP"; if (bl) out[bl].badge = "ACE";
+  return out;
+}
+const SPELL = {1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash", 6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
+  12: "SummonerTeleport", 13: "SummonerMana", 14: "SummonerDot", 21: "SummonerBarrier", 32: "SummonerSnowball"};
+const sImg = id => SPELL[id] ? `<img src="${DD()}/img/spell/${SPELL[id]}.png" loading="lazy" onerror="imgFb(this)">` : "<i></i>";
+const POS = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "ADC", UTILITY: "Support"};
+const POS_ORDER = {TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4};
 const QUEUE = {420: "Solo/Duo", 440: "Flex", 400: "Normal", 430: "Normal", 450: "ARAM", 490: "Quickplay", 1700: "Arena", 1900: "URF"};
 function openMatch(id, puuid) { S.sheet = {id, puuid}; render(); history.pushState({sheet: 1}, ""); }
 function closeSheet(fromBack) { if (!S.sheet) return; S.sheet = null; render(); if (!fromBack && history.state && history.state.sheet) history.back(); }
@@ -424,6 +469,33 @@ addEventListener("touchstart", e => { const el = document.getElementById("sheet-
 addEventListener("touchmove", e => { const el = document.getElementById("sheet-in"); if (sy0 == null || !el) return; const dy = e.touches[0].clientY - sy0; if (dy > 0) el.style.transform = `translateY(${dy}px)`; }, {passive: true});
 addEventListener("touchend", e => { const el = document.getElementById("sheet-in"); if (sy0 == null || !el) return; const dy = e.changedTouches[0].clientY - sy0; sy0 = null;
   if (dy > 90) closeSheet(); else el.style.transform = ""; });
+// tap a player in a game -> quick profile: rank + last 3 games, add as friend
+async function openPlayer(puuid, rid) {
+  S.player = {puuid, rid, loading: true}; render();
+  const P = S.player;
+  try {
+    const [lg, ids] = await Promise.all([riot(platform(), `/lol/league/v4/entries/by-puuid/${puuid}`),
+      riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=3`, {cache: "no-store"})]);
+    P.league = lg; render();
+    P.games = []; for (const id of ids.slice(0, 3)) { try { await match(id); } catch (e) {} }
+    P.games = pick(ids.slice(0, 3), puuid);
+  } catch (e) { P.err = e.message; }
+  P.loading = false; if (S.player === P) render();
+}
+function playerSheet() {
+  const P = S.player, r = solo(P.league), name = P.rid.split("#")[0] || "Spieler", isF = (S.friends || []).some(f => f.toLowerCase() === P.rid.toLowerCase());
+  return `<div class="sheet" style="z-index:45" onclick="if(event.target===this){S.player=null;render()}"><div class="in"><button class="xbtn" onclick="S.player=null;render()" aria-label="Schließen">✕</button><div class="grip"></div>
+    <h2 style="margin:4px 0 2px">${esc(name)} <span class="muted" style="font-size:15px;font-weight:600">#${esc(P.rid.split("#")[1] || "")}</span></h2>
+    <p style="margin:0 0 12px">${P.league ? rankTxt(r) : '<span class="muted">Rang lädt …</span>'}${r ? ` · <span class="muted">${r.wins}S ${r.losses}N · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR</span>` : ""}</p>
+    <div class="teamh" style="margin-bottom:4px"><b>Letzte 3 Spiele</b></div>
+    ${P.games ? P.games.map(g => gameRow(g, `S.player=null;openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") || '<p class="muted small">Keine Spiele gefunden.</p>' : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'}
+    ${P.err ? `<p class="red small">${esc(P.err)}</p>` : ""}
+    ${P.rid.includes("#") && P.rid.split("#")[1] && !isF ? `<button class="btn sec" style="width:100%;margin-top:10px" onclick='addFriendRid(${JSON.stringify(P.rid)})'>Als Freund hinzufügen</button>` : ""}</div></div>`;
+}
+async function addFriendRid(rid) {
+  try { await saveFriends([...(S.friends || []), rid]); toast(rid.split("#")[0] + " hinzugefügt"); } catch (e) { toast(e.message); }
+  render();
+}
 function matchSheet() {
   const m = MATCH[S.sheet.id]; if (!m || !m.info) return "";
   const info = m.info, min = Math.max(1, info.gameDuration / 60), P = info.participants;
@@ -436,12 +508,22 @@ function matchSheet() {
   const kp = Math.round(100 * (me.kills + me.assists) / Math.max(1, teamK(me.teamId)));
   const dmgShare = Math.round(100 * me.totalDamageDealtToChampions / Math.max(1, P.filter(p => p.teamId === me.teamId).reduce((a, p) => a + p.totalDamageDealtToChampions, 0)));
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
-  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}">${cImg(p.championName, "")}
-      <div style="flex:1;min-width:0"><div class="pl2h"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)}</b><span>${p.kills}/${p.deaths}/${p.assists}</span></div>
+  const GS = gameScores(info);
+  const badge = v => v && v.badge ? `<span class="gsb ${v.badge === "MVP" ? "mvp" : "ace"}">${v.badge}</span>` : "";
+  const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>${cImg(p.championName, "")}
+      <div class="spl">${sImg(p.summoner1Id)}${sImg(p.summoner2Id)}</div>
+      <div style="flex:1;min-width:0"><div class="pl2h"><b>${esc(p.riotIdGameName || p.summonerName || p.championName)} ${badge(GS[p.puuid])}</b><span>${p.kills}/${p.deaths}/${p.assists}</span></div>
+        <div class="muted" style="font-size:11px;margin-top:1px">${POS[p.teamPosition] || "–"} · ${esc(p.championName)} · Score <b style="color:var(--txt)">${GS[p.puuid] ? GS[p.puuid].score.toFixed(1) : "–"}</b> · #${GS[p.puuid] ? GS[p.puuid].rank : "–"}</div>
         <div class="pl2s"><span>${cs(p)} CS</span><span>${k(p.goldEarned)} G</span><span class="dmg"><i style="width:${100 * p.totalDamageDealtToChampions / maxD}%"></i></span></div>
         <div class="mini">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div></div>`;
   const team = tid => { const w = (info.teams.find(t => t.teamId === tid) || {}).win;
-    return `<div class="team"><div class="teamh"><b class="${w ? "green" : "red"}">${w ? "Sieg" : "Niederlage"}</b><span class="muted small">${tid === 100 ? "Blau" : "Rot"} · ${teamK(tid)} Kills · ${k(teamG(tid))} Gold</span></div>${P.filter(p => p.teamId === tid).map(row).join("")}</div>`; };
+    return `<div class="team"><div class="teamh"><b class="${w ? "green" : "red"}">${w ? "Sieg" : "Niederlage"}</b><span class="muted small">${tid === 100 ? "Blau" : "Rot"} · ${teamK(tid)} Kills · ${k(teamG(tid))} Gold</span></div>${P.filter(p => p.teamId === tid).sort((a, b) => (POS_ORDER[a.teamPosition] ?? 5) - (POS_ORDER[b.teamPosition] ?? 5)).map(row).join("")}</div>`; };
+  const ranking = `<div class="team"><div class="teamh"><b>🏆 Ranking</b><span class="muted small">Wer war am besten?</span></div>
+    ${Object.entries(GS).sort((a, b) => a[1].rank - b[1].rank).map(([u, v]) => { const p = P.find(x => x.puuid === u);
+      return `<div class="rk ${u === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(u)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
+        <span class="n">${v.rank}</span>${cImg(p.championName, "")}<span class="nm">${esc(p.riotIdGameName || p.championName)} ${badge(v)}</span>
+        <span class="bar"><i class="${p.win ? "w" : "l"}" style="width:${v.score * 10}%"></i></span><b>${v.score.toFixed(1)}</b></div>`; }).join("")}
+    <p class="muted small" style="margin:8px 0 0">Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert.</p></div>`;
   const mine = me.teamId;
   return `<div class="sheet" onclick="if(event.target===this)closeSheet()"><div class="in" id="sheet-in"><button class="xbtn" onclick="closeSheet()" aria-label="Schließen">✕</button><div class="grip" onclick="closeSheet()"></div>
     <p class="muted small" style="margin:0 0 10px">${QUEUE[info.queueId] || "Spiel"} · ${Math.round(min)} min · ${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleDateString("de-DE")}</p>
@@ -450,9 +532,9 @@ function matchSheet() {
         <div style="font-size:24px;font-weight:800;letter-spacing:-.5px">${me.kills}/${me.deaths}/${me.assists}</div>
         <div class="muted small">${me.championName} · Level ${me.champLevel ?? "–"}</div></div></div>
       <div class="stats" style="margin-top:12px">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
-        ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>
+        ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}${stat((GS[me.puuid] ? GS[me.puuid].score.toFixed(1) : "–") + "/10", "Game-Score · #" + (GS[me.puuid] ? GS[me.puuid].rank : "–") + (GS[me.puuid] && GS[me.puuid].badge ? " " + GS[me.puuid].badge : ""))}</div>
       <div class="items" style="margin-top:12px;gap:6px">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div>
-    ${team(mine)}${team(mine === 100 ? 200 : 100)}
+    ${ranking}${team(mine)}${team(mine === 100 ? 200 : 100)}
     <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button>
     <p class="muted small">Tode im Detail und Clips findest du in der PC-App unter „Analyse & Clips“.</p></div></div>`;
 }
@@ -502,14 +584,17 @@ function agg(games) {
     vis += p.visionScore || 0; dmg += p.totalDamageDealtToChampions || 0; mins += mi; wins += p.win ? 1 : 0;
     const ch = champs[p.championName] = champs[p.championName] || {c: p.championName, n: 0, w: 0, k: 0, d: 0, a: 0};
     ch.n++; ch.w += p.win ? 1 : 0; ch.k += p.kills; ch.d += p.deaths; ch.a += p.assists;
-    return {g, score: (p.kills + p.assists) / Math.max(1, p.deaths) + (p.win ? 1.5 : 0) + c / mi / 4};
+    const gsv = (gameScores(m)[p.puuid] || {}).score || 0;
+    return {g, score: gsv};
   });
   scored.sort((x, y) => y.score - x.score);
   return {n: gs.length, wins, wr: Math.round(100 * wins / gs.length), kda: +((k + a) / Math.max(1, d)).toFixed(2),
     kp: Math.round(100 * kp / gs.length), csm: +(cs / mins).toFixed(1), gpm: Math.round(gold / mins), vpm: +(vis / mins).toFixed(2),
     dpm: Math.round(dmg / mins), deaths: +(d / gs.length).toFixed(1), avgk: +(k / gs.length).toFixed(1), avga: +(a / gs.length).toFixed(1),
     champs: Object.values(champs).sort((x, y) => y.n - x.n), best: scored[0].g, worst: scored[scored.length - 1].g,
-    form: gs.slice(0, 10).map(g => g.p.win)};
+    form: gs.slice(0, 10).map(g => g.p.win),
+    score: +(scored.reduce((t, x) => t + x.score, 0) / scored.length).toFixed(1),
+    mvps: gs.filter(g => (gameScores(g.m.info)[g.p.puuid] || {}).badge).length};
 }
 async function share(text) {
   const url = location.origin + "/m/";
@@ -534,7 +619,7 @@ function vStats() {
   const bestP = A.best.p, worstP = A.worst.p;
   const c = S.coach;
   return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>
-    <div class="card"><div class="stats">${tile(A.wr + "%", "Winrate", A.wr >= 50 ? "green" : "red")}${tile(A.kda, "KDA")}${tile(A.kp + "%", "Kill-Beteil.")}
+    <div class="card"><div class="stats">${tile(A.wr + "%", "Winrate", A.wr >= 50 ? "green" : "red")}${tile(A.score.toFixed(1), "Ø Game-Score", A.score >= 6 ? "green" : A.score < 4.5 ? "red" : "")}${tile(A.kda, "KDA")}${tile(A.kp + "%", "Kill-Beteil.")}
       ${tile(A.csm, "CS / Min")}${tile(A.gpm, "Gold / Min")}${tile(A.vpm, "Vision / Min")}</div>
       <div class="dots" style="margin-top:12px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}<span class="muted small" style="margin-left:6px">${A.wins} Siege · Ø ${A.avgk}/${A.deaths}/${A.avga}</span></div></div>
     <div class="card"><h3>Champions</h3>${A.champs.slice(0, 6).map(ch => `<div class="row">${cImg(ch.c, "")}
@@ -559,6 +644,7 @@ function spark(pr) {
 
 // ---- friends: leaderboard + list
 const LBM = {rank: ["Rang", e => e.rs, e => e.r ? rankTxt(e.r) : '<span class="muted">Unranked</span>'],
+  score: ["Score", e => e.a ? e.a.score : -1, e => e.a ? `<b>${e.a.score.toFixed(1)}</b> <span class="muted small">Ø · ${e.a.mvps}× MVP/ACE</span>` : "…"],
   form: ["Form", e => e.a ? e.a.wr : -1, e => e.a ? `${e.a.wr}% <span class="muted small">(${e.a.wins}/${e.a.n})</span>` : "…"],
   kda: ["KDA", e => e.a ? e.a.kda : -1, e => e.a ? e.a.kda : "…"],
   csm: ["CS/min", e => e.a ? e.a.csm : -1, e => e.a ? e.a.csm : "…"],
@@ -610,7 +696,7 @@ function vFriend(rid) {
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
       <div class="cmph" style="margin-bottom:6px"><b style="color:var(--acc)">Du</b><span></span><b style="color:var(--purple)">${esc(name)}</b></div>
-      ${bar2("Winrate", M.wr, A.wr, v => v + "%")}${bar2("KDA", M.kda, A.kda, v => v)}${bar2("Kill-Beteil.", M.kp, A.kp, v => v + "%")}
+      ${bar2("Winrate", M.wr, A.wr, v => v + "%")}${bar2("Ø Game-Score", M.score, A.score, v => v.toFixed(1))}${bar2("KDA", M.kda, A.kda, v => v)}${bar2("Kill-Beteil.", M.kp, A.kp, v => v + "%")}
       ${bar2("CS/min", M.csm, A.csm, v => v)}${bar2("Gold/min", M.gpm, A.gpm, v => v)}${bar2("Vision/min", M.vpm, A.vpm, v => v)}${bar2("Tode/Game", M.deaths, A.deaths, v => v, false)}</div>` : '<div class="skel"></div>'}
     ${duoTeam.length ? `<div class="card"><h3>Zusammen gespielt</h3><p class="muted small" style="margin:-4px 0 10px">${duoTeam.length} gemeinsame Games in deinen letzten ${S.games.length} · <b class="${dw / duoTeam.length >= .5 ? "green" : "red"}">${Math.round(100 * dw / duoTeam.length)}% Siege</b></p>
       ${duoTeam.slice(0, 5).map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("")}</div>` : ""}
@@ -789,7 +875,7 @@ function render() {
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
   tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
-  app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "");
+  app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
 }
 ["gesturestart", "gesturechange", "gestureend"].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), {passive: false}));
 boot();

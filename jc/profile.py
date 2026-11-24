@@ -346,9 +346,12 @@ def match_detail(api_key, platform, match_id, puuid, gd=None):
     maxdmg = max((r["damage"] for r in allp), default=1) or 1
     for r in allp:
         r["damage_pct"] = round(100 * r["damage"] / maxdmg)
-    mvp = max(allp, key=lambda r: r["kda"] * 2 + r["damage"] / maxdmg * 5 + r["vision"] / 40, default=None)
-    if mvp:
-        mvp["mvp"] = True
+    from .gamescore import scores as _scores
+    sc = _scores(info)
+    for r in allp:
+        v = sc.get(r["puuid"], {})
+        r["score"], r["rank"], r["badge"] = v.get("score"), v.get("rank"), v.get("badge")
+        r["mvp"] = v.get("badge") == "MVP"
     out = {"match_id": match_id, "queue": QUEUES.get(info.get("queueId"), "Andere"), "duration": round(mins),
            "ended": (info.get("gameEndTimestamp") or info.get("gameCreation", 0)) / 1000,
            "teams": [dict(teams[k], team_id=k) for k in sorted(teams)], "version": gd.version if gd else None}
