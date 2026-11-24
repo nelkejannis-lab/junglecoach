@@ -225,7 +225,7 @@ class GameScoreTests(unittest.TestCase):
         s = scores({"gameDuration": 1800, "participants": P})
         self.assertEqual(s["carry"]["rank"], 1)
         self.assertEqual(s["carry"]["badge"], "MVP")
-        self.assertEqual(s["l1"]["badge"], "ACE")
+        self.assertIsNone(s["l1"]["badge"])
         self.assertEqual(s["feeder"]["rank"], 10)
         self.assertEqual(sorted(v["rank"] for v in s.values()), list(range(1, 11)))
         self.assertTrue(all(0 <= v["score"] <= 10 for v in s.values()))

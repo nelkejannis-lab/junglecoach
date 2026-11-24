@@ -1,4 +1,4 @@
-"""Who played best in one game: a 0-10 performance score for all 10 players + ranking (MVP / ACE).
+"""Who played best in one game: a 1-10 performance score for all 10 players + ranking (MVP = best of the winning team).
 
 Only uses the finished match (Riot match-v5). Role-aware: supports are judged more on kill participation
 and vision, junglers more on objectives, tops also on damage soaked. Each metric is turned into 0..1 against a
@@ -20,7 +20,7 @@ def _cap(x):
 
 
 def scores(info):
-    """{puuid: {"score": 7.4, "rank": 1, "badge": "MVP"|"ACE"|None}} for every participant of match info."""
+    """{puuid: {"score": 7.4, "rank": 1, "badge": "MVP"|None}} for every participant of match info."""
     P = info.get("participants") or []
     if len(P) < 2:
         return {}
@@ -60,11 +60,8 @@ def scores(info):
         out[u]["rank"] = i + 1
         out[u]["badge"] = None
     best_win = next((u for u in order if out[u]["win"]), None)
-    best_loss = next((u for u in order if not out[u]["win"]), None)
     if best_win:
         out[best_win]["badge"] = "MVP"
-    if best_loss:
-        out[best_loss]["badge"] = "ACE"
     for v in out.values():
         v.pop("win", None)
     return out

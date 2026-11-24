@@ -439,7 +439,7 @@ function gameRow(g, onclick) {
     <div style="min-width:0"><div class="k">${p.kills}/${p.deaths}/${p.assists} <span class="muted small" style="font-weight:600">${p.championName}</span></div>
       <div class="meta">${QUEUE[m.queueId] || "Spiel"} · ${Math.round(min)} min · ${(cs / min).toFixed(1)} CS/min</div>
       <div class="items">${[0, 1, 2, 3, 4, 5].map(i => iImg(p["item" + i])).join("")}</div></div>
-    <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span>${(() => { const v = gameScores(m)[p.puuid]; return v ? `<div style="margin-top:2px">${v.badge ? `<span class="gsb ${v.badge === "MVP" ? "mvp" : "ace"}">${v.badge}</span>` : `<span class="muted small" style="font-weight:700">#${v.rank}</span>`} <b style="font-size:12px">${v.score.toFixed(1)}</b></div>` : ""; })()}<div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
+    <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span>${(() => { const v = gameScores(m)[p.puuid]; return v ? `<div style="margin-top:2px">${v.badge ? `<span class="gsb mvp">${v.badge}</span>` : `<span class="muted small" style="font-weight:700">#${v.rank}</span>`} <b style="font-size:12px">${v.score.toFixed(1)}</b></div>` : ""; })()}<div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
 }
 // ---- who played best: same formula as jc/gamescore.py (keep in sync)
 const GS_W = {
@@ -469,8 +469,8 @@ function gameScores(info) {
   });
   const order = Object.keys(out).sort((a, b) => out[b].score - out[a].score);
   order.forEach((u, i) => { out[u].rank = i + 1; out[u].badge = null; });
-  const bw = order.find(u => out[u].win), bl = order.find(u => !out[u].win);
-  if (bw) out[bw].badge = "MVP"; if (bl) out[bl].badge = "ACE";
+  const bw = order.find(u => out[u].win);
+  if (bw) out[bw].badge = "MVP";
   return out;
 }
 const SPELL = {1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash", 6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
@@ -529,7 +529,7 @@ function matchSheet() {
   const dmgShare = Math.round(100 * me.totalDamageDealtToChampions / Math.max(1, P.filter(p => p.teamId === me.teamId).reduce((a, p) => a + p.totalDamageDealtToChampions, 0)));
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
   const GS = gameScores(info);
-  const badge = v => v && v.badge ? `<span class="gsb ${v.badge === "MVP" ? "mvp" : "ace"}">${v.badge}</span>` : "";
+  const badge = v => v && v.badge ? `<span class="gsb mvp">${v.badge}</span>` : "";
   const row = p => `<div class="pl2 ${p.puuid === S.sheet.puuid ? "me" : ""}" onclick='openPlayer(${JSON.stringify(p.puuid)}, ${JSON.stringify((p.riotIdGameName || "") + "#" + (p.riotIdTagline || ""))})'>
       <span class="rkn ${GS[p.puuid] && GS[p.puuid].rank <= 3 ? "top" : ""}"><b>${GS[p.puuid] ? GS[p.puuid].rank : "–"}</b><small>${GS[p.puuid] ? GS[p.puuid].score.toFixed(1) : ""}</small></span>${cImg(p.championName, "")}
       <div class="spl">${sImg(p.summoner1Id)}${sImg(p.summoner2Id)}</div>
@@ -666,7 +666,7 @@ function spark(pr) {
 
 // ---- friends: leaderboard + list
 const LBM = {rank: ["Rang", e => e.rs, e => e.r ? rankTxt(e.r) : '<span class="muted">Unranked</span>'],
-  score: ["Score", e => e.a ? e.a.score : -1, e => e.a ? `<b>${e.a.score.toFixed(1)}</b> <span class="muted small">Ø · ${e.a.mvps}× MVP/ACE</span>` : "…"],
+  score: ["Score", e => e.a ? e.a.score : -1, e => e.a ? `<b>${e.a.score.toFixed(1)}</b> <span class="muted small">Ø · ${e.a.mvps}× MVP</span>` : "…"],
   form: ["Form", e => e.a ? e.a.wr : -1, e => e.a ? `${e.a.wr}% <span class="muted small">(${e.a.wins}/${e.a.n})</span>` : "…"],
   kda: ["KDA", e => e.a ? e.a.kda : -1, e => e.a ? e.a.kda : "…"],
   csm: ["CS/min", e => e.a ? e.a.csm : -1, e => e.a ? e.a.csm : "…"],
