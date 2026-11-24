@@ -87,6 +87,17 @@
   @keyframes sh { to { background-position:-200% 0; } }
   .tierc { font-weight:900; } .GOLD { color:var(--gold); } .PLATINUM { color:#5eead4; } .EMERALD { color:var(--green); } .DIAMOND { color:#93c5fd; } .SILVER { color:#cbd5e1; } .IRON, .BRONZE { color:#c08a5b; } .MASTER, .GRANDMASTER, .CHALLENGER { color:var(--purple); }
   .card .row > img { width:40px; height:40px; border-radius:12px; flex:none; }
+  .mav { display:inline-grid; place-items:center; width:40px; height:40px; border-radius:12px; background:linear-gradient(145deg,#0f2a2a,#13203a); overflow:hidden; flex:none; }
+  .mav .moosi { animation:none; filter:none; }
+  .hav, img.hav { width:52px !important; height:52px !important; border-radius:16px !important; border:2px solid rgba(255,255,255,.25); }
+  img.fav { width:26px; height:26px; border-radius:8px; }
+  .live { font-size:11.5px; font-weight:700; color:var(--acc); margin-top:2px; }
+  .cgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; max-height:260px; overflow:auto; }
+  .cgrid button { border:1px solid transparent; background:var(--card2); border-radius:12px; padding:6px 2px; color:var(--sec); font:inherit; font-size:10.5px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .cgrid button img { width:44px; height:44px; border-radius:11px; } .cgrid button span { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cgrid button.on { border-color:rgba(45,212,191,.7); background:rgba(45,212,191,.14); color:var(--txt); }
+  .mrow { display:flex; gap:6px; margin-bottom:10px; } .mrow button { border:2px solid transparent; background:none; border-radius:14px; padding:2px; } .mrow button.on { border-color:var(--acc); }
+  .tg { display:flex; justify-content:space-between; align-items:center; margin:14px 0 0; font-size:14px; color:var(--txt); } .tg input { width:auto; }
   .seg { display:flex; gap:4px; background:var(--card2); border-radius:12px; padding:3px; margin-bottom:10px; }
   .seg button { flex:1; border:0; background:none; color:var(--sec); font:inherit; font-size:12.5px; font-weight:700; padding:7px 0; border-radius:9px; }
   .seg button.on { background:rgba(255,255,255,.12); color:var(--txt); }
@@ -175,8 +186,8 @@ async function account(rid) {
   const [n, t] = rid.split("#");
   return riot(ACC_REGION(platform()), `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
 }
-async function loadGames(puuid, count) {
-  const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${puuid}/ids?count=${count}`);
+async function loadGames(puuid, count, start = 0) {
+  const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${puuid}/ids?start=${start}&count=${count}`);
   const out = [];
   for (let i = 0; i < ids.length; i += 4) out.push(...await Promise.all(ids.slice(i, i + 4).map(id => match(id).catch(() => null))));
   return out.filter(Boolean).map(m => ({m, p: m.info.participants.find(x => x.puuid === puuid)})).filter(g => g.p);
@@ -188,9 +199,54 @@ async function boot() {
     fetch("https://ddragon.leagueoflegends.com/api/versions.json").then(r => r.json()).then(v => { S.ver = v[0]; render(); }).catch(() => {});
     S.me = await api("/api/me"); render();
     api("/api/sync/coach").then(c => { S.coach = c.coach; render(); }).catch(() => {});
-    api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); }).catch(() => { S.friends = []; });
+    api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); loadPublic(); }).catch(() => { S.friends = []; });
+    api("/api/sync/profile").then(p => { S.prof = p.profile || {}; render(); }).catch(() => { S.prof = {}; });
+    loadChamps();
     if (S.me.riot_id && S.me.riot_id.includes("#")) await loadMe();
   } catch (e) { S.err = e.message; render(); }
+}
+// champion list (names + numeric keys for the spectator API) from Data Dragon
+let CHAMPS = [], CKEY = {};
+async function loadChamps() {
+  try {
+    const v = (await (await fetch("https://ddragon.leagueoflegends.com/api/versions.json")).json())[0];
+    const d = (await (await fetch(`https://ddragon.leagueoflegends.com/cdn/${v}/data/de_DE/champion.json`)).json()).data;
+    CHAMPS = Object.values(d).map(c => ({id: c.id, name: c.name, key: c.key})).sort((a, b) => a.name.localeCompare(b.name));
+    CKEY = Object.fromEntries(CHAMPS.map(c => [c.key, c.id]));
+  } catch (e) {}
+}
+// Jungle Coach profiles of friends (name, picture, text, live status from their PC app)
+async function loadPublic() {
+  if (!(S.friends || []).length) return;
+  try { S.pub = (await api("/api/public/profiles?ids=" + encodeURIComponent(S.friends.join(",")))).profiles || {}; render(); } catch (e) {}
+}
+setInterval(() => { if (!document.hidden && token() && S.me) { loadPublic(); (S.friends || []).forEach(rid => liveCheck(rid)); } }, 60000);
+// "playing right now" via Riot's official spectator API (works for every friend, also without Jungle Coach)
+async function liveCheck(rid) {
+  const d = S.fdata[rid]; if (!d || !d.acct) return;
+  try {
+    const g = await riot(platform(), `/lol/spectator/v5/active-games/by-summoner/${d.acct.puuid}`);
+    const me = (g.participants || []).find(x => x.puuid === d.acct.puuid);
+    d.live = {champ: me ? CKEY[String(me.championId)] : null, start: g.gameStartTime || Date.now() - (g.gameLength || 0) * 1000, queue: g.gameQueueConfigId};
+  } catch (e) { d.live = null; }
+  render();
+}
+function liveTxt(rid) {
+  const d = S.fdata[rid] || {}, pub = (S.pub || {})[rid.toLowerCase()] || {};
+  if (d.live) {
+    const mins = Math.max(0, Math.round((Date.now() - d.live.start) / 60000));
+    return `🎮 spielt ${d.live.champ ? esc(nameOf(d.live.champ)) : ""} · ${mins} min`;
+  }
+  if (pub.status && pub.status.state === "champselect") return "🎮 im Champ Select";
+  if (pub.status && pub.status.state === "ingame") return `🎮 spielt ${pub.status.champ ? esc(nameOf(pub.status.champ)) : ""}`;
+  return "";
+}
+const nameOf = id => (CHAMPS.find(c => c.id === id) || {name: id}).name;
+const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
+function avatar(av, cls = "", fallback) {
+  if (av && av.type === "moosi") return `<span class="mav ${cls}" style="filter:hue-rotate(${MOOSI_HUE[av.id] || 0}deg)">${moosi("happy", 40)}</span>`;
+  const c = av && av.type === "champ" ? av.id : fallback;
+  return c ? cImg(c, cls) : `<span class="mav ${cls}">${moosi("happy", 40)}</span>`;
 }
 async function loadMe() {
   try {
@@ -206,8 +262,16 @@ async function loadFriend(rid) {
     f.league = f.league || await riot(platform(), `/lol/league/v4/entries/by-puuid/${f.acct.puuid}`);
     render();
     f.games = f.games || await loadGames(f.acct.puuid, 10);
+    liveCheck(rid);
   } catch (e) { f.err = e.message; }
   render();
+}
+async function moreFriendGames(rid) {
+  const f = S.fdata[rid]; if (!f || !f.acct || f.moreBusy) return;
+  f.moreBusy = true; render();
+  try { const more = await loadGames(f.acct.puuid, 20, f.games.length); f.games = f.games.concat(more); f.end = more.length < 20; }
+  catch (e) { toast(e.message); }
+  f.moreBusy = false; render();
 }
 async function saveFriends(list) {  // returns after the server confirmed
   S.friends = (await api("/api/sync/friends", {method: "PUT", body: JSON.stringify({friends: list})})).friends; render();
@@ -272,9 +336,10 @@ function vHome() {
   gs.forEach(g => counts[g.p.championName] = (counts[g.p.championName] || 0) + 1);
   const main = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
   const task = c && c.session_task;
-  let h = `<div class="hero"><div class="art" style="background-image:url('${main ? splash(main) : ""}')"></div><div class="in">
-    <span class="tag">${c && c.player_type ? "✦ " + esc(c.player_type.name) : "Dein Profil"}</span>
-    <h2>${esc((S.me.riot_id || S.me.name || "").split("#")[0])}</h2><div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
+  const pr = S.prof || {};
+  let h = `<div class="hero"><div class="art" style="background-image:url('${pr.banner ? splash(pr.banner) : main ? splash(main) : ""}')"></div><div class="in">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pr.avatar, "hav", main)}<span class="tag">${c && c.player_type ? "✦ " + esc(c.player_type.name) : "Dein Profil"}</span></div>
+    <h2>${esc(pr.name || (S.me.riot_id || S.me.name || "").split("#")[0])}</h2>${pr.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pr.bio)}</div>` : ""}<div>${S.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% WR` : "") : '<span class="muted">Lade Rang …</span>'}</div></div></div>`;
   h += `<div class="card moosi-card">${moosi(c && c.score >= 60 ? "proud" : "happy", 84)}<div class="bubble"><b>${task ? "Deine Aufgabe" : "Moosi"}</b>${task ? esc(task.title + ": " + task.drill)
     : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal mit deinem Konto – dann zeige ich dir hier deine Coaching-Aufgabe."}</div></div>`;
   if (gs.length) h += `<div class="card"><h3>Letzte ${gs.length} Games</h3><div class="stats"><div class="stat"><b class="${wins / gs.length >= .5 ? "green" : "red"}">${Math.round(100 * wins / gs.length)}%</b><span>Winrate</span></div>
@@ -390,8 +455,9 @@ function vFriends() {
     <div class="card"><div class="seg">${Object.entries(LBM).map(([k, [l]]) => `<button class="${S.lbm === k ? "on" : ""}" onclick="S.lbm='${k}';render()">${l}</button>`).join("")}</div>
       ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
         return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
-          <span class="pos ${i < 3 ? "p" + i : ""}">${i === 0 ? "👑" : i + 1}</span>${main ? cImg(main, "") : '<img src="/icon.png">'}
-          <div style="flex:1;min-width:0"><b>${esc(e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""}</b>
+          <span class="pos ${i < 3 ? "p" + i : ""}">${i === 0 ? "👑" : i + 1}</span>${avatar(e.me ? (S.prof || {}).avatar : ((S.pub || {})[e.rid.toLowerCase()] || {}).avatar, "", main)}
+          <div style="flex:1;min-width:0"><b>${esc((e.me ? (S.prof || {}).name : ((S.pub || {})[e.rid.toLowerCase()] || {}).name) || e.rid.split("#")[0])}${e.me ? ' <span class="muted small">(du)</span>' : ""}</b>
+            ${!e.me && liveTxt(e.rid) ? `<div class="live">${liveTxt(e.rid)}</div>` : ""}
             <div class="dots sm">${e.a ? e.a.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("") : '<span class="muted small">' + (e.err ? esc(e.err) : "lädt …") + "</span>"}</div></div>
           <div class="lbv">${L.show(e)}</div></div>`; }).join("")}
       ${top.length > 1 ? `<button class="btn sec" style="margin-top:12px" onclick="share(shareBoard())">Rangliste teilen</button>` : ""}</div>
@@ -408,10 +474,13 @@ function vFriend(rid) {
   const duo = d.acct ? (S.games || []).filter(g => g.m.info.participants.some(x => x.puuid === d.acct.puuid)) : [];
   const duoTeam = duo.filter(g => g.m.info.participants.find(x => x.puuid === d.acct.puuid).teamId === g.p.teamId);
   const dw = duoTeam.filter(g => g.p.win).length;
-  const name = rid.split("#")[0];
+  const pub = (S.pub || {})[rid.toLowerCase()] || {};
+  const name = pub.name || rid.split("#")[0], lv = liveTxt(rid);
   return `<button class="btn sec" style="width:auto;padding:10px 16px;margin-bottom:12px" onclick="S.view=null;render()">‹ Freunde</button>
-    <div class="hero"><div class="art" style="background-image:url('${A && A.champs[0] ? splash(A.champs[0].c) : ""}')"></div><div class="in">
-      <span class="tag">Freund</span><h2>${esc(name)}</h2><div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
+    <div class="hero"><div class="art" style="background-image:url('${pub.banner ? splash(pub.banner) : A && A.champs[0] ? splash(A.champs[0].c) : ""}')"></div><div class="in">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">${avatar(pub.avatar, "hav", A && A.champs[0] ? A.champs[0].c : null)}<span class="tag">${lv || "Freund"}</span></div>
+      <h2>${esc(name)}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
+      ${(pub.favs || []).length ? `<div style="display:flex;gap:5px;margin:4px 0">${pub.favs.map(c => cImg(c, "fav")).join("")}</div>` : ""}<div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
       <div class="cmph" style="margin-bottom:6px"><b style="color:var(--acc)">Du</b><span></span><b style="color:var(--purple)">${esc(name)}</b></div>
@@ -420,8 +489,9 @@ function vFriend(rid) {
     ${duoTeam.length ? `<div class="card"><h3>Zusammen gespielt</h3><p class="muted small" style="margin:-4px 0 10px">${duoTeam.length} gemeinsame Games in deinen letzten ${S.games.length} · <b class="${dw / duoTeam.length >= .5 ? "green" : "red"}">${Math.round(100 * dw / duoTeam.length)}% Siege</b></p>
       ${duoTeam.slice(0, 5).map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("")}</div>` : ""}
     ${A ? `<div class="card"><h3>${esc(name)}s Champions</h3>${A.champs.slice(0, 4).map(ch => `<div class="row">${cImg(ch.c, "")}<div style="flex:1"><b>${esc(ch.c)}</b><div class="muted small">${ch.n} Games · KDA ${((ch.k + ch.a) / Math.max(1, ch.d)).toFixed(1)}</div></div><b class="${ch.w / ch.n >= .5 ? "green" : "red"}">${Math.round(100 * ch.w / ch.n)}%</b></div>`).join("")}</div>` : ""}
-    <h3 style="margin:18px 0 10px">Letzte Games</h3>
+    <h3 style="margin:18px 0 10px">Games</h3>
     ${d.games ? d.games.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") : '<div class="skel"></div><div class="skel"></div>'}
+    ${d.games && !d.end ? `<button class="btn sec" onclick='moreFriendGames(${JSON.stringify(rid)})' ${d.moreBusy ? "disabled" : ""}>${d.moreBusy ? "Lädt …" : `Mehr Games laden (${d.games.length} geladen)`}</button>` : ""}
     ${A ? `<button class="btn sec" style="margin-top:6px" onclick="share('${esc(name)} vs mich (letzte 10 Games): ${A.wr}% vs ${M ? M.wr : "–"}% WR, KDA ${A.kda} vs ${M ? M.kda : "–"} – Jungle Coach')">Vergleich teilen</button>` : ""}
     <button class="btn sec" style="margin-top:10px" onclick='removeF(${JSON.stringify(rid)})'>Entfernen</button>
     <p class="muted small">Die ausführliche Coach-Analyse für Freunde startest du in der PC-App unter „Freunde“.</p>`;
@@ -454,8 +524,46 @@ async function saveRid() {
   await api("/api/me", {method: "PUT", body: JSON.stringify({riot_id: v})});
   S.me.riot_id = v; S.games = null; S.league = null; render(); loadMe();
 }
+let PQ = {avatar: "", favs: "", banner: ""}, PE = null;
+function champGrid(key, sel, max) {
+  const q = PQ[key].trim().toLowerCase();
+  const list = CHAMPS.filter(c => !q || c.name.toLowerCase().includes(q)).slice(0, q ? 60 : 40);
+  return `<input placeholder="Champion suchen …" value="${esc(PQ[key])}" oninput="PQ['${key}']=this.value;renderGrid('${key}')" style="margin-bottom:8px">
+    <div class="cgrid" id="cg_${key}">${list.map(c => `<button class="${sel.includes(c.id) ? "on" : ""}" onclick="pickC('${key}','${c.id}',${max})">${cImg(c.id, "")}<span>${esc(c.name)}</span></button>`).join("")}</div>`;
+}
+function renderGrid(key) {
+  const el = document.getElementById("cg_" + key); if (!el) return;
+  const tmp = document.createElement("div"); tmp.innerHTML = champGrid(key, selOf(key), key === "favs" ? 3 : 1);
+  el.replaceWith(tmp.querySelector(".cgrid"));
+}
+const selOf = key => key === "favs" ? PE.favs : key === "banner" ? (PE.banner ? [PE.banner] : []) : (PE.avatar && PE.avatar.type === "champ" ? [PE.avatar.id] : []);
+function pickC(key, id, max) {
+  if (key === "favs") PE.favs = PE.favs.includes(id) ? PE.favs.filter(x => x !== id) : PE.favs.length < max ? [...PE.favs, id] : PE.favs;
+  else if (key === "banner") PE.banner = PE.banner === id ? null : id;
+  else PE.avatar = {type: "champ", id};
+  const keepName = ($("#pe_name") || {}).value, keepBio = ($("#pe_bio") || {}).value;
+  render(); if (keepName != null) { $("#pe_name").value = keepName; $("#pe_bio").value = keepBio; }
+}
+async function saveProf() {
+  PE.name = $("#pe_name").value; PE.bio = $("#pe_bio").value; PE.visible = $("#pe_vis").checked; PE.show_status = $("#pe_st").checked;
+  try { S.prof = (await api("/api/sync/profile", {method: "PUT", body: JSON.stringify({profile: PE})})).profile; PE = null; S.tab = "home"; render(); toast("Profil gespeichert"); }
+  catch (e) { toast("Fehler: " + e.message); }
+}
+function profEditor() {
+  PE = PE || JSON.parse(JSON.stringify({favs: [], ...(S.prof || {})}));
+  const sec = (t, inner, open) => `<details ${open ? "open" : ""} style="margin-top:12px"><summary style="font-weight:700">${t}</summary><div style="margin-top:10px">${inner}</div></details>`;
+  return `<div class="card"><h3>Mein Profil</h3><div style="display:flex;gap:12px;align-items:center">${avatar(PE.avatar, "hav")}<div class="muted small">So sehen dich deine Freunde – auf dem Handy und am PC.</div></div>
+    <label>Anzeigename</label><input id="pe_name" maxlength="24" value="${esc(PE.name || "")}" placeholder="${esc((S.me.riot_id || "").split("#")[0])}">
+    <label>Über mich</label><input id="pe_bio" maxlength="140" value="${esc(PE.bio || "")}" placeholder="z. B. Graves-OTP · Ziel Platin">
+    ${sec("Profilbild", `<div class="mrow">${Object.keys(MOOSI_HUE).map(c => `<button class="${PE.avatar && PE.avatar.type === "moosi" && PE.avatar.id === c ? "on" : ""}" onclick="PE.avatar={type:'moosi',id:'${c}'};render()">${avatar({type: "moosi", id: c})}</button>`).join("")}</div>${champGrid("avatar", selOf("avatar"), 1)}`)}
+    ${sec(`Lieblings-Champions (${PE.favs.length}/3)`, champGrid("favs", PE.favs, 3))}
+    ${sec("Banner", champGrid("banner", selOf("banner"), 1))}
+    <label class="tg"><span>Profil für Freunde sichtbar</span><input type="checkbox" id="pe_vis" ${PE.visible !== false ? "checked" : ""}></label>
+    <label class="tg"><span>Zeigen, wenn ich spiele</span><input type="checkbox" id="pe_st" ${PE.show_status !== false ? "checked" : ""}></label>
+    <button class="btn" style="margin-top:12px" onclick="saveProf()">Profil speichern</button></div>`;
+}
 function vMore() {
-  return `<h1>Mehr</h1><div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
+  return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
     <div class="row"><span>Riot ID</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
     ${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
     <p class="muted small" style="text-align:center;margin-top:18px"><a style="color:var(--sec)" href="/datenschutz.html">Datenschutz</a> · <a style="color:var(--sec)" href="/impressum.html">Impressum</a><br>Jungle Coach ist nicht mit Riot Games verbunden.</p>`;

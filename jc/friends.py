@@ -91,7 +91,7 @@ def presence(lcu):
     return out, names
 
 
-def listing(cfg, gd, cred, lcu=None, max_age=900):
+def listing(cfg, gd, cred, lcu=None, max_age=900, pub=None):
     platform = cfg.get("platform", "euw1")
     pres, client = presence(lcu)
     saved = cfg.get("friends", [])
@@ -103,8 +103,12 @@ def listing(cfg, gd, cred, lcu=None, max_age=900):
             _busy.add(key)
             _pool.submit(_load_summary, cred, platform, rid, gd)
         c = COACH.get(key) or {}
-        res.append({**(s or {"riot_id": rid, "loading": True}), "riot_id": rid,
-                    "presence": pres.get(key, {"status": "unknown"}),
+        jc = (pub or {}).get(key)
+        p_ = dict(pres.get(key, {"status": "unknown"}))
+        if jc and jc.get("status") and jc["status"].get("state") in ("ingame", "champselect"):
+            p_ = {"status": "ingame", "game": jc["status"]["state"], "champ": jc["status"].get("champ")}
+        res.append({**(s or {"riot_id": rid, "loading": True}), "riot_id": rid, "jc": jc,
+                    "presence": p_,
                     "coach": {"status": c.get("status"), "score": (c.get("plan") or {}).get("score")}})
     order = {"ingame": 0, "online": 1, "away": 2, "offline": 3, "unknown": 4}
     res.sort(key=lambda f: order.get(f["presence"]["status"], 5))

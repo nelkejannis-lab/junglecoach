@@ -151,3 +151,22 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(calls[-1], ("PUT", {"friends": ["Luca#EUW", "Tobi#0815"]}))
         finally:
             app.cloud, app.save_config = orig_cloud, orig_save
+
+
+class RoleTests(unittest.TestCase):
+    def test_detect_role(self):
+        from jc import app
+        orig = app.save_config
+        app.save_config = lambda c: None
+        try:
+            hist = {f"M{i}": {"game_start": i, "role": "JUNGLE" if i % 4 else "TOP"} for i in range(20)}
+            hist["__meta"] = {"start": 20}
+            cfg = {"main_role": "TOP"}
+            det = app.detect_role(cfg, hist)
+            self.assertEqual(det["role"], "JUNGLE")
+            self.assertEqual(cfg["main_role"], "JUNGLE")
+            cfg = {"main_role": "TOP", "role_auto": False}
+            app.detect_role(cfg, hist)
+            self.assertEqual(cfg["main_role"], "TOP")
+        finally:
+            app.save_config = orig

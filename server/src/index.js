@@ -6,6 +6,9 @@
  *  /api/me            GET account | PUT {riot_id} | DELETE account (GDPR Art. 17)
  *  /api/sync/friends  GET | PUT {friends:[Riot IDs]}   – same friend list on PC and phone
  *  /api/sync/coach    GET | PUT {plan}                  – last coach summary from the PC app, for the phone
+ *  /api/sync/profile  GET | PUT {profile}               – own display name, avatar, banner, bio, favourite champions
+ *  /api/sync/status   PUT {state, champ}                – "playing right now" from the PC app (shown to friends)
+ *  /api/public/profiles?ids=A#1,B#2  GET               – friends' public profiles + live status (only if shared)
  *  /m/                mobile web app (also loaded by the iOS app)
  *  /riot/{host}/...   authenticated proxy to the Riot API (key stays on the server)
  *  everything else    static website (public/)
@@ -31,6 +34,7 @@ const RIOT_ROUTES = [
   [/^\/lol\/match\/v5\/matches\/[A-Z0-9]+_\d+$/, 7 * 86400],
   [/^\/lol\/match\/v5\/matches\/[A-Z0-9]+_\d+\/timeline$/, 7 * 86400],
   [/^\/lol\/status\/v4\/platform-data$/, 60],
+  [/^\/lol\/spectator\/v5\/active-games\/by-summoner\/[\w-]+$/, 30], // "is playing right now" (official)
 ];
 
 const PROVIDERS = {
@@ -167,35 +171,83 @@ async function riotProxy(req, url, env, ctx, user) {
   return res;
 }
 
-// ------------------------------------------------------------------ sync (friends + coach summary)
+// ------------------------------------------------------------------ sync (friends, coach summary, profile, status)
 async function ensureData(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_data (user_id INTEGER PRIMARY KEY, friends TEXT, coach TEXT,
-    updated_at INTEGER)`).run();
+    updated_at INTEGER, friends_at INTEGER, profile TEXT, status TEXT, status_at INTEGER)`).run();
+  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER"]) {
+    try { await env.DB.prepare(`ALTER TABLE user_data ADD COLUMN ${col}`).run(); } catch { /* exists */ }
+  }
 }
 const RIOT_ID = /^[^#]{1,24}#[^#]{1,8}$/;
+const CHAMP_ID = /^[A-Za-z]{1,20}$/;
+const clean = (v, n) => String(v ?? "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, n);
+function cleanProfile(p) {
+  p = p && typeof p === "object" ? p : {};
+  const av = p.avatar && typeof p.avatar === "object" ? p.avatar : {};
+  return {
+    name: clean(p.name, 24),
+    bio: clean(p.bio, 140),
+    avatar: av.type === "champ" && CHAMP_ID.test(av.id || "") ? { type: "champ", id: av.id }
+      : av.type === "moosi" && /^(teal|green|orange|pink|violet|gold)$/.test(av.id || "") ? { type: "moosi", id: av.id } : null,
+    banner: CHAMP_ID.test(p.banner || "") ? p.banner : null,
+    favs: (Array.isArray(p.favs) ? p.favs : []).filter((c) => CHAMP_ID.test(String(c))).slice(0, 3),
+    visible: p.visible !== false,
+    show_status: p.show_status !== false,
+  };
+}
+const COL_AT = { friends: "friends_at", coach: "updated_at", profile: "updated_at" };
 async function sync(req, env, user, kind) {
   await ensureData(env);
   if (req.method === "GET") {
-    const row = await env.DB.prepare(`SELECT ${kind} AS v, updated_at FROM user_data WHERE user_id = ?`).bind(user.id).first();
-    const v = row && row.v ? JSON.parse(row.v) : (kind === "friends" ? [] : null);
-    return json({ [kind]: v, updated_at: row ? row.updated_at : null });
+    const row = await env.DB.prepare(`SELECT ${kind} AS v, ${COL_AT[kind] || "updated_at"} AS at FROM user_data WHERE user_id = ?`).bind(user.id).first();
+    const v = row && row.v ? JSON.parse(row.v) : (kind === "friends" ? [] : kind === "profile" ? cleanProfile({}) : null);
+    return json({ [kind]: v, updated_at: row ? row.at : null });
   }
   if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
   const raw = await req.text();
   if (raw.length > MAX_SYNC) return json({ error: "zu groß" }, 413);
   let body;
   try { body = JSON.parse(raw || "{}"); } catch { return json({ error: "ungültiges JSON" }, 400); }
+  const now = Math.floor(Date.now() / 1000);
+  if (kind === "status") {
+    const st = ["online", "champselect", "ingame", "offline"].includes(body.state) ? body.state : "offline";
+    const v = { state: st, champ: CHAMP_ID.test(body.champ || "") ? body.champ : null, since: Number(body.since) || now };
+    await env.DB.prepare(`INSERT INTO user_data (user_id, status, status_at) VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET status = excluded.status, status_at = excluded.status_at`)
+      .bind(user.id, JSON.stringify(v), now).run();
+    return json({ ok: true });
+  }
   let v;
   if (kind === "friends") {
     v = [...new Set((Array.isArray(body.friends) ? body.friends : []).map((f) => String(f).trim()).filter((f) => RIOT_ID.test(f)))].slice(0, 50);
+  } else if (kind === "profile") {
+    v = cleanProfile(body.profile);
   } else {
     v = body.plan && typeof body.plan === "object" ? body.plan : null;
   }
-  const now = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(`INSERT INTO user_data (user_id, ${kind}, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET ${kind} = excluded.${kind}, updated_at = excluded.updated_at`)
+  const col = COL_AT[kind] || "updated_at";
+  await env.DB.prepare(`INSERT INTO user_data (user_id, ${kind}, ${col}) VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET ${kind} = excluded.${kind}, ${col} = excluded.${col}`)
     .bind(user.id, JSON.stringify(v), now).run();
-  return json({ ok: true, [kind]: kind === "friends" ? v : undefined });
+  return json({ ok: true, [kind]: kind === "coach" ? undefined : v, updated_at: now });
+}
+
+// Public profiles of other Jungle Coach users (by Riot ID) – only what they chose to share.
+async function publicProfiles(url, env) {
+  await ensureData(env);
+  const ids = (url.searchParams.get("ids") || "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => RIOT_ID.test(x)).slice(0, 50);
+  if (!ids.length) return json({ profiles: {} });
+  const rows = await env.DB.prepare(`SELECT u.riot_id AS rid, d.profile AS p, d.status AS s, d.status_at AS sa
+      FROM users u JOIN user_data d ON d.user_id = u.id WHERE lower(u.riot_id) IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
+  const now = Math.floor(Date.now() / 1000), out = {};
+  for (const r of rows.results || []) {
+    const p = cleanProfile(r.p ? JSON.parse(r.p) : {});
+    if (!p.visible) continue;
+    const st = p.show_status && r.s && now - (r.sa || 0) <= 180 ? JSON.parse(r.s) : null;
+    out[r.rid.toLowerCase()] = { name: p.name, bio: p.bio, avatar: p.avatar, banner: p.banner, favs: p.favs, status: st };
+  }
+  return json({ profiles: out });
 }
 
 // ------------------------------------------------------------------ router
@@ -211,12 +263,15 @@ export default {
       if ((m = p.match(/^\/auth\/(discord|google)$/))) return await startLogin(m[1], url, env);
       if ((m = p.match(/^\/auth\/(discord|google)\/callback$/))) return await finishLogin(m[1], url, env);
       if (p === "/m") return Response.redirect(`${url.origin}/m/`, 301);
-      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/")) {
+      if (p === "/api/me" || p.startsWith("/riot/") || p.startsWith("/api/sync/") || p.startsWith("/api/public/")) {
         const user = await authUser(req, env);
         if (!user) return json({ error: "Nicht angemeldet oder Sitzung abgelaufen." }, 401);
         if (p.startsWith("/riot/")) return await riotProxy(req, url, env, ctx, user);
         if (p === "/api/sync/friends") return await sync(req, env, user, "friends");
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
+        if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
+        if (p === "/api/sync/status") return await sync(req, env, user, "status");
+        if (p === "/api/public/profiles" && req.method === "GET") return await publicProfiles(url, env);
         if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);
         if (req.method === "PUT") {

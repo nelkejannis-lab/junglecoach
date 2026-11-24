@@ -254,6 +254,8 @@
   .fr .sub { font-size:11.5px; color:var(--sec); }
   .fr .rk { margin-left:auto; text-align:right; font-size:11.5px; font-weight:800; white-space:nowrap; }
   .card .tsearch input { border:0 !important; background:none !important; padding:0 !important; box-shadow:none !important; width:auto; flex:1; }
+  .mav { display:inline-grid; place-items:center; border-radius:30%; background:linear-gradient(145deg,#0f2a2a,#13203a); overflow:hidden; flex:none; }
+  .mav .moosi { animation:none; filter:none; }
   .poolgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px; max-height:330px; overflow:auto; padding:2px; }
   .pc { display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 4px; border-radius:14px; border:1px solid transparent; background:var(--card2); color:var(--txt); font:inherit; cursor:pointer; transition:background .15s, border-color .15s; }
   .pc:hover { background:var(--card3); } .pc span { font-size:11px; line-height:1.2; text-align:center; color:var(--sec); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -346,7 +348,7 @@ const badge = b => b ? `<span class="badge ${BADGE[b] || ""}">${esc(b)}</span>` 
 document.querySelectorAll("#nav button").forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
   view = v; document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("act", x.dataset.v === v));
-  if (v === "settings") { loadAccount(); ovSet({}); recSet({}); poolSel = null; poolQ = ""; if (!champList.length) loadChampList().then(poolRefresh); }
+  if (v === "settings") { loadAccount(); ovSet({}); recSet({}); loadMyProfile(); PK = {}; profMsg = ""; poolSel = null; poolQ = ""; if (!champList.length) loadChampList().then(poolRefresh); }
   if (v === "profile" && !profData && !profLoading) loadProfile(); if (v === "ranked") loadRanked(); if (v === "meta") { loadMeta(); loadTier(); } if (v === "settings") loadCfg(); if (v === "analyse") { loadSessions(); loadReviewData(); }
   if (v === "coach") loadCoach();
   if (v === "friends") { loadFriends(); if (friendView) friendCoachLoad(friendView); }
@@ -414,6 +416,12 @@ async function friendCoachLoad(rid, start) {
 function openFriend(rid) { friendView = rid; go("friends"); friendCoachLoad(rid); }
 function friendProfile(rid) { profQuery = rid; profQueue = ""; profData = null; go("profile"); loadProfile(); }
 function topSearch() { const q = ($("#tsq").value || "").trim(); if (q.includes("#")) friendProfile(q); }
+function playingTxt(f) {
+  const p = f.presence || {};
+  if (p.status !== "ingame") return "";
+  const champ = p.champ ? (champList.find(c => c.id === p.champ) || {name: p.champ}).name : "";
+  return `<span style="color:var(--acc);font-weight:700">🎮 ${p.game === "champselect" ? "Champ Select" : "spielt"}${champ ? " " + esc(champ) : ""}</span>`;
+}
 const PRES = {ingame: "Im Spiel", online: "Online", away: "Abwesend", offline: "Offline", unknown: "–"};
 const rankTxt = r => r ? `<span class="tierc ${r.tier}">${r.tier[0] + r.tier.slice(1).toLowerCase()} ${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier) ? "" : r.division}</span> · ${r.lp} LP` : '<span class="muted">Unranked</span>';
 const profIcon = (id, s = 40) => id ? `<img src="https://ddragon.leagueoflegends.com/cdn/${VER()}/img/profileicon/${id}.png" width="${s}" height="${s}" style="border-radius:12px;flex:none" onerror="this.style.visibility='hidden'">` : `<div class="avatar" style="width:${s}px;height:${s}px">${svgIcon("profile", s / 2)}</div>`;
@@ -437,13 +445,14 @@ function railHtml() {
   const cfg = cfgData || {}, fl = (friendsData || {}).friends || [], [t, txt, mood] = moosiSays();
   const main = (cfg.champion_pool || [])[0];
   const online = fl.filter(f => ["online", "ingame"].includes((f.presence || {}).status)).length;
-  return `<div class="rcard"><div class="me">${main ? cImg(main, 44, 13) : profIcon(null, 44)}<div style="min-width:0"><b>${esc(cfg.riot_id || "Kein Account")}</b>
+  const mp = (myProf || {}).profile || {};
+  return `<div class="rcard"><div class="me">${avatarHtml(mp.avatar, 44, main)}<div style="min-width:0"><b>${esc(mp.name || cfg.riot_id || "Kein Account")}</b>
       <small>${esc(ROLE_DE[cfg.main_role] || cfg.main_role || "Rolle wählen")}${main ? " · Main " + esc(main) : ""}</small></div></div></div>
     <div class="rcard moosi-card">${moosi(mood, 78)}<div class="bubble"><b>${esc(t)}</b>${esc(txt)}</div></div>
     <div class="rcard"><h4>${svgIcon("friends", 17)} Freunde <span class="cnt">${online} online · ${fl.length}</span></h4>
       <div style="margin-top:8px">${fl.slice(0, 8).map(f => `<div class="fr" onclick='openFriend(${JSON.stringify(f.riot_id)})'>
-        <div class="av">${f.top && f.top[0] ? cImg(f.top[0], 40, 12) : profIcon(f.icon)}<i class="${(f.presence || {}).status || ""}"></i></div>
-        <div style="min-width:0"><div class="nm">${esc(f.riot_id.split("#")[0])}</div><div class="sub">${esc(PRES[(f.presence || {}).status] || "–")}${f.role ? " · " + esc(f.role) : ""}</div></div>
+        <div class="av">${f.jc && f.jc.avatar ? avatarHtml(f.jc.avatar, 40) : f.top && f.top[0] ? cImg(f.top[0], 40, 12) : profIcon(f.icon)}<i class="${(f.presence || {}).status || ""}"></i></div>
+        <div style="min-width:0"><div class="nm">${esc((f.jc && f.jc.name) || f.riot_id.split("#")[0])}</div><div class="sub">${playingTxt(f) || esc(PRES[(f.presence || {}).status] || "–") + (f.role ? " · " + esc(f.role) : "")}</div></div>
         <div class="rk">${f.rank ? rankTxt(f.rank).replace(/ · .*/, "") : f.loading ? '<span class="muted">…</span>' : ""}</div></div>`).join("")
         || '<p class="small muted" style="margin:6px 4px">Noch keine Freunde gespeichert.</p>'}</div>
       <div class="addf"><input id="rail-add" placeholder="Name#TAG" onkeydown="if(event.key==='Enter')addFriend(this.value)"><button class="btn sec" onclick="addFriend($('#rail-add').value)">+</button></div></div>`;
@@ -474,9 +483,11 @@ function renderFriends() {
   const cards = fl.length ? `<div class="card wide" style="padding:0;background:none;border:0;box-shadow:none"><div class="fgrid">${fl.map(f => {
       const st = (f.presence || {}).status || "unknown", top = (f.top || [])[0], wr = f.recent && f.recent.games ? Math.round(100 * f.recent.wins / f.recent.games) : null;
       return `<div class="fcardx click" onclick='openFriend(${JSON.stringify(f.riot_id)})'>
-        <div class="top" style="background-image:url('${top ? splash(top) : ""}')"></div><span class="st"><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> ${esc(PRES[st])}</span>
-        <div class="body"><div class="av">${profIcon(f.icon, 58)}</div>
-          <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><b style="font-size:17px">${esc(f.riot_id.split("#")[0])}</b><span class="muted small">#${esc(f.riot_id.split("#")[1] || "")}</span></div>
+        <div class="top" style="background-image:url('${(f.jc && f.jc.banner) ? splash(f.jc.banner) : top ? splash(top) : ""}')"></div><span class="st"><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> ${playingTxt(f) || esc(PRES[st])}</span>
+        <div class="body"><div class="av">${f.jc && f.jc.avatar ? avatarHtml(f.jc.avatar, 58) : profIcon(f.icon, 58)}</div>
+          <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><b style="font-size:17px">${esc((f.jc && f.jc.name) || f.riot_id.split("#")[0])}</b><span class="muted small">${esc(f.riot_id)}</span></div>
+          ${f.jc && f.jc.bio ? `<div class="small" style="margin-top:2px;color:#c9d2e6">${esc(f.jc.bio)}</div>` : ""}
+          ${f.jc && (f.jc.favs || []).length ? `<div style="display:flex;gap:4px;margin-top:6px">${f.jc.favs.map(c => cImg(c, 22, 6)).join("")}<span class="muted small" style="align-self:center;margin-left:4px">Lieblinge</span></div>` : ""}
           <div class="small" style="margin-top:2px">${f.loading ? '<span class="muted">Lade Stats …</span>' : f.error ? `<span class="red">${esc(f.error)}</span>` : rankTxt(f.rank)}</div>
           <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-top:12px"><div class="stat"><b class="${wr >= 50 ? "green" : wr == null ? "" : "red"}">${wr ?? "–"}%</b><span>WR (20)</span></div>
             <div class="stat"><b>${f.recent && f.recent.kda != null ? f.recent.kda : "–"}</b><span>KDA</span></div><div class="stat"><b>${(f.coach || {}).score ?? "–"}</b><span>Coach</span></div></div>
@@ -1116,9 +1127,10 @@ function METAEXTRA() {
   const cr = m.crawler || {};
   let h = card("Datenbasis", "", `<div class="stats" style="margin-top:0"><div class="stat"><b>${m.total.toLocaleString("de-DE")}</b><span>Datensätze</span></div><div class="stat"><b>${esc(m.patch || "–")}</b><span>Aktueller Patch</span></div>
        <div class="stat"><b style="font-size:14px">${esc((m.cloud || {}).status || "–")}</b><span>Cloud-Datenbank${m.cloud && m.cloud.updated ? " · " + new Date(m.cloud.updated * 1000).toLocaleString("de-DE") : ""}</span></div></div>
-     <div class="row" style="border:0;margin-top:10px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
-     <button class="btn ${cr.running ? "sec" : ""}" onclick="crawl()">${cr.running ? "Stoppen" : "Zusätzlich vom PC sammeln"}</button></div>
-     <p class="small muted">Gesammelt wird rund um die Uhr in der Cloud (EUW, NA, KR, OCE) mit Schwerpunkt auf deinen Champions.</p>`);
+     <p class="small muted" style="margin-top:10px">Läuft automatisch: Die Cloud sammelt rund um die Uhr (EUW, NA, KR, OCE), die App holt neue Daten jede Stunde im Hintergrund – du musst nichts tun.</p>
+     <details class="dev"><summary>Für Entwickler: mit eigenem Riot-Key zusätzlich vom PC sammeln</summary>
+       <div class="row" style="border:0;margin-top:8px"><span class="small ${cr.running ? "acc" : "muted"}">${esc(cr.message)}</span>
+       <button class="btn sec" onclick="crawl()">${cr.running ? "Stoppen" : "Starten"}</button></div></details>`);
   return h;
 }
 
@@ -1151,6 +1163,76 @@ function overlayCard() {
     <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
       <button class="btn ${o.move ? "" : "sec"}" onclick="ovSet({move:${!o.move}})">${o.move ? "Fertig – Position speichern" : "Position verschieben"}</button></div>`);
 }
+// ---- own profile (name, picture, text, favourite champions) – shared with friends via the server
+const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
+function avatarHtml(av, size = 40, fallbackChamp) {
+  if (av && av.type === "moosi") return `<span class="mav" style="width:${size}px;height:${size}px;filter:hue-rotate(${MOOSI_HUE[av.id] || 0}deg)">${moosi("happy", size * .9)}</span>`;
+  const c = av && av.type === "champ" ? av.id : fallbackChamp;
+  return c ? cImg(c, size, Math.round(size * .3)) : `<span class="mav" style="width:${size}px;height:${size}px">${moosi("happy", size * .9)}</span>`;
+}
+let myProf = null, profMsg = "", PK = {};
+async function loadMyProfile() { try { myProf = await getJson("/api/my-profile"); } catch (e) {} if (view === "settings") render(); renderRail(); }
+async function saveMyProfile() {
+  const p = myProf.profile || {};
+  p.name = ($("#mp_name") || {}).value || ""; p.bio = ($("#mp_bio") || {}).value || "";
+  p.visible = !!($("#mp_vis") || {}).checked; p.show_status = !!($("#mp_st") || {}).checked;
+  p.favs = PK.favs ? PK.favs.sel.slice(0, 3) : p.favs; p.banner = PK.banner ? PK.banner.sel[0] || null : p.banner;
+  if (PK.avatar && PK.avatar.sel[0]) p.avatar = {type: "champ", id: PK.avatar.sel[0]};
+  try {
+    const r = await fetch("/api/my-profile", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({profile: p})});
+    const j = await r.json(); if (j.profile) { myProf.profile = j.profile; profMsg = "Gespeichert ✓"; } else profMsg = j.error || "Fehler";
+  } catch (e) { profMsg = "Server nicht erreichbar"; }
+  render(); renderRail();
+}
+function setMoosiAvatar(c) { (myProf.profile = myProf.profile || {}).avatar = {type: "moosi", id: c}; if (PK.avatar) PK.avatar.sel = []; pkRefresh("avatar"); }
+function pkHtml(key) {
+  const k = PK[key], q = k.q.trim().toLowerCase();
+  const list = champList.filter(c => !q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
+  return `${k.max > 1 ? `<div class="chips" style="margin-bottom:8px;min-height:30px">${k.sel.map(id => `<button class="chip on" style="display:flex;gap:6px;align-items:center" onclick="pkToggle('${key}','${id}')">${cImg(id, 20, 6)} ${esc((champList.find(c => c.id === id) || {name: id}).name)} ✕</button>`).join("") || '<span class="muted small">Noch keiner gewählt.</span>'}</div>` : ""}
+    <div class="tsearch" style="max-width:none;height:40px;margin-bottom:8px"><span class="ic">${svgIcon("search")}</span><input id="pkq_${key}" placeholder="Champion suchen …" value="${esc(k.q)}" oninput="PK['${key}'].q=this.value;pkRefresh('${key}',true)"></div>
+    <div class="poolgrid" style="max-height:220px">${list.map(c => `<button class="pc ${k.sel.includes(c.id) ? "on" : ""}" onclick="pkToggle('${key}','${c.id}')">${cImg(c.id, 44, 11)}<span>${esc(c.name)}</span></button>`).join("")}</div>`;
+}
+function pkToggle(key, id) {
+  const k = PK[key];
+  if (k.sel.includes(id)) k.sel = k.sel.filter(x => x !== id);
+  else k.sel = k.max === 1 ? [id] : k.sel.length < k.max ? [...k.sel, id] : k.sel;
+  if (key === "avatar" && k.sel[0]) (myProf.profile = myProf.profile || {}).avatar = {type: "champ", id: k.sel[0]};
+  pkRefresh(key);
+}
+function pkRefresh(key, keepFocus) {
+  const box = document.getElementById("pk_" + key); if (!box) return;
+  const g = box.querySelector(".poolgrid"), st = g ? g.scrollTop : 0;
+  const tmp = document.createElement("div"); tmp.innerHTML = pkHtml(key); translateTree(tmp); morph(box, tmp);
+  const g2 = box.querySelector(".poolgrid"); if (g2) g2.scrollTop = keepFocus ? 0 : st;
+  if (keepFocus) { const i = document.getElementById("pkq_" + key); if (i && document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+  const prev = document.getElementById("mp_prev"); if (prev) prev.innerHTML = avatarHtml((myProf.profile || {}).avatar, 64, ((cfgData || {}).champion_pool || [])[0]);
+}
+function profileCard() {
+  if (!myProf) return card("Mein Profil", "", '<p class="muted small">Lädt …</p>');
+  if (!myProf.login) return card("Mein Profil", "Name, Profilbild, kurzer Text und Lieblings-Champions – sichtbar für deine Freunde.", '<p class="muted small">Melde dich oben unter „Konto“ an, um dein Profil zu gestalten.</p>');
+  const p = myProf.profile || {}, h = myProf.history || {}, rd = myProf.role_detected;
+  PK.avatar = PK.avatar || {sel: p.avatar && p.avatar.type === "champ" ? [p.avatar.id] : [], max: 1, q: ""};
+  PK.favs = PK.favs || {sel: (p.favs || []).slice(), max: 3, q: ""};
+  PK.banner = PK.banner || {sel: p.banner ? [p.banner] : [], max: 1, q: ""};
+  const sec = (t, inner) => `<details class="dev" style="margin-top:12px"><summary>${t}</summary><div style="margin-top:10px">${inner}</div></details>`;
+  return card("Mein Profil", "So sehen dich deine Freunde – in der PC-App und auf dem Handy.", `
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:6px"><div id="mp_prev">${avatarHtml(p.avatar, 64, ((cfgData || {}).champion_pool || [])[0])}</div>
+      <div style="flex:1"><label class="f" style="margin-top:0">Anzeigename</label><input class="f" id="mp_name" maxlength="24" value="${esc(p.name || "")}" placeholder="${esc(((cfgData || {}).riot_id || "").split("#")[0])}"></div></div>
+    <label class="f">Über mich <span class="muted small">(max. 140 Zeichen)</span></label><input class="f" id="mp_bio" maxlength="140" value="${esc(p.bio || "")}" placeholder="z. B. Graves-OTP · Ziel Platin">
+    ${sec("Profilbild wählen", `<div class="chips" style="margin-bottom:10px">${Object.keys(MOOSI_HUE).map(c => `<button class="chip ${p.avatar && p.avatar.type === "moosi" && p.avatar.id === c ? "on" : ""}" style="padding:4px" onclick="setMoosiAvatar('${c}');render()" title="Moosi ${c}">${avatarHtml({type: "moosi", id: c}, 34)}</button>`).join("")}</div><div id="pk_avatar">${pkHtml("avatar")}</div>`)}
+    ${sec("Lieblings-Champions (bis zu 3)", `<div id="pk_favs">${pkHtml("favs")}</div>`)}
+    ${sec("Banner (Splash-Art)", `<div id="pk_banner">${pkHtml("banner")}</div>`)}
+    <label class="switch" style="margin-top:10px"><span>Profil für Freunde sichtbar</span><input type="checkbox" id="mp_vis" ${p.visible !== false ? "checked" : ""}></label>
+    <label class="switch"><span>Zeigen, wenn ich spiele <span class="small muted">(Champ Select / im Spiel + Champion)</span></span><input type="checkbox" id="mp_st" ${p.show_status !== false ? "checked" : ""}></label>
+    <div class="row" style="border:0"><span class="small ${profMsg.includes("✓") ? "green" : "muted"}">${esc(profMsg)}</span><button class="btn" onclick="saveMyProfile()">Profil speichern</button></div>
+    <div class="switch" style="border-top:1px solid var(--sep)"><span>Rolle automatisch erkennen<div class="small muted">${rd ? `Erkannt: ${esc(ROLE_DE[rd.role] || rd.role)} (${rd.count}/${rd.games} der letzten Games)` : "Wird nach ein paar Games erkannt."}</div></span>
+      <input type="checkbox" ${myProf.role_auto !== false ? "checked" : ""} onchange="saveRoleAuto(this.checked)"></div>
+    <p class="small muted" style="margin:6px 0 0">Deine Game-Datenbank: <b>${h.games || 0} Games</b> gespeichert${h.complete ? " (komplett)" : " · wächst automatisch mit älteren und neuen Games"}.</p>`);
+}
+async function saveRoleAuto(on) {
+  try { await fetch("/api/config", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({role_auto: on})}); myProf.role_auto = on; } catch (e) {}
+}
+
 // champion pool picker: search + all champions with pictures (updates only its own box, keeps other inputs)
 let poolSel = null, poolQ = "";
 function poolHtml() {
@@ -1177,7 +1259,7 @@ function renderSettings() {
   if (!c) return page("Einstellungen", "Lade…", "");
   const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
   return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
-    accountCard() + overlayCard() + recCard() +
+    accountCard() + profileCard() + overlayCard() + recCard() +
     card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
@@ -1357,7 +1439,9 @@ function togglePlay() {
   playTimer = setInterval(() => { replayMin++; if (replayMin >= 15) { clearInterval(playTimer); playTimer = null; } render(); }, 700);
   render();
 }
-loadCfg(); loadChampList(); loadFriends(); go("coach"); tick();
+loadCfg(); loadChampList(); loadFriends(); loadMyProfile(); go("coach"); tick();
+setTimeout(() => { loadMeta(); loadTier(); }, 4000);  // Meta tab is ready before you open it
+setInterval(() => { if (!document.hidden && view !== "meta") loadMeta(); }, 300000);
 setInterval(() => { if (!document.hidden) loadFriends(); }, 20000);
 setInterval(tick, 2000); setInterval(loadSessions, 20000);
 setInterval(() => { if (view === "ranked") loadRanked(); if (view === "meta") loadMeta(); }, 8000);

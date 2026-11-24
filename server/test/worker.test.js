@@ -21,8 +21,8 @@ function mockDB() {
           } else if (sql.startsWith("UPDATE users SET riot_id")) {
             users.find((u) => u.id === args[1]).riot_id = args[0];
           } else if (sql.startsWith("INSERT INTO user_data")) {
-            const col = sql.match(/user_id, (\w+),/)[1];
-            data.set(args[0], { ...(data.get(args[0]) || {}), [col]: args[1], updated_at: args[2] });
+            const [, col, atc] = sql.match(/user_id, (\w+), (\w+)\)/);
+            data.set(args[0], { ...(data.get(args[0]) || {}), [col]: args[1], [atc]: args[2] });
           } else if (sql.startsWith("DELETE FROM user_data")) {
             data.delete(args[0]);
           } else if (sql.startsWith("DELETE FROM users")) {
@@ -30,11 +30,19 @@ function mockDB() {
           }
           return {};
         },
+        async all() {
+          if (sql.includes("FROM users u JOIN user_data")) {
+            return { results: users.filter((u) => u.riot_id && args.includes(u.riot_id.toLowerCase()) && data.has(u.id))
+              .map((u) => ({ rid: u.riot_id, p: data.get(u.id).profile, s: data.get(u.id).status, sa: data.get(u.id).status_at })) };
+          }
+          return { results: [] };
+        },
         async first() {
           if (sql.includes("FROM config")) return this.cfg ?? (globalThis.__cfg ? { value: globalThis.__cfg } : null);
           if (sql.includes("FROM user_data")) {
             const d = data.get(args[0]); const col = sql.match(/SELECT (\w+) AS v/)[1];
-            return d ? { v: d[col] ?? null, updated_at: d.updated_at } : null;
+            const atc = (sql.match(/, (\w+) AS at/) || [])[1] || "updated_at";
+            return d ? { v: d[col] ?? null, at: d[atc] ?? null } : null;
           }
           if (sql.includes("WHERE id = ?")) return users.find((u) => u.id === args[0]) || null;
           return users.find((u) => u.provider === args[0] && u.provider_id === args[1]) || null;
@@ -89,8 +97,8 @@ test("login flow: discord -> account -> token back to app", async () => {
   assert.equal((await worker.fetch(mreq(), env, ctx)).status, 200);
   assert.equal((await worker.fetch(mreq(), env, ctx)).status, 200);
   assert.equal(calls, 1);
-  r = await worker.fetch(new Request("https://jc.dev/riot/europe/lol/spectator/v5/active-games/by-summoner/x", { headers: { authorization: "Bearer " + token } }), env, ctx);
-  assert.equal(r.status, 403);
+  r = await worker.fetch(new Request("https://jc.dev/riot/euw1/lol/challenges/v1/player-data/x", { headers: { authorization: "Bearer " + token } }), env, ctx);
+  assert.equal(r.status, 403); // not on the allowlist
   r = await worker.fetch(new Request("https://jc.dev/riot/evil.com/x"), env, ctx);
   assert.equal(r.status, 401);
   // delete account
@@ -124,5 +132,27 @@ test("mobile redirects and sync", async () => {
   r = await worker.fetch(new Request("https://jc.dev/api/sync/coach", { method: "PUT", headers: H, body: "x".repeat(90000) }), env, ctx);
   assert.equal(r.status, 413);
   r = await worker.fetch(new Request("https://jc.dev/api/sync/friends"), env, ctx);
+  assert.equal(r.status, 401);
+});
+
+test("profiles, status and public view", async () => {
+  const { sign } = await import("../src/index.js");
+  const cfgRow = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  env.DB.users.push({ id: 77, provider: "google", provider_id: "p77", name: "P", riot_id: "Luca#EUW", created_at: 1, last_login: 1 });
+  env.DB.users.push({ id: 78, provider: "google", provider_id: "p78", name: "Q", riot_id: "Mia#GER", created_at: 1, last_login: 1 });
+  const H = async (uid) => ({ authorization: "Bearer " + await sign({ uid, exp: Date.now() / 1000 + 600 }, cfgRow.value) });
+  let r = await worker.fetch(new Request("https://jc.dev/api/sync/profile", { method: "PUT", headers: await H(77),
+    body: JSON.stringify({ profile: { name: "Luca <b>", bio: "Jungle main", avatar: { type: "champ", id: "Graves" }, favs: ["Graves", "x y", "Gwen"], banner: "Gwen" } }) }), env, ctx);
+  const pr = (await r.json()).profile;
+  assert.equal(pr.name, "Luca b");
+  assert.deepEqual(pr.favs, ["Graves", "Gwen"]);
+  await worker.fetch(new Request("https://jc.dev/api/sync/status", { method: "PUT", headers: await H(77), body: JSON.stringify({ state: "ingame", champ: "Graves" }) }), env, ctx);
+  await worker.fetch(new Request("https://jc.dev/api/sync/profile", { method: "PUT", headers: await H(78), body: JSON.stringify({ profile: { name: "Hidden", visible: false } }) }), env, ctx);
+  r = await worker.fetch(new Request("https://jc.dev/api/public/profiles?ids=" + encodeURIComponent("luca#euw,Mia#GER"), { headers: await H(78) }), env, ctx);
+  const j = await r.json();
+  assert.equal(j.profiles["luca#euw"].status.state, "ingame");
+  assert.equal(j.profiles["luca#euw"].avatar.id, "Graves");
+  assert.equal(j.profiles["mia#ger"], undefined); // chose not to be visible
+  r = await worker.fetch(new Request("https://jc.dev/api/public/profiles?ids=x"), env, ctx);
   assert.equal(r.status, 401);
 });

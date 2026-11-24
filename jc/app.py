@@ -23,7 +23,7 @@ BUILD_CACHE = {}
 GPM_BENCH = {}
 OVERLAY = {"move": False, "pick": None}  # move mode requested from the app (settings button)
 REVIEW_CACHE = os.path.join(ROOT, "review_cache.json")
-EDITABLE = ["language", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
+EDITABLE = ["language", "role_auto", "main_role", "riot_id", "platform", "riot_api_key", "champion_pool", "auto_import_runes", "review_games", "profile_games",
             "meta_bracket", "meta_max_matches"]
 
 
@@ -80,14 +80,80 @@ def save_history(account, res):
         if g.get("match_id") and g.get("stats"):
             hist[g["match_id"]] = {"game_start": g.get("game_start"), "champion": g.get("champion"),
                                    "role": g.get("role") or "JUNGLE", "win": g.get("win"), "stats": g["stats"]}
-    cutoff = time.time() - 120 * 86400
-    hist = {k: v for k, v in hist.items() if (v.get("game_start") or 0) >= cutoff}
-    if len(hist) > 600:
-        hist = dict(sorted(hist.items(), key=lambda kv: -(kv[1].get("game_start") or 0))[:600])
+    meta_ = hist.pop("__meta", None)
+    if len(hist) > 1000:  # the database keeps growing up to 1000 games (~1 year for most players)
+        hist = dict(sorted(hist.items(), key=lambda kv: -(kv[1].get("game_start") or 0))[:1000])
+    if meta_:
+        hist["__meta"] = meta_
     os.makedirs(HISTORY_DIR, exist_ok=True)
     with open(_hist_path(account), "w", encoding="utf-8") as f:
         json.dump(hist, f)
     return hist
+
+
+ROLE_NAMES = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
+
+
+def detect_role(cfg, hist):
+    """Role played most in the last 20 games (>= 50 %) becomes the main role – unless switched off."""
+    recent = sorted((v for k, v in hist.items() if not k.startswith("__") and v.get("role") in ROLE_NAMES),
+                    key=lambda v: -(v.get("game_start") or 0))[:20]
+    if len(recent) < 5:
+        return None
+    counts = {}
+    for v in recent:
+        counts[v["role"]] = counts.get(v["role"], 0) + 1
+    role, n = max(counts.items(), key=lambda kv: kv[1])
+    det = {"role": role, "games": len(recent), "count": n}
+    cfg["role_detected"] = det
+    if cfg.get("role_auto", True) and n / len(recent) >= 0.5 and cfg.get("main_role") != role:
+        cfg["main_role"] = role
+        COACH.pop("plan", None)
+    save_config(cfg)
+    return det
+
+
+def backfill_history(cfg, rid, per_round=20, cap=1000):
+    """Grows your game database step by step with older games (stats only, 1 request per game),
+    so the coach, progress and role detection get more data over time."""
+    from .meta import metrics_of
+    hist = load_history(rid)
+    meta_ = hist.get("__meta") or {"start": 0, "done": False}
+    if meta_.get("done") or len([k for k in hist if not k.startswith("__")]) >= cap:
+        return 0
+    api = review.RiotAPI(riot_cred(cfg), cfg.get("platform", "euw1"))
+    name, tag = rid.split("#", 1)
+    acct = api.get(f"/riot/account/v1/accounts/by-riot-id/{urllib.parse.quote(name)}/{urllib.parse.quote(tag)}")
+    ids = api.get(f"/lol/match/v5/matches/by-puuid/{acct['puuid']}/ids", {"type": "ranked", "start": meta_["start"], "count": per_round})
+    added = 0
+    for mid in ids:
+        if mid in hist:
+            continue
+        m = api.get(f"/lol/match/v5/matches/{mid}")
+        info = m.get("info", {})
+        if info.get("gameDuration", 0) < 15 * 60:
+            continue
+        me = next((p for p in info.get("participants", []) if p.get("puuid") == acct["puuid"]), None)
+        if not me:
+            continue
+        hist[mid] = {"game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
+                     "champion": me["championName"], "role": me.get("teamPosition") or "", "win": me["win"],
+                     "stats": metrics_of(me, info.get("gameDuration", 0))}
+        added += 1
+    meta_["start"] += len(ids)
+    meta_["done"] = len(ids) < per_round
+    hist["__meta"] = meta_
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    with open(_hist_path(rid), "w", encoding="utf-8") as f:
+        json.dump(hist, f)
+    return added
+
+
+def history_info(rid):
+    hist = load_history(rid)
+    games = [v for k, v in hist.items() if not k.startswith("__")]
+    return {"games": len(games), "oldest": min((g.get("game_start") or 0 for g in games), default=None),
+            "complete": (hist.get("__meta") or {}).get("done", False)}
 
 
 def run_review(cfg):
@@ -113,7 +179,7 @@ def run_review(cfg):
     res["account"] = rid
     res["analysed_at"] = time.time()
     try:
-        save_history(rid, res)
+        detect_role(cfg, save_history(rid, res))
     except OSError:
         pass
     attach_clips(res["games"], recorder.list_sessions())
@@ -139,6 +205,9 @@ def auto_review_loop(cfg):
             other = (rev.get("account") or "").lower() != (rid or "").lower()
             if riot_cred(cfg) and "#" in (rid or "") and not running and (stale or other or not rev.get("games")):
                 run_review(cfg)
+            if riot_cred(cfg) and "#" in (rid or ""):
+                if backfill_history(cfg, rid):
+                    detect_role(cfg, load_history(rid))
         except Exception:  # noqa: BLE001 - retried next round
             pass
         time.sleep(600)
@@ -246,7 +315,7 @@ def coach_plan(gd, cfg, rev, cache=None):
                          bench_by_champ=by)
     plan["roles"] = sorted({k[1] for k in counts})
     try:
-        hist = list(load_history(rev.get("account")).values()) or games
+        hist = [v for k, v in load_history(rev.get("account")).items() if not k.startswith("__")] or games
         plan["progress"] = coach.progress(hist, plan.get("focus"))
     except Exception:  # noqa: BLE001 - progress is a bonus, never break the plan
         plan["progress"] = []
@@ -279,6 +348,60 @@ def rune_tree(gd, page):
     return {"primary": tree(page["primary"], slice(0, 4)), "secondary": tree(page["sub"], slice(1, 4)),
             "shards": [SHARDS.get(x, str(x)) for x in page["perks"][6:9]],
             "games": page.get("games"), "winrate": page.get("winrate")}
+
+
+MCACHE = {}  # meta pages computed in the background -> the Meta tab opens instantly
+
+
+def _mkey(*k):
+    return (META.get("ver", 0), current_bracket_safe()) + k
+
+
+def current_bracket_safe():
+    try:
+        return CFG_REF[0] and current_bracket(CFG_REF[0])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+CFG_REF = [None]
+
+
+def cached_tierlist(gd, cfg, role, min_games=20):
+    key = _mkey("tier", role, min_games)
+    if key not in MCACHE:
+        ms = meta_stats(gd)
+        if not ms:
+            return []
+        lst = meta.MetaStats(gd, ms.db).tierlist(min_games=min_games, bracket=current_bracket(cfg), role=role)
+        for t in lst:
+            c = gd.champ(t["champion"])
+            t["name"] = gd.champ_name(c) if c else t["champion"]
+        MCACHE[key] = lst
+    return MCACHE[key]
+
+
+def cached_champion(gd, cfg, c, role=None):
+    key = _mkey("champ", c["id"], role)
+    if key not in MCACHE:
+        MCACHE[key] = champion_page(gd, cfg, c, role)
+    return MCACHE[key]
+
+
+def warm_meta(gd, cfg):
+    """Pre-computes tier lists (all roles) and the pages of your champions + the top picks of your role."""
+    try:
+        for role in ("JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"):
+            cached_tierlist(gd, cfg, role)
+        main = cfg.get("main_role") or "JUNGLE"
+        refs = list(cfg.get("champion_pool", [])) + [t["champion"] for t in cached_tierlist(gd, cfg, main)[:12]]
+        for ref in refs:
+            c = gd.champ(ref)
+            if c:
+                cached_champion(gd, cfg, c, main)
+                time.sleep(0.05)  # stay light in the background
+    except Exception:  # noqa: BLE001 - only a cache
+        pass
 
 
 def champion_page(gd, cfg, c, role=None):
@@ -354,6 +477,41 @@ def load_config():
         return json.load(f)
 
 
+STATUS = {"sent": None, "at": 0}
+
+
+def report_status(cfg, phase, champ=None):
+    """Tells the server whether you are playing (friends see it), when it changes or every 90 s."""
+    if not cfg.get("auth_token"):
+        return
+    state = ("ingame" if phase in ("InProgress", "GameStart", "Reconnect") else "champselect" if phase == "ChampSelect"
+             else "offline" if phase in (None, "Offline") else "online")
+    key = (state, champ)
+    if key == STATUS["sent"] and time.time() - STATUS["at"] < 90:
+        return
+    if key != STATUS["sent"]:
+        STATUS["since"] = int(time.time())
+    STATUS["sent"], STATUS["at"] = key, time.time()
+    cloud_bg(cfg, "PUT", "/api/sync/status", {"state": state, "champ": champ, "since": STATUS.get("since")})
+
+
+PUBLIC = {"data": {}, "at": 0}
+
+
+def public_profiles(cfg):
+    """Friends' Jungle Coach profiles (name, picture, text, live status) – refreshed every 60 s in the background."""
+    ids = cfg.get("friends", [])
+    if ids and cfg.get("auth_token") and time.time() - PUBLIC["at"] > 60:
+        PUBLIC["at"] = time.time()
+
+        def job():
+            r = cloud(cfg, "GET", "/api/public/profiles?ids=" + urllib.parse.quote(",".join(ids)))
+            if r is not None:
+                PUBLIC["data"] = r.get("profiles") or {}
+        threading.Thread(target=job, daemon=True).start()
+    return PUBLIC["data"]
+
+
 def poll_loop(gd, cfg, lcu):
     last_phase = None
     last_runes_key = None
@@ -373,6 +531,13 @@ def poll_loop(gd, cfg, lcu):
                             continue
                 threading.Thread(target=_after_game, daemon=True).start()
             last_phase = phase
+            try:
+                champ = None
+                if phase in ("InProgress", "ChampSelect"):
+                    champ = (STATE.get("live") or {}).get("_me_id") or (STATE.get("champ_select") or {}).get("my_champion_id")
+                report_status(cfg, phase, champ)
+            except Exception:  # noqa: BLE001
+                pass
             cs = live_state = None
             if phase == "ChampSelect":
                 cs = champselect.analyze(gd, lcu.champ_select(), cfg, meta_stats(gd), current_bracket(cfg))
@@ -686,11 +851,7 @@ def make_handler(gd, cfg, lcu):
                 ms = meta_stats(gd)
                 if not ms:
                     return self._send(200, {"role": role, "list": []})
-                ms = meta.MetaStats(gd, ms.db)
-                lst = ms.tierlist(min_games=int((q.get("min") or [20])[0]), bracket=current_bracket(cfg), role=role)
-                for t in lst:
-                    c = gd.champ(t["champion"])
-                    t["name"] = gd.champ_name(c) if c else t["champion"]
+                lst = cached_tierlist(gd, cfg, role, int((q.get("min") or [20])[0]))
                 return self._send(200, {"role": role, "list": lst, "patch": ms.current_patch(),
                                         "bracket": current_bracket(cfg), "version": gd.version})
             if self.path.startswith("/api/champion"):
@@ -699,7 +860,7 @@ def make_handler(gd, cfg, lcu):
                 c = gd.champ(ref) or gd.champ_by_name.get(ref.lower())
                 if not c:
                     return self._send(404, {"error": f"Champion „{ref}“ nicht gefunden"})
-                return self._send(200, champion_page(gd, cfg, c, (q.get("role") or [""])[0].upper() or None))
+                return self._send(200, cached_champion(gd, cfg, c, (q.get("role") or [""])[0].upper() or None))
             if self.path.startswith("/api/sim"):
                 from jc import sim
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -760,7 +921,14 @@ def make_handler(gd, cfg, lcu):
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
             if self.path == "/api/friends":
-                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg)))
+            if self.path == "/api/my-profile":
+                if not cfg.get("auth_token"):
+                    return self._send(200, {"login": False})
+                r = cloud(cfg, "GET", "/api/sync/profile")
+                return self._send(200, {"login": True, "profile": (r or {}).get("profile"), "ok": r is not None,
+                                        "history": history_info(ranked.ACTIVE.get("account") or cfg.get("riot_id", "")),
+                                        "role_detected": cfg.get("role_detected"), "role_auto": cfg.get("role_auto", True)})
             if self.path.startswith("/api/friend-coach"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [""])[0]
@@ -819,6 +987,9 @@ def make_handler(gd, cfg, lcu):
                 save_config(cfg)
                 profile._mem.clear()
                 return self._send(200, {"ok": True})
+            if self.path == "/api/my-profile":
+                r = cloud(cfg, "PUT", "/api/sync/profile", {"profile": self._body().get("profile") or {}})
+                return self._send(200 if r is not None else 502, r or {"error": "Server nicht erreichbar"})
             if self.path == "/api/friends":
                 body = self._body()
                 if body.get("add"):
@@ -829,7 +1000,7 @@ def make_handler(gd, cfg, lcu):
                 cfg["friends_updated"] = int(time.time())
                 save_config(cfg)
                 cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
-                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu))
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg)))
             if self.path == "/api/recording":  # clips on/off, sound, how many games are kept
                 b = self._body()
                 rc = cfg.setdefault("recording", {})
@@ -918,13 +1089,22 @@ def start(cfg=None):
             pass
     threading.Thread(target=poll_loop, args=(gd, cfg, lcu), daemon=True).start()
 
+    CFG_REF[0] = cfg
+
     def cloud_loop():
         from jc import sim
+        first = True
         while True:
             sim.refresh()  # patch data for the build simulation (once a day)
-            if meta_cloud.update(cfg):
+            if meta_cloud.update(cfg, max_age_h=1):  # new cloud data every hour (crawler publishes hourly)
                 META["stats"] = None  # reopen with the new games
-            time.sleep(1800)
+                META["ver"] = META.get("ver", 0) + 1
+                MCACHE.clear()
+                first = True
+            if first:
+                warm_meta(gd, cfg)  # Meta tab ready without waiting
+                first = False
+            time.sleep(900)
     threading.Thread(target=cloud_loop, daemon=True).start()
     threading.Thread(target=auto_review_loop, args=(cfg,), daemon=True).start()
     threading.Thread(target=sync_on_start, args=(cfg,), daemon=True).start()

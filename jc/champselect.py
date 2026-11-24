@@ -155,6 +155,7 @@ def analyze(gd, session, config, meta_stats=None, bracket=None):
         "my_position": me.get("assignedPosition") or "unbekannt",
         "lane_enemy": gd.champ_name(lane_enemy) if lane_enemy else None,
         "my_champion": gd.champ_name(my_champ) if my_champ else None,
+        "my_champion_id": my_champ["id"] if my_champ else None,
         "allies": [gd.champ_name(c) for c in allies],
         "enemies": [gd.champ_name(c) for c in enemies],
         "enemy_jungler": gd.champ_name(enemy_jg) if enemy_jg else None,
