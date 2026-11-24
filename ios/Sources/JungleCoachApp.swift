@@ -4,7 +4,7 @@ import AuthenticationServices
 
 // Jungle Coach for iPhone: shows the mobile web app (stats, past games, friends, coach summary)
 // and handles the Google / Discord login natively with ASWebAuthenticationSession.
-let SERVER = "https://junglecoach.nelkejannis.workers.dev"
+let SERVER = "https://moosi.app"
 let BG = UIColor(red: 0.027, green: 0.039, blue: 0.071, alpha: 1)
 
 @main

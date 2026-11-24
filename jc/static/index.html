@@ -1160,7 +1160,7 @@ function overlayCard() {
 }
 // ---- own profile (name, picture, text, favourite champions) – shared with friends via the server
 const MOOSI_HUE = {teal: 0, green: -45, gold: -120, orange: -150, pink: 150, violet: 80};
-const avatarUrl = id => `${((cfgData || {}).server_url || "https://junglecoach.nelkejannis.workers.dev").replace(/\/$/, "")}/a/${id}`;
+const avatarUrl = id => `${((cfgData || {}).server_url || "https://moosi.app").replace(/\/$/, "")}/a/${id}`;
 function avatarHtml(av, size = 40, fallbackChamp) {
   if (av && av.type === "upload") return `<img src="${avatarUrl(av.id)}" width="${size}" height="${size}" style="border-radius:${Math.round(size * .3)}px;object-fit:cover;flex:none">`;
   if (av && av.type === "moosi") return `<span class="mav" style="width:${size}px;height:${size}px;filter:hue-rotate(${MOOSI_HUE[av.id] || 0}deg)">${moosi("happy", size * .9)}</span>`;

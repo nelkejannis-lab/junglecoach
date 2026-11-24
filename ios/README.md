@@ -8,4 +8,4 @@ Die App zeigt die mobile Web-App (`/m/` auf dem Jungle-Coach-Server) und überni
 Mit einer kostenlosen Apple-ID läuft die Signatur nach 7 Tagen ab (einfach neu laden), mit dem
 Apple Developer Program (99 €/Jahr) 1 Jahr bzw. über TestFlight/App Store.
 
-**Ohne App:** `https://junglecoach.nelkejannis.workers.dev/m/` in Safari öffnen → Teilen → „Zum Home-Bildschirm“.
+**Ohne App:** `https://moosi.app/web` in Safari öffnen → Teilen → „Zum Home-Bildschirm“.

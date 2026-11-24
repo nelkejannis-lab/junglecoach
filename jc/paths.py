@@ -41,6 +41,9 @@ def ensure_config():
                 changed = True
         # Riot's policy: no API key inside a distributed app. Older versions shipped one – remove it again
         # (a key the user typed in himself stays). Riot data then comes through the Moosi server after login.
+        if user.get("server_url", "").rstrip("/") == "https://junglecoach.nelkejannis.workers.dev":
+            user["server_url"] = "https://moosi.app"   # own domain since v1.9.2 (login token stays valid)
+            changed = True
         if user.get("_key_from_build"):
             user.pop("_key_from_build", None)
             user["riot_api_key"] = ""
