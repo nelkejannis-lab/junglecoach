@@ -301,7 +301,7 @@ let MEM_TOKEN = window.__jcToken || null;  // the iOS app also injects the saved
 window.jcSetToken = t => { MEM_TOKEN = t; LS.set("jc_token", t); S.err = ""; boot(); };
 window.jcLoginError = m => { S.err = "Anmeldung fehlgeschlagen: " + m; render(); };
 const token = () => LS.get("jc_token") || MEM_TOKEN;
-async function api(path, opt = {}) {
+async function api(path, opt = {}, tries = 0) {
   const sent = token();
   if (!sent) throw new Error("nicht angemeldet");   // never send "Bearer null" (background timers while logged out)
   const r = await fetch(path, {...opt, headers: {...(opt.headers || {}), Authorization: "Bearer " + sent, "Content-Type": "application/json"}});
@@ -316,7 +316,14 @@ async function api(path, opt = {}) {
     const info = `${path.split("?")[0]} · ${j.why || "ohne Grund"} · Token ${sent.length} Zeichen/${sent.split(".").length} Teile`;
     throw new Error("Anmeldung abgelehnt: " + info);
   }
-  if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
+  if (r.status === 429) {   // Riot rate limit: wait and try again by itself (up to ~1 min) instead of failing
+    if (path.startsWith("/riot/") && tries < 4) {
+      const wait = Math.min(30, Math.max(3, +(r.headers.get("retry-after") || 0) || 5 * (tries + 1)));
+      await new Promise(res => setTimeout(res, wait * 1000 + Math.random() * 1500));
+      return api(path, opt, tries + 1);
+    }
+    throw new Error("Riot-Limit erreicht – lädt gleich automatisch neu.");
+  }
   if (r.status === 502) { const j = await r.json().catch(() => ({})); if (j.riot_key) throw new Error(j.own ? "Dein eigener Riot-Key ist abgelaufen – unter „Mehr“ einen neuen eintragen." : "Riot-Daten gerade nicht verfügbar: der Server-Key ist abgelaufen. Unter „Mehr“ kannst du deinen eigenen Key eintragen."); }
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
   return r.json();
@@ -546,7 +553,7 @@ async function loadFriend(rid) {
     }
     f.at = Date.now(); f.err = "";
     liveCheck(rid);
-  } catch (e) { if (!f.games) f.err = e.message; }
+  } catch (e) { if (!f.games) f.err = e.message; if (/Limit/.test(e.message)) setTimeout(() => queueFriend(rid, true), 60000); }
   f.loading = false;
   render(); snapSave();
 }
