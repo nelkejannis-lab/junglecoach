@@ -1002,7 +1002,9 @@ const TAB_IC = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 
   friends: '<circle cx="9" cy="8.5" r="3.4"/><path d="M2.8 19.5c1-3.2 3.5-4.8 6.2-4.8s5.2 1.6 6.2 4.8"/><path d="M15.5 5.6a3.2 3.2 0 0 1 0 6M17.6 14.9c1.8.6 3 2.1 3.6 4.6"/>', more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
 // ---------- motion + haptics ----------
 const RM = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const HAPTICS = false;   // switched off on request – set to true to bring the graded haptics back
 function hap(kind = "light") {
+  if (!HAPTICS) return;
   try {
     const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcHaptic;
     if (h) return h.postMessage(kind);
@@ -1083,18 +1085,31 @@ function renderRail() {
       <div class="small" style="margin-top:4px;line-height:1.4">${task ? esc(task.title + ": " + task.drill) : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal – dann steht hier deine Coaching-Aufgabe."}</div></div></div>
     <div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b>Freunde</b><span class="muted small">${live ? live + " im Spiel · " : ""}${fl.length}</span></div>
       ${fl.map(rid => { const d = S.fdata[rid] || {}, pub = (S.pub || {})[rid.toLowerCase()] || {}, fa = agg(d.games), fr = solo(d.league), lt = liveTxt(rid);
-        return `<div class="fr" onclick='S.tab="friends";S.view={friend:${JSON.stringify(rid)}};render();scrollTo(0,0)'><span class="avw" style="width:38px;height:38px">${avatar(pub.avatar, "", fa && fa.champs[0] ? fa.champs[0].c : null)}</span>
+        return `<div class="fr" onclick='S.tab="friends";S.view={friend:${JSON.stringify(rid)}};render.toTop=true;render();scrollTo(0,0)'><span class="avw" style="width:38px;height:38px">${avatar(pub.avatar, "", fa && fa.champs[0] ? fa.champs[0].c : null)}</span>
           <div style="min-width:0"><div class="nm">${esc(pub.name || rid.split("#")[0])} ${roleChip(pub.role || gamesRole(d.games))}</div><div class="st">${lt ? `<span style="color:var(--acc);font-weight:700">${lt}</span>` : (fa ? `Ø Score ${fa.score.toFixed(1)}` : "lädt …")}</div></div>
           <span class="rk2">${fr ? rankTxt(fr).split(" · ")[0] : '<span class="muted">–</span>'}</span></div>`; }).join("") || '<p class="muted small">Noch keine Freunde.</p>'}
       <div style="display:flex;gap:8px;margin-top:8px"><input id="radd" placeholder="Name#TAG" style="padding:10px 12px"><button class="btn" style="width:auto;padding:0 16px" onclick="const v=$('#radd').value.trim();if(!/^[^#]{1,24}#[^#]{1,8}$/.test(v))return toast('Riot ID im Format Name#TAG');saveFriends([...(S.friends||[]),v])">+</button></div></div>`;
 }
 addEventListener("resize", () => renderRail());
 function render() {
+  // keep the scroll position: page, open sheets and horizontal rows survive every re-render
+  const keep = {y: scrollY, sh: [...document.querySelectorAll(".sheet .in")].map(e => e.scrollTop),
+    hx: [...document.querySelectorAll("#app .seg, #app .hscroll")].map(e => e.scrollLeft)};
+  const vk = S.tab + "|" + (S.view && S.view.friend || "");
+  if (vk !== render.vk) { render.toTop = true; render.vk = vk; }   // a new page starts at the top, everything else stays put
+  try { renderInner(); } finally {
+    const sh = document.querySelectorAll(".sheet .in"); keep.sh.forEach((t, i) => { if (sh[i]) sh[i].scrollTop = t; });
+    const hx = document.querySelectorAll("#app .seg, #app .hscroll"); keep.hx.forEach((t, i) => { if (hx[i]) hx[i].scrollLeft = t; });
+    if (render.toTop) scrollTo(0, 0); else if (Math.abs(scrollY - keep.y) > 1) scrollTo(0, keep.y);
+    render.toTop = false;
+  }
+}
+function renderInner() {
   const app = $("#app"), tabs = $("#tabs");
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
   afterRender(app);
   if (document.activeElement && document.activeElement.id === "radd") return;   // don't wipe what is being typed
