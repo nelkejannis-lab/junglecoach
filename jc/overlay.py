@@ -92,7 +92,7 @@ def model(state):
         "diff": None if "gold_diff" in hide else h.get("gold_diff"),
         "gpm": h.get("gpm"),
         "choices": h.get("choices") or [],
-        "next": (h.get("next") or {}).get("text"),
+        "next": (h.get("next") or {}).get("short") or (h.get("next") or {}).get("text"),
         "focus_t": (h.get("focus") or {}).get("title"),
         "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
@@ -270,52 +270,32 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         y = max(y + av, yy) - av
     y += av + 12 * k
 
-    # ---- gold differences (team / jungle, item value): value + small centred bar
+    # ---- gold (item value from the Tab scoreboard): team + your own lane, one compact card
     df = m.get("diff") or {}
     LN = m["t"].get("lanes", {})
     mine = df.get("mine") or {}
     own = (m["t"]["lane"].format(LN.get(mine["pos"], mine["pos"]), LN.get(mine["pos"], mine["pos"])), mine["v"]) if mine.get("v") is not None \
         else (m["t"]["jg"], df.get("jungle"))
-    cols = [(m["t"]["team"], df.get("team")), own]
-    cols = [c for c in cols if c[1] is not None]
+    cols = [c for c in [(m["t"]["team"], df.get("team")), own] if c[1] is not None]
     if cols:
-        gap = 8 * k
-        cw = (Wp - 2 * pad - gap * (len(cols) - 1)) / len(cols)
-        ch = 50 * k
+        ch = lh(F["bodyb"]) + 24 * k
+        u.rounded_rectangle([pad, y, Wp - pad, y + ch], 12 * k, fill=fill2)
+        cw = (Wp - 2 * pad) / len(cols)
         for i, (lab, v) in enumerate(cols):
-            x0 = pad + i * (cw + gap)
-            u.rounded_rectangle([x0, y, x0 + cw, y + ch], 12 * k, fill=fill2)
+            x0, x1 = pad + i * cw + 11 * k, pad + (i + 1) * cw - 11 * k
+            if i:
+                u.line([(pad + i * cw, y + 8 * k), (pad + i * cw, y + ch - 8 * k)], fill=HAIR, width=max(1, int(k)))
             col = A_GREEN if v > 150 else A_RED if v < -150 else "#ebebf5"
-            d.text((x0 + 11 * k, y + 7 * k), lab, font=F["cap"], fill=SEC)
             txt = ("+" if v > 0 else "−" if v < 0 else "±") + f"{abs(v):,}".replace(",", ".")
-            d.text((x0 + 11 * k, y + 7 * k + lh(F["cap"])), txt, font=F["val"], fill=_rgb(col))
-            # bar: centre = even, fills to the side of the leader (±3000 g = full)
-            bx0, bx1, by = x0 + 11 * k, x0 + cw - 11 * k, y + ch - 10 * k
-            mid = (bx0 + bx1) / 2
-            u.rounded_rectangle([bx0, by, bx1, by + 4 * k], 2 * k, fill=_rgb("#ffffff", 30))
-            ext = max(-1.0, min(1.0, v / 3000)) * (bx1 - bx0) / 2
+            ty = y + 7 * k
+            d.text((x0, ty + (lh(F["bodyb"]) - lh(F["cap"])) * .6), lab, font=F["cap"], fill=SEC)
+            d.text((x1, ty), txt, font=F["bodyb"], fill=_rgb(col), anchor="ra")
+            by, mid = y + ch - 8 * k, (x0 + x1) / 2   # thin bar: centre = even, ±3000 g = full
+            u.rounded_rectangle([x0, by, x1, by + 3 * k], 1.5 * k, fill=_rgb("#ffffff", 26))
+            ext = max(-1.0, min(1.0, v / 3000)) * (x1 - x0) / 2
             if abs(ext) > 2 * k:
-                u.rounded_rectangle([min(mid, mid + ext), by, max(mid, mid + ext), by + 4 * k], 2 * k, fill=_rgb(col))
-            u.rectangle([mid - 0.5 * k, by - 2 * k, mid + 0.5 * k, by + 6 * k], fill=_rgb("#ffffff", 120))
-        y += ch + 6 * k
-    # every lane matchup (top vs top, jungle vs jungle …) as one compact row
-    lanes = [(ln, v) for ln, v in (df.get("lanes") or {}).items()]
-    if len(lanes) >= 2:
-        gap = 5 * k
-        cw = (Wp - 2 * pad - gap * (len(lanes) - 1)) / len(lanes)
-        ch = 34 * k
-        for i, (ln, v) in enumerate(lanes):
-            x0 = pad + i * (cw + gap)
-            me_l = ln == mine.get("pos")
-            u.rounded_rectangle([x0, y, x0 + cw, y + ch], 9 * k, fill=fill2, outline=_rgb("#ffffff", 70) if me_l else None, width=max(1, int(k)))
-            col = A_GREEN if v > 150 else A_RED if v < -150 else "#ebebf5"
-            lab = LN.get(ln, ln)
-            txt = ("+" if v > 0 else "−" if v < 0 else "±") + (f"{abs(v) / 1000:.1f}k" if abs(v) >= 1000 else f"{abs(v)}")
-            d.text((x0 + cw / 2, y + 4 * k), lab, font=F["cap"], fill=SEC, anchor="ma")
-            d.text((x0 + cw / 2, y + 4 * k + lh(F["cap"])), txt, font=F["cap"], fill=_rgb(col), anchor="ma")
+                u.rounded_rectangle([min(mid, mid + ext), by, max(mid, mid + ext), by + 3 * k], 1.5 * k, fill=_rgb(col))
         y += ch + 12 * k
-    elif cols:
-        y += 6 * k
 
     # ---- NOW: tinted card with a symbol (colour + shape)
     if m["now"]:
@@ -349,24 +329,6 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
             d.text((cx, cy), "i" if col == A_BLUE else "!", font=F["icon"], fill=dark, anchor="mm")
         y = bottom + 12 * k
 
-    # ---- next focus (objectives / towers): one line with a target symbol
-    if m.get("next"):
-        top = y
-        tx = pad + 30 * k
-        yy = y + 8 * k
-        d.text((tx, yy), m["t"]["next_s"], font=F["capb"], fill=_rgb(A_PURPLE))
-        yy += lh(F["capb"])
-        for ln in _wrap(d, m["next"], F["body"], Wp - pad - 12 * k - tx)[:3]:
-            d.text((tx, yy), ln, font=F["body"], fill=W1)
-            yy += lh(F["body"])
-        bottom = yy + 7 * k
-        u.rounded_rectangle([pad, top, Wp - pad, bottom], 14 * k, fill=fill2)
-        cx, cy = pad + 15 * k, top + 8 * k + lh(F["capb"]) * .55
-        for r_, a in ((7, 255), (4.2, 255)):
-            d.ellipse([cx - r_ * k, cy - r_ * k, cx + r_ * k, cy + r_ * k], outline=_rgb(A_PURPLE), width=max(1, int(1.6 * k)))
-        d.ellipse([cx - 1.4 * k, cy - 1.4 * k, cx + 1.4 * k, cy + 1.4 * k], fill=_rgb(A_PURPLE))
-        y = bottom + 12 * k
-
     # ---- next item: rounded icon, name, gold left, thin progress bar
     if m["item"]:
         itm = m["item"]
@@ -394,12 +356,25 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         y += isz + 12 * k
 
     # ---- objective timers: capsules, the next one tinted orange
-    if m["timers"]:
+    if m["timers"] or m.get("next"):
         x = pad
         hgt = lh(F["capb"]) + 9 * k
+        if m.get("next"):   # most important next goal first, purple with a target symbol
+            txt = m["next"]
+            while d.textlength(txt, font=F["capb"]) > Wp - 2 * pad - 40 * k and len(txt) > 4:
+                txt = txt[:-2].rstrip() + "…"
+            w = d.textlength(txt, font=F["capb"]) + 32 * k
+            u.rounded_rectangle([x, y, x + w, y + hgt], hgt / 2, fill=_rgb(A_PURPLE, 70))
+            cx, cy = x + 12 * k, y + hgt / 2
+            d.ellipse([cx - 5 * k, cy - 5 * k, cx + 5 * k, cy + 5 * k], outline=_rgb(A_PURPLE), width=max(1, int(1.4 * k)))
+            d.ellipse([cx - 1.6 * k, cy - 1.6 * k, cx + 1.6 * k, cy + 1.6 * k], fill=_rgb(A_PURPLE))
+            d.text((x + 22 * k, y + 4 * k), txt, font=F["capb"], fill=_rgb("#d9c8ff"))
+            x += w + 6 * k
         for label, when, soon in m["timers"]:
             txt = f"{label} {when}"
             w = d.textlength(txt, font=F["capb"]) + 18 * k
+            if x + w > Wp - pad:
+                break
             u.rounded_rectangle([x, y, x + w, y + hgt], hgt / 2, fill=_rgb(A_ORANGE, 60) if soon else fill2)
             d.text((x + 9 * k, y + 4 * k), txt, font=F["capb"], fill=_rgb(A_ORANGE) if soon else W1)
             x += w + 6 * k

@@ -61,27 +61,28 @@ def next_focus(live, timers, t, hide=()):
         s = recent[-1]
         if s["kind"] == "inhib" and not s["ours"]:
             return {"text": T(f"Inhibitor {s['lane']} gefallen – Baron oder nächsten Turm nehmen",
-                              f"{s['lane']} inhibitor down – take Baron or the next tower"), "why": T("Supers drücken die Lane für euch", "super minions push for you")}
+                              f"{s['lane']} inhibitor down – take Baron or the next tower"), "short": T("Baron / Turm", "Baron / tower"), "why": T("Supers drücken die Lane für euch", "super minions push for you")}
         if not s["ours"]:
             nxt = up[0] if up and up[0][0] <= 120 else None
             return {"text": T(f"{s['lane']}-Turm gefallen – " + (f"jetzt {nxt[1]} vorbereiten" if nxt else "Plates/Camps auf der Seite nehmen, dann rotieren"),
                               f"{s['lane']} tower down – " + (f"set up {nxt[1]} now" if nxt else "take plates/camps there, then rotate")),
+                    "short": (T(f"{nxt[1]} vorbereiten", f"set up {nxt[1]}") if nxt else T(f"{s['lane']}-Seite nutzen", f"use {s['lane']} side")),
                     "why": T("Map öffnet sich auf dieser Seite", "the map opens on that side")}
         return {"text": T(f"Eigener {s['lane']}-Turm verloren – Sicht im eigenen Jungle auf der Seite",
-                          f"Lost our {s['lane']} tower – ward your jungle on that side"), "why": T("Gegner kommt jetzt tiefer rein", "enemies can now invade deeper")}
+                          f"Lost our {s['lane']} tower – ward your jungle on that side"), "short": T(f"{s['lane']}-Jungle warden", f"ward {s['lane']} jungle"), "why": T("Gegner kommt jetzt tiefer rein", "enemies can now invade deeper")}
     if up and up[0][0] <= 150:
         sec, label = up[0]
         return {"text": T(f"{label} in {sec // 60}:{sec % 60:02d} – Lanes mit Prio vorbereiten, Reset vorher",
-                          f"{label} in {sec // 60}:{sec % 60:02d} – get lane prio, reset before"), "why": T("Nächstes Objective", "next objective")}
+                          f"{label} in {sec // 60}:{sec % 60:02d} – get lane prio, reset before"), "short": T(f"{label}: Prio + Reset", f"{label}: prio + reset"), "why": T("Nächstes Objective", "next objective")}
     ours_down = sum(1 for s in lost if not s["ours"])
     if t < 14 * 60 and ours_down == 0:
-        return {"text": T("Erster Turm: Lane mit Prio bei den Plates unterstützen (bis 14:00)", "First tower: help the lane with prio take plates (until 14:00)"),
+        return {"text": T("Erster Turm: Lane mit Prio bei den Plates unterstützen (bis 14:00)", "First tower: help the lane with prio take plates (until 14:00)"), "short": T("Plates mit Prio-Lane", "plates with prio lane"),
                 "why": T("Plates geben bis 14:00 extra Gold", "plates give extra gold until 14:00")}
     if t >= 20 * 60 and "timers" not in hide and not any(l == "Baron" for _, l in up):
-        return {"text": T("Baron ist oben – nur nach gewonnenem Fight oder Pick", "Baron is up – only after a won fight or a pick"),
+        return {"text": T("Baron ist oben – nur nach gewonnenem Fight oder Pick", "Baron is up – only after a won fight or a pick"), "short": T("Baron nach Pick", "Baron after a pick"),
                 "why": T("Sicht um den Pit vorher setzen", "set vision around the pit first")}
     if ours_down:
-        return {"text": T("Nächsten Turm auf der Seite mit Prio pushen – Sicht davor", "push the next tower on the side with prio – vision first"),
+        return {"text": T("Nächsten Turm auf der Seite mit Prio pushen – Sicht davor", "push the next tower on the side with prio – vision first"), "short": T("Nächsten Turm pushen", "push next tower"),
                 "why": T("Türme öffnen die Map", "towers open the map")}
     return None
 
