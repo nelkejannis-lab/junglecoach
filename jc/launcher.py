@@ -83,7 +83,7 @@ def main():
 
     try:
         import webview  # pywebview -> native app window
-        window = webview.create_window("Jungle Coach", url, width=1280, height=860, min_size=(420, 500),
+        window = webview.create_window("Moosi", url, width=1280, height=860, min_size=(420, 500),
                                        background_color="#07090f")
         webview.start(_follow_game, (window, url))
     except ImportError:

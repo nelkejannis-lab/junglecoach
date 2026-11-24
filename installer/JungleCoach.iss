@@ -1,15 +1,16 @@
 ; Inno Setup script – builds JungleCoach-Setup.exe
-#define AppName "Jungle Coach"
-#define AppVersion "1.7.1"
+#define AppName "Moosi"
+#define AppVersion "1.8.0"
 #define AppExe "JungleCoach.exe"
 
 [Setup]
 AppId={{6F1C2B4E-8A3D-4C9B-9E21-4D2A9F01C3B7}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Jungle Coach
+AppPublisher=Moosi
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
+UsePreviousGroup=no
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
@@ -32,6 +33,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\JungleCoach\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; old name before the rename to Moosi (v1.8)
+Type: filesandordirs; Name: "{autoprograms}\Jungle Coach"
+Type: files; Name: "{autodesktop}\Jungle Coach.lnk"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

@@ -13,9 +13,9 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Jungle Coach
-        CFBundleShortVersionString: "1.7.1"
-        CFBundleVersion: "6"
+        CFBundleDisplayName: Moosi
+        CFBundleShortVersionString: "1.8.0"
+        CFBundleVersion: "7"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

@@ -541,7 +541,7 @@ window.I18N_EN = {
 "Runen gesetzt ✓": "Runes set ✓",
 "Erst Champion wählen.": "Pick a champion first.",
 "Alle Runenseiten belegt – lösche eine Seite oder nenne sie 'JC ...', dann überschreibt das Tool nur diese.": "All rune pages are used – delete one or name it 'JC ...', then the tool only overwrites that one.",
-"Willkommen bei Jungle Coach": "Welcome to Jungle Coach",
+"Willkommen bei Moosi": "Welcome to Moosi",
 "Lädt…": "Loading…",
 "lädt…": "loading…",
 "Lade…": "Loading…",

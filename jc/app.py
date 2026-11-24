@@ -803,10 +803,10 @@ def make_handler(gd, cfg, lcu):
                     save_config(cfg)
                     profile._mem.clear()
                     threading.Thread(target=sync_on_start, args=(cfg,), daemon=True).start()
-                    body = "<h1>Angemeldet ✓</h1><p>Du kannst dieses Fenster schließen und zu Jungle Coach zurückkehren.</p>"
+                    body = "<h1>Angemeldet ✓</h1><p>Du kannst dieses Fenster schließen und zu Moosi zurückkehren.</p>"
                 else:
                     body = "<h1>Anmeldung fehlgeschlagen</h1><p>Bitte in der App erneut versuchen.</p>"
-                html = ("<!doctype html><meta charset=utf-8><title>Jungle Coach</title><body style='font:16px -apple-system,"
+                html = ("<!doctype html><meta charset=utf-8><title>Moosi</title><body style='font:16px -apple-system,"
                         "Segoe UI,sans-serif;text-align:center;padding:80px;background:#f5f5f7'>" + body)
                 return self._send(200, html.encode("utf-8"), "text/html")
             if self.path == "/api/account":
@@ -1134,7 +1134,7 @@ def start(cfg=None):
     srv = ThreadingHTTPServer((host, port), make_handler(gd, cfg, lcu))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://localhost:{port}"
-    print(f"Jungle Coach läuft: {url}")
+    print(f"Moosi läuft: {url}")
     return url
 
 

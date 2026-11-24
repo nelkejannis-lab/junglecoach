@@ -179,6 +179,24 @@ def _wrap(d, text, font, maxw):
     return lines or [""]
 
 
+_MOOSI = {}
+
+
+def _moosi_img(mood, px):
+    """Moosi artwork (rendered from the app's SVG) for the overlay; None if the file is missing."""
+    name = {"good": "proud", "bad": "worried"}.get(mood, "happy")
+    key = (name, px)
+    if key not in _MOOSI:
+        try:
+            import os
+            from PIL import Image as _I
+            f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "moosi", name + ".png")
+            _MOOSI[key] = _I.open(f).convert("RGBA").resize((px, px), _I.LANCZOS)
+        except Exception:  # noqa: BLE001 - fall back to the drawn monster
+            _MOOSI[key] = None
+    return _MOOSI[key]
+
+
 def _monster_pil(d, x, y, s, mood):
     body = _rgb({"bad": A_RED, "warn": A_ORANGE, "good": A_GREEN}.get(mood, "#2dd4bf"))
     dark = _rgb("#0b0f1a")
@@ -218,7 +236,11 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
     y = 13 * k
     av = 30 * k
     u.ellipse([pad, y, pad + av, y + av], fill=fill2)
-    _monster_pil(d, pad + 5 * k, y + 5 * k, av - 10 * k, m["mood"])
+    mi = _moosi_img(m["mood"], int(av + 4 * k))
+    if mi is not None:
+        fg.alpha_composite(mi, (int(pad - 2 * k), int(y - 4 * k)))
+    else:
+        _monster_pil(d, pad + 5 * k, y + 5 * k, av - 10 * k, m["mood"])
     tx = pad + av + 10 * k
     x = Wp - pad
     gp = m.get("gpm") or {}
