@@ -1,6 +1,13 @@
 name = "junglecoach"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
+workers_dev = true   # keep junglecoach.nelkejannis.workers.dev working (old apps, login callbacks)
+
+# Own domain (bought in this Cloudflare account) – Cloudflare creates DNS + certificate on deploy
+routes = [
+  { pattern = "moosi.app", custom_domain = true },
+  { pattern = "www.moosi.app", custom_domain = true },
+]
 
 [assets]
 directory = "./public"
