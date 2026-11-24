@@ -165,6 +165,7 @@ async function api(path, opt = {}) {
     throw new Error("Anmeldung abgelehnt: " + info);
   }
   if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
+  if (r.status === 502) { const j = await r.json().catch(() => ({})); if (j.riot_key) throw new Error("Riot-Daten gerade nicht verfügbar: der Riot-Key auf dem Server ist abgelaufen."); }
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
   return r.json();
 }

@@ -177,6 +177,11 @@ async function riotProxy(req, url, env, ctx, user) {
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
   const r = await fetch(target, { headers: { "X-Riot-Token": env.RIOT_API_KEY, "User-Agent": "JungleCoach/1.0", Accept: "application/json" } });
+  // Riot rejecting OUR key (expired dev key) must not look like "your login is invalid" to the apps
+  if (r.status === 401 || r.status === 403) {
+    return json({ error: "Riot-API-Key des Servers ist ungültig oder abgelaufen.", riot_key: true,
+      status: { message: "server riot key rejected", status_code: r.status } }, 502);
+  }
   const body = await r.text();
   const res = new Response(body, { status: r.status, headers: {
     "content-type": "application/json; charset=utf-8", "cache-control": `public, max-age=${route[1]}`,

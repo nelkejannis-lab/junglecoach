@@ -69,6 +69,9 @@ class RiotAPI:
                 where = path.split("?")[0]
                 if self.proxy and e.code == 401:
                     raise RiotKeyError("Nicht angemeldet oder Sitzung abgelaufen – bitte in den Einstellungen neu anmelden.")
+                if self.proxy and e.code == 502 and detail == "server riot key rejected":
+                    raise RiotKeyError("Der Riot-Key auf dem Moosi-Server ist abgelaufen – Riot-Daten sind gleich wieder da, "
+                                       "sobald er erneuert ist. Alternativ eigenen Key in den Einstellungen eintragen.")
                 if e.code in (401, 403):
                     raise RiotKeyError(f"Riot lehnt den API Key ab ({e.code}{': ' + detail if detail else ''}). "
                                        "Dev-Keys laufen nach 24 h ab und werden ungültig, sobald du auf "
