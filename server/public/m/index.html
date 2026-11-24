@@ -177,7 +177,7 @@ function login(p) {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin) return window.webkit.messageHandlers.jcLogin.postMessage(p);
   location.href = `/auth/${p}?redirect=${encodeURIComponent(location.origin + "/m/")}`;
 }
-function logout() { LS.set("jc_token", null); MEM_TOKEN = null; if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage(""); S = {...S, me: null, acct: null, league: null, games: null, coach: null, friends: null}; render(); }
+function logout() { LS.set("jc_snap", null); LS.set("jc_token", null); MEM_TOKEN = null; if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage(""); S = {...S, me: null, acct: null, league: null, games: null, coach: null, friends: null}; render(); }
 
 // ---- data
 const DD = () => `https://ddragon.leagueoflegends.com/cdn/${S.ver}`;
@@ -186,14 +186,63 @@ const iImg = i => i ? `<img src="${DD()}/img/item/${i}.png" loading="lazy">` : "
 const splash = c => `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${encodeURIComponent(c)}_0.jpg`;
 const rankTxt = r => r ? `<span class="tierc ${r.tier}">${r.tier[0] + r.tier.slice(1).toLowerCase()} ${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier) ? "" : r.rank}</span> · ${r.leaguePoints} LP` : '<span class="muted">Unranked</span>';
 const solo = l => (l || []).find(e => e.queueType === "RANKED_SOLO_5x5") || (l || []).find(e => e.queueType === "RANKED_FLEX_SR");
+// ---- persistent cache: finished matches never change -> IndexedDB; everything else -> small snapshot in localStorage
 const MATCH = {}, MP = {};
+let _db;
+const IDB = () => _db ||= new Promise(res => {
+  try { const r = indexedDB.open("moosi", 1); r.onupgradeneeded = () => r.result.createObjectStore("m"); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }
+  catch (e) { res(null); }
+});
+async function idbGet(id) {
+  const db = await IDB(); if (!db) return null;
+  return new Promise(res => { try { const q = db.transaction("m").objectStore("m").get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); } });
+}
+async function idbPut(id, v) { const db = await IDB(); if (db) try { db.transaction("m", "readwrite").objectStore("m").put(v, id); } catch (e) {} }
 async function match(id) {
-  if (!MP[id]) MP[id] = riot(REGION(platform()), `/lol/match/v5/matches/${id}`).then(m => (MATCH[id] = m));
+  if (!MP[id]) MP[id] = (async () => {
+    const c = MATCH[id] || await idbGet(id);
+    if (c) return (MATCH[id] = c);
+    const m = await riot(REGION(platform()), `/lol/match/v5/matches/${id}`);
+    idbPut(id, m);
+    return (MATCH[id] = m);
+  })().catch(e => { delete MP[id]; throw e; });
   return MP[id];
 }
+// Riot ID -> account (puuid never changes): cached for good
+const ACC = JSON.parse(LS.get("jc_acc") || "{}");
 async function account(rid) {
+  const k = rid.toLowerCase();
+  if (ACC[k]) return ACC[k];
   const [n, t] = rid.split("#");
-  return riot(ACC_REGION(platform()), `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
+  const a = await riot(ACC_REGION(platform()), `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
+  ACC[k] = {puuid: a.puuid, gameName: a.gameName, tagLine: a.tagLine};
+  LS.set("jc_acc", JSON.stringify(ACC));
+  return ACC[k];
+}
+// snapshot of what was on screen last time -> the app opens instantly, then only fetches what changed
+let snapT = 0;
+function snapSave() {
+  clearTimeout(snapT);
+  snapT = setTimeout(() => {
+    if (!S.me) return;
+    const fd = {};
+    for (const [rid, d] of Object.entries(S.fdata || {})) if (d.acct) fd[rid] = {acct: d.acct, league: d.league || null, ids: (d.games || []).map(g => g.m.metadata.matchId), at: d.at || 0};
+    LS.set("jc_snap", JSON.stringify({me: S.me, acct: S.acct, league: S.league, ids: (S.games || []).map(g => g.m.metadata.matchId),
+      coach: S.coach, prof: S.prof, friends: S.friends, pub: S.pub, fd, at: S.at || 0}));
+  }, 800);
+}
+const pick = (ids, puuid) => ids.map(id => MATCH[id]).filter(Boolean).map(m => ({m, p: m.info.participants.find(x => x.puuid === puuid)})).filter(g => g.p)
+  .sort((a, b) => (b.m.info.gameCreation || 0) - (a.m.info.gameCreation || 0));
+async function hydrate() {
+  let sn; try { sn = JSON.parse(LS.get("jc_snap") || "null"); } catch (e) { sn = null; }
+  if (!sn || !sn.me) return false;
+  Object.assign(S, {me: sn.me, acct: sn.acct, league: sn.league, coach: sn.coach, prof: sn.prof, friends: sn.friends, pub: sn.pub || {}, at: sn.at || 0});
+  const all = [...(sn.ids || []), ...Object.values(sn.fd || {}).flatMap(d => d.ids || [])];
+  await Promise.all(all.map(async id => { if (!MATCH[id]) { const m = await idbGet(id); if (m) MATCH[id] = m; } }));
+  if (S.acct && sn.ids && sn.ids.length) S.games = pick(sn.ids, S.acct.puuid);
+  for (const [rid, d] of Object.entries(sn.fd || {})) S.fdata[rid] = {acct: d.acct, league: d.league, games: pick(d.ids || [], d.acct.puuid), at: d.at || 0};
+  render();
+  return true;
 }
 // newest first; onPart(list) is called after every batch so the latest games show up right away
 async function loadGames(puuid, count, start = 0, onPart) {
@@ -220,9 +269,9 @@ async function refreshGames() {
       const ms = (await Promise.all(fresh.map(id => match(id).catch(() => null)))).filter(Boolean);
       const add = ms.map(m => ({m, p: m.info.participants.find(x => x.puuid === S.acct.puuid)})).filter(g => g.p);
       S.games = add.concat(S.games).sort((a, b) => (b.m.info.gameCreation || 0) - (a.m.info.gameCreation || 0));
-      riot(platform(), `/lol/league/v4/entries/by-puuid/${S.acct.puuid}`).then(l => { S.league = l; render(); }).catch(() => {});
       render();
     }
+    S.league = await riot(platform(), `/lol/league/v4/entries/by-puuid/${S.acct.puuid}`); S.at = Date.now(); render(); snapSave();
   } catch (e) {}
   refreshing = false;
 }
@@ -230,14 +279,17 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) refr
 async function boot() {
   render();
   if (!token()) return;
+  const had = await hydrate();   // instant: last state from this phone
   try {
     fetch("https://ddragon.leagueoflegends.com/api/versions.json").then(r => r.json()).then(v => { S.ver = v[0]; render(); }).catch(() => {});
     S.me = await api("/api/me"); render();
-    api("/api/sync/coach").then(c => { S.coach = c.coach; render(); }).catch(() => {});
-    api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); loadPublic(); }).catch(() => { S.friends = []; });
-    api("/api/sync/profile").then(p => { S.prof = p.profile || {}; render(); }).catch(() => { S.prof = {}; });
+    api("/api/sync/coach").then(c => { S.coach = c.coach; render(); snapSave(); }).catch(() => {});
+    api("/api/sync/friends").then(f => { S.friends = f.friends || []; render(); loadPublic(); snapSave(); }).catch(() => { if (!S.friends) S.friends = []; });
+    api("/api/sync/profile").then(p => { S.prof = p.profile || {}; render(); snapSave(); }).catch(() => { if (!S.prof) S.prof = {}; });
     loadChamps();
-    if (S.me.riot_id && S.me.riot_id.includes("#")) await loadMe();
+    if (S.me.riot_id && S.me.riot_id.includes("#")) {
+      if (had && S.games && S.games.length && S.acct) await refreshGames(); else await loadMe();
+    }
   } catch (e) { S.err = e.message; render(); }
 }
 // champion list (names + numeric keys for the spectator API) from Data Dragon
@@ -290,19 +342,38 @@ async function loadMe() {
   try {
     S.acct = await account(S.me.riot_id);
     riot(platform(), `/lol/league/v4/entries/by-puuid/${S.acct.puuid}`).then(l => { S.league = l; render(); }).catch(() => {});
-    S.games = await loadGames(S.acct.puuid, S.gamesMore, 0, part => { S.games = part; render(); }); S.err = ""; render();
+    S.games = await loadGames(S.acct.puuid, S.gamesMore, 0, part => { S.games = part; render(); }); S.err = ""; S.at = Date.now(); render(); snapSave();
   } catch (e) { S.err = e.message; render(); }
+}
+// friends load one after another (Riot rate limit) and only when the cached state is older than 5 minutes
+const FQ = []; let fqBusy = false;
+function queueFriend(rid, force, first) {
+  const d = S.fdata[rid] = S.fdata[rid] || {};
+  if (d.loading || (!force && d.at && Date.now() - d.at < 300000 && d.games)) return;
+  d.loading = true; first ? FQ.unshift(rid) : FQ.push(rid); runFQ();
+}
+async function runFQ() {
+  if (fqBusy) return; fqBusy = true;
+  while (FQ.length) { await loadFriend(FQ.shift()); }
+  fqBusy = false;
 }
 async function loadFriend(rid) {
   const f = S.fdata[rid] = S.fdata[rid] || {};
   try {
     f.acct = f.acct || await account(rid);
-    f.league = f.league || await riot(platform(), `/lol/league/v4/entries/by-puuid/${f.acct.puuid}`);
-    render();
-    f.games = f.games || await loadGames(f.acct.puuid, 10);
+    f.league = await riot(platform(), `/lol/league/v4/entries/by-puuid/${f.acct.puuid}`); render();
+    const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${f.acct.puuid}/ids?start=0&count=10`, {cache: "no-store"});
+    const have = new Set((f.games || []).map(g => g.m.metadata.matchId));
+    if (!f.games || ids.some(id => !have.has(id))) {
+      for (const id of ids) { try { await match(id); } catch (e) {} }
+      const keep = (f.games || []).map(g => g.m.metadata.matchId).filter(id => !ids.includes(id));
+      f.games = pick([...ids, ...keep], f.acct.puuid);
+    }
+    f.at = Date.now(); f.err = "";
     liveCheck(rid);
-  } catch (e) { f.err = e.message; }
-  render();
+  } catch (e) { if (!f.games) f.err = e.message; }
+  f.loading = false;
+  render(); snapSave();
 }
 async function moreFriendGames(rid) {
   const f = S.fdata[rid]; if (!f || !f.acct || f.moreBusy) return;
@@ -486,7 +557,7 @@ function leaderboard() {
 function vFriends() {
   if (S.view && S.view.friend) return vFriend(S.view.friend);
   const fl = S.friends;
-  (fl || []).forEach(rid => { const d = S.fdata[rid] || {}; if (!d.games && !d.err && !d.loading) { d.loading = true; S.fdata[rid] = d; loadFriend(rid); } });
+  (fl || []).forEach(rid => queueFriend(rid));
   const L = leaderboard();
   const top = L.list.filter(e => e.rid);
   return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Rangliste · letzte 10 Games · dieselbe Liste wie in der PC-App</p>
@@ -508,7 +579,7 @@ function shareBoard() {
 }
 function vFriend(rid) {
   const d = S.fdata[rid] || {}, r = solo(d.league), A = agg(d.games), M = agg((S.games || []).slice(0, 10));
-  if (!d.games && !d.loading) { d.loading = true; S.fdata[rid] = d; loadFriend(rid); }
+  queueFriend(rid, false, true);
   const duo = d.acct ? (S.games || []).filter(g => g.m.info.participants.some(x => x.puuid === d.acct.puuid)) : [];
   const duoTeam = duo.filter(g => g.m.info.participants.find(x => x.puuid === d.acct.puuid).teamId === g.p.teamId);
   const dw = duoTeam.filter(g => g.p.win).length;
