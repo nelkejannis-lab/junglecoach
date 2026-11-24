@@ -171,7 +171,7 @@ async function api(path, opt = {}) {
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
   return r.json();
 }
-const riot = (host, path) => api(`/riot/${host}${path}`);
+const riot = (host, path, opt) => api(`/riot/${host}${path}`, opt);
 function login(p) {
   S.err = ""; LS.set("jc_token", null); MEM_TOKEN = null; render();
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin) return window.webkit.messageHandlers.jcLogin.postMessage(p);
@@ -195,12 +195,38 @@ async function account(rid) {
   const [n, t] = rid.split("#");
   return riot(ACC_REGION(platform()), `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
 }
-async function loadGames(puuid, count, start = 0) {
-  const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${puuid}/ids?start=${start}&count=${count}`);
+// newest first; onPart(list) is called after every batch so the latest games show up right away
+async function loadGames(puuid, count, start = 0, onPart) {
+  const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${puuid}/ids?start=${start}&count=${count}`, {cache: "no-store"});
   const out = [];
-  for (let i = 0; i < ids.length; i += 4) out.push(...await Promise.all(ids.slice(i, i + 4).map(id => match(id).catch(() => null))));
-  return out.filter(Boolean).map(m => ({m, p: m.info.participants.find(x => x.puuid === puuid)})).filter(g => g.p);
+  const done = () => out.filter(Boolean).map(m => ({m, p: m.info.participants.find(x => x.puuid === puuid)})).filter(g => g.p)
+    .sort((a, b) => (b.m.info.gameCreation || 0) - (a.m.info.gameCreation || 0));
+  for (let i = 0; i < ids.length; i += 4) {
+    out.push(...await Promise.all(ids.slice(i, i + 4).map(id => match(id).catch(() => null))));
+    if (onPart) onPart(done());
+  }
+  return done();
 }
+// refresh my games: only fetch new matches and put them on top (called when opening Games / returning to the app)
+let refreshing = false;
+async function refreshGames() {
+  if (refreshing || !S.acct || !S.games) return;
+  refreshing = true;
+  try {
+    const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${S.acct.puuid}/ids?start=0&count=10`, {cache: "no-store"});
+    const have = new Set(S.games.map(g => g.m.metadata.matchId));
+    const fresh = ids.filter(id => !have.has(id));
+    if (fresh.length) {
+      const ms = (await Promise.all(fresh.map(id => match(id).catch(() => null)))).filter(Boolean);
+      const add = ms.map(m => ({m, p: m.info.participants.find(x => x.puuid === S.acct.puuid)})).filter(g => g.p);
+      S.games = add.concat(S.games).sort((a, b) => (b.m.info.gameCreation || 0) - (a.m.info.gameCreation || 0));
+      riot(platform(), `/lol/league/v4/entries/by-puuid/${S.acct.puuid}`).then(l => { S.league = l; render(); }).catch(() => {});
+      render();
+    }
+  } catch (e) {}
+  refreshing = false;
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshGames(); });
 async function boot() {
   render();
   if (!token()) return;
@@ -264,7 +290,7 @@ async function loadMe() {
   try {
     S.acct = await account(S.me.riot_id);
     riot(platform(), `/lol/league/v4/entries/by-puuid/${S.acct.puuid}`).then(l => { S.league = l; render(); }).catch(() => {});
-    S.games = await loadGames(S.acct.puuid, S.gamesMore); S.err = ""; render();
+    S.games = await loadGames(S.acct.puuid, S.gamesMore, 0, part => { S.games = part; render(); }); S.err = ""; render();
   } catch (e) { S.err = e.message; render(); }
 }
 async function loadFriend(rid) {
@@ -674,7 +700,7 @@ function render() {
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
   if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "");
 }
 ["gesturestart", "gesturechange", "gestureend"].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), {passive: false}));

@@ -32,7 +32,7 @@ const RIOT_ROUTES = [
   [/^\/lol\/summoner\/v4\/summoners\/by-puuid\/[\w-]+$/, 300],
   [/^\/lol\/league\/v4\/entries\/by-puuid\/[\w-]+$/, 120],
   [/^\/lol\/champion-mastery\/v4\/champion-masteries\/by-puuid\/[\w-]+\/top$/, 3600],
-  [/^\/lol\/match\/v5\/matches\/by-puuid\/[\w-]+\/ids$/, 60],
+  [/^\/lol\/match\/v5\/matches\/by-puuid\/[\w-]+\/ids$/, 20],
   [/^\/lol\/match\/v5\/matches\/[A-Z0-9]+_\d+$/, 7 * 86400],
   [/^\/lol\/match\/v5\/matches\/[A-Z0-9]+_\d+\/timeline$/, 7 * 86400],
   [/^\/lol\/status\/v4\/platform-data$/, 60],
