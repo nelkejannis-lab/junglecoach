@@ -38,6 +38,10 @@ struct WebContainer: UIViewRepresentable {
         web.backgroundColor = BG
         web.scrollView.backgroundColor = BG
         web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.scrollView.minimumZoomScale = 1          // no pinch zoom: the app should feel native
+        web.scrollView.maximumZoomScale = 1
+        web.scrollView.bouncesZoom = false
+        web.scrollView.delegate = context.coordinator
         web.allowsBackForwardNavigationGestures = true
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator        // shows JavaScript alert()/confirm() as native dialogs
@@ -52,9 +56,15 @@ struct WebContainer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
+final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, ASWebAuthenticationPresentationContextProviding {
     weak var web: WKWebView?
     private var session: ASWebAuthenticationSession?
+
+    // disable zooming completely (pinch and double tap)
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { nil }
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+        scrollView.pinchGestureRecognizer?.isEnabled = false
+    }
 
     @objc func reload(_ sender: UIRefreshControl) {
         web?.reload()
