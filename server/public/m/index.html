@@ -49,6 +49,23 @@
     .tabs button.on { background:rgba(45,212,191,.1); }
     .sheet .in { max-width:640px; margin:0 auto; }
   }
+  #rail { display:none; }
+  /* wide desktop: right column with your card, Moosi's task and friends (like the PC app) */
+  @media (min-width: 1240px) {
+    #app { margin-left:max(260px, calc(50vw - 560px)); }
+    #rail { display:block; position:fixed; top:24px; right:max(24px, calc(50vw - 640px)); width:300px; max-height:calc(100vh - 48px); overflow:auto; }
+    #rail .card { padding:14px; margin-bottom:12px; }
+    #rail .avw { flex:none; display:block; border-radius:12px; overflow:hidden; } #rail .avw > * { width:100% !important; height:100% !important; border-radius:12px; margin:0 !important; }
+    #rail .avw img { width:100%; height:100%; object-fit:cover; }
+    #rail .meh { display:flex; gap:12px; align-items:center; } #rail .meh .mav, #rail .meh img.c { width:46px; height:46px; border-radius:14px; }
+    #rail .task { display:flex; gap:10px; align-items:center; border-color:rgba(45,212,191,.3); background:linear-gradient(160deg,rgba(45,212,191,.10),rgba(129,140,248,.04)); }
+    #rail .task .moosi { width:72px !important; height:72px !important; flex:none; }
+    #rail .task .k { font-size:10.5px; font-weight:800; letter-spacing:.6px; color:var(--acc); text-transform:uppercase; }
+    #rail .fr { display:flex; gap:10px; align-items:center; padding:8px 4px; border-radius:12px; cursor:pointer; } #rail .fr:hover { background:rgba(255,255,255,.04); }
+    #rail .fr .mav, #rail .fr img.c { width:38px; height:38px; border-radius:12px; flex:none; }
+    #rail .fr .nm { font-weight:700; font-size:14px; } #rail .fr .st { font-size:12px; color:var(--sec); }
+    #rail .fr .rk2 { margin-left:auto; font-size:12.5px; font-weight:800; white-space:nowrap; }
+  }
   .hero { position:relative; overflow:hidden; border-radius:26px; padding:18px; margin-bottom:14px; border:1px solid var(--line); background:#0d1322; min-height:200px; }
   .hero .art { position:absolute; inset:0; background-size:cover; background-position:65% 20%; }
   .hero .art::after { content:""; position:absolute; inset:0; background:linear-gradient(0deg,#0b101d 8%,rgba(11,16,29,.55) 60%,rgba(11,16,29,.2)); }
@@ -140,6 +157,7 @@
 <body>
 <div id="app"></div>
 <nav class="tabs" id="tabs" style="display:none"></nav>
+<aside id="rail"></aside>
 <script>
 // Moosi – the coach monster (own artwork): one pose per mood, head crop for small avatars.
 const MOOSI_POSE = {happy: "body", proud: "proud", worried: "worried", sleepy: "sleepy"};
@@ -869,6 +887,26 @@ function vLogin() {
 const TAB_IC = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', games: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7.5 11v3M6 12.5h3"/><circle cx="15.5" cy="11.5" r=".9"/><circle cx="17.5" cy="13.7" r=".9"/>',
   stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   friends: '<circle cx="9" cy="8.5" r="3.4"/><path d="M2.8 19.5c1-3.2 3.5-4.8 6.2-4.8s5.2 1.6 6.2 4.8"/><path d="M15.5 5.6a3.2 3.2 0 0 1 0 6M17.6 14.9c1.8.6 3 2.1 3.6 4.6"/>', more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+function renderRail() {
+  const el = $("#rail"); if (!el) return;
+  if (!S.me || innerWidth < 1240) { el.innerHTML = ""; return; }
+  const c = S.coach, task = c && c.session_task, A = agg((S.games || []).slice(0, 10)), main = A && A.champs[0] ? A.champs[0].c : null;
+  const pr = S.prof || {}, r = solo(S.league);
+  const fl = S.friends || [];
+  const live = fl.filter(rid => liveTxt(rid)).length;
+  fl.forEach(rid => queueFriend(rid));
+  el.innerHTML = `<div class="card meh"><span class="avw" style="width:46px;height:46px">${avatar(pr.avatar, "", main)}</span><div style="min-width:0"><b style="font-size:16px">${esc(pr.name || (S.me.riot_id || "").split("#")[0] || S.me.name)}</b>
+      <div class="muted small">${pr.role && ROLE_DE[pr.role] ? ROLE_DE[pr.role] : "–"}${main ? " · Main " + esc(main) : ""}</div><div class="small" style="margin-top:2px">${r ? rankTxt(r) : '<span class="muted">Unranked</span>'}</div></div></div>
+    <div class="card task">${moosi(c && c.score >= 60 ? "proud" : "happy", 72)}<div><div class="k">${task ? "Deine Aufgabe" : "Moosi"}</div>
+      <div class="small" style="margin-top:4px;line-height:1.4">${task ? esc(task.title + ": " + task.drill) : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal – dann steht hier deine Coaching-Aufgabe."}</div></div></div>
+    <div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b>Freunde</b><span class="muted small">${live ? live + " im Spiel · " : ""}${fl.length}</span></div>
+      ${fl.map(rid => { const d = S.fdata[rid] || {}, pub = (S.pub || {})[rid.toLowerCase()] || {}, fa = agg(d.games), fr = solo(d.league), lt = liveTxt(rid);
+        return `<div class="fr" onclick='S.tab="friends";S.view={friend:${JSON.stringify(rid)}};render();scrollTo(0,0)'><span class="avw" style="width:38px;height:38px">${avatar(pub.avatar, "", fa && fa.champs[0] ? fa.champs[0].c : null)}</span>
+          <div style="min-width:0"><div class="nm">${esc(pub.name || rid.split("#")[0])}</div><div class="st">${lt ? `<span style="color:var(--acc);font-weight:700">${lt}</span>` : (fa ? `Ø Score ${fa.score.toFixed(1)}` : "lädt …")}</div></div>
+          <span class="rk2">${fr ? rankTxt(fr).split(" · ")[0] : '<span class="muted">–</span>'}</span></div>`; }).join("") || '<p class="muted small">Noch keine Freunde.</p>'}
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="radd" placeholder="Name#TAG" style="padding:10px 12px"><button class="btn" style="width:auto;padding:0 16px" onclick="const v=$('#radd').value.trim();if(!/^[^#]{1,24}#[^#]{1,8}$/.test(v))return toast('Riot ID im Format Name#TAG');saveFriends([...(S.friends||[]),v])">+</button></div></div>`;
+}
+addEventListener("resize", () => renderRail());
 function render() {
   const app = $("#app"), tabs = $("#tabs");
   if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
@@ -876,6 +914,8 @@ function render() {
   tabs.style.display = "flex";
   tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" onclick="S.tab='${k}';S.view=null;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
+  if (document.activeElement && document.activeElement.id === "radd") return;   // don't wipe what is being typed
+  renderRail();
 }
 ["gesturestart", "gesturechange", "gestureend"].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), {passive: false}));
 boot();
