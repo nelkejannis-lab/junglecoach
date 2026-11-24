@@ -46,6 +46,46 @@ def gold_per_min(live, gold, bench=None, role=None):
     return {"value": gpm, "rate": rate, "target": round(p50 * f)}
 
 
+def next_focus(live, timers, t, hide=()):
+    """What the team should play for next: objectives and towers, from the event feed everyone sees.
+    Returns {"text", "why"} or None."""
+    lost = [s for s in live.get("structures") or [] if s["kind"] in ("tower", "inhib")]
+    recent = [s for s in lost if t - s["t"] <= 50]
+    up = []
+    if "timers" not in hide:
+        for o in timers:
+            sec = 0 if o["in"] in ("jetzt", "now") else _sec(o["in"])
+            up.append((sec, o["label"]))
+        up.sort()
+    if recent:
+        s = recent[-1]
+        if s["kind"] == "inhib" and not s["ours"]:
+            return {"text": T(f"Inhibitor {s['lane']} gefallen – Baron oder nächsten Turm nehmen",
+                              f"{s['lane']} inhibitor down – take Baron or the next tower"), "why": T("Supers drücken die Lane für euch", "super minions push for you")}
+        if not s["ours"]:
+            nxt = up[0] if up and up[0][0] <= 120 else None
+            return {"text": T(f"{s['lane']}-Turm gefallen – " + (f"jetzt {nxt[1]} vorbereiten" if nxt else "Plates/Camps auf der Seite nehmen, dann rotieren"),
+                              f"{s['lane']} tower down – " + (f"set up {nxt[1]} now" if nxt else "take plates/camps there, then rotate")),
+                    "why": T("Map öffnet sich auf dieser Seite", "the map opens on that side")}
+        return {"text": T(f"Eigener {s['lane']}-Turm verloren – Sicht im eigenen Jungle auf der Seite",
+                          f"Lost our {s['lane']} tower – ward your jungle on that side"), "why": T("Gegner kommt jetzt tiefer rein", "enemies can now invade deeper")}
+    if up and up[0][0] <= 150:
+        sec, label = up[0]
+        return {"text": T(f"{label} in {sec // 60}:{sec % 60:02d} – Lanes mit Prio vorbereiten, Reset vorher",
+                          f"{label} in {sec // 60}:{sec % 60:02d} – get lane prio, reset before"), "why": T("Nächstes Objective", "next objective")}
+    ours_down = sum(1 for s in lost if not s["ours"])
+    if t < 14 * 60 and ours_down == 0:
+        return {"text": T("Erster Turm: Lane mit Prio bei den Plates unterstützen (bis 14:00)", "First tower: help the lane with prio take plates (until 14:00)"),
+                "why": T("Plates geben bis 14:00 extra Gold", "plates give extra gold until 14:00")}
+    if t >= 20 * 60 and "timers" not in hide and not any(l == "Baron" for _, l in up):
+        return {"text": T("Baron ist oben – nur nach gewonnenem Fight oder Pick", "Baron is up – only after a won fight or a pick"),
+                "why": T("Sicht um den Pit vorher setzen", "set vision around the pit first")}
+    if ours_down:
+        return {"text": T("Nächsten Turm auf der Seite mit Prio pushen – Sicht davor", "push the next tower on the side with prio – vision first"),
+                "why": T("Türme öffnen die Map", "towers open the map")}
+    return None
+
+
 def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None, hide=()):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
@@ -128,10 +168,11 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
         prompts.append((3, plan_step, "info"))
 
     prompts.sort(key=lambda p: p[0])
+    nxt = next_focus(live, timers, t, hide)
     now = {"text": prompts[0][1], "tone": prompts[0][2]} if prompts else \
         {"text": T("Alles im Griff – Camps, Lanes mit Prio, nächstes Objective vorbereiten",
                    "All good – camps, lanes with priority, prepare the next objective"), "tone": "calm"}
-    return {"now": now, "more": [{"text": p[1], "tone": p[2]} for p in prompts[1:3]],
+    return {"now": now, "next": nxt, "more": [{"text": p[1], "tone": p[2]} for p in prompts[1:3]],
             "item": item, "timers": timers, "gold": int(gold) if gold is not None else None,
             "focus": focus, "cs": cs, "cs_ok": cs >= 6 or t < 180, "time": live.get("game_time"),
             "enemy_jg": {"champion": ej.get("champion"), "level": ej.get("level"),

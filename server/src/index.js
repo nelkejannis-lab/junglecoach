@@ -273,7 +273,7 @@ async function riotKeyEndpoint(req, env, user) {
 async function ensureData(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_data (user_id INTEGER PRIMARY KEY, friends TEXT, coach TEXT,
     updated_at INTEGER, friends_at INTEGER, profile TEXT, status TEXT, status_at INTEGER)`).run();
-  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER", "riot_key TEXT"]) {
+  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER", "riot_key TEXT", "notes TEXT", "notes_at INTEGER"]) {
     try { await env.DB.prepare(`ALTER TABLE user_data ADD COLUMN ${col}`).run(); } catch { /* exists */ }
   }
 }
@@ -296,7 +296,7 @@ function cleanProfile(p) {
     show_status: p.show_status !== false,
   };
 }
-const COL_AT = { friends: "friends_at", coach: "updated_at", profile: "updated_at" };
+const COL_AT = { friends: "friends_at", coach: "updated_at", profile: "updated_at", notes: "notes_at" };
 async function sync(req, env, user, kind) {
   await ensureData(env);
   if (req.method === "GET") {
@@ -323,6 +323,8 @@ async function sync(req, env, user, kind) {
     v = [...new Set((Array.isArray(body.friends) ? body.friends : []).map((f) => String(f).trim()).filter((f) => RIOT_ID.test(f)))].slice(0, 50);
   } else if (kind === "profile") {
     v = cleanProfile(body.profile);
+  } else if (kind === "notes") {   // own focus notes, shown in game while Tab is held
+    v = String(body.notes ?? "").replace(/[\u0000-\u0008\u000b-\u001f<>]/g, "").slice(0, 500);
   } else {
     v = body.plan && typeof body.plan === "object" ? body.plan : null;
   }
@@ -419,6 +421,7 @@ export default {
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
         if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
+        if (p === "/api/sync/notes") return await sync(req, env, user, "notes");
         if (p === "/api/sync/avatar") return await avatarPut(req, env, user);
         if (p === "/api/sync/riotkey") return await riotKeyEndpoint(req, env, user);
         if (p === "/api/admin/riotkey") return await adminRiotKey(req, env, user);

@@ -977,6 +977,21 @@ function profEditor() {
     <label class="tg"><span>Zeigen, wenn ich spiele</span><input type="checkbox" id="pe_st" ${PE.show_status !== false ? "checked" : ""}></label>
     <button class="btn" style="margin-top:12px" onclick="saveProf()">Profil speichern</button></div>`;
 }
+// ---- own focus notes (shown in game on the PC while Tab is held)
+let NOTES = null, notesMsg = "";
+async function loadNotes() { try { NOTES = (await api("/api/sync/notes")).notes || ""; } catch (e) { NOTES = ""; } if (S.tab === "more") render(); }
+async function saveNotes() {
+  const v = ($("#notes") || {}).value || "";
+  try { NOTES = (await api("/api/sync/notes", {method: "PUT", body: JSON.stringify({notes: v})})).notes; notesMsg = "Gespeichert – erscheint beim nächsten PC-Start im Spiel bei Tab."; }
+  catch (e) { notesMsg = "Nicht gespeichert: " + e.message; }
+  render();
+}
+function notesCard() {
+  if (NOTES === null) { loadNotes(); return ""; }
+  return `<div class="card"><h3>📌 Notizzettel</h3><p class="muted small" style="margin:0 0 10px">Deine eigenen Fokus-Punkte. Im Spiel siehst du sie am PC, solange du Tab hältst.</p>
+    <textarea id="notes" rows="4" maxlength="500" placeholder="z. B.&#10;Vor Drache Bot-Prio checken&#10;Nicht ohne Sicht invaden" style="width:100%;font:inherit;font-size:16px;color:var(--txt);background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:14px;padding:12px;resize:vertical">${esc(NOTES)}</textarea>
+    <button class="btn" style="margin-top:10px" onclick="saveNotes()">Speichern</button>${notesMsg ? `<p class="small" style="margin:8px 0 0">${esc(notesMsg)}</p>` : ""}</div>`;
+}
 // ---- push notifications (web app / home-screen app; not inside the iOS wrapper's web view)
 let PUSH = null;
 const inWrapper = () => !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcLogin);
@@ -1086,7 +1101,7 @@ function keyCard() {
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
     <div class="row"><span>Riot ID</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
-    ${pushCard()}${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
+    ${notesCard()}${pushCard()}${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
     <p class="muted small" style="text-align:center;margin-top:18px"><a style="color:var(--sec)" href="/datenschutz.html">Datenschutz</a> · <a style="color:var(--sec)" href="/impressum.html">Impressum</a><br>Moosi ist nicht mit Riot Games verbunden.</p>`;
 }
 function vLogin() {
@@ -1199,7 +1214,13 @@ function render() {
     hx: [...document.querySelectorAll("#app .seg, #app .hscroll")].map(e => e.scrollLeft)};
   const vk = S.tab + "|" + (S.view && S.view.friend || "");
   if (vk !== render.vk) { render.toTop = true; render.vk = vk; }   // a new page starts at the top, everything else stays put
+  // keep what is being typed (inputs with an id survive re-renders while data arrives)
+  const ae = document.activeElement, typing = ae && ae.id && /^(INPUT|TEXTAREA)$/.test(ae.tagName)
+    ? {id: ae.id, v: ae.value, a: ae.selectionStart, b: ae.selectionEnd} : null;
+  const vals = [...document.querySelectorAll("#app input[id], #app textarea[id]")].map(e => [e.id, e.value]);
   try { renderInner(); } finally {
+    vals.forEach(([id, v]) => { const e = document.getElementById(id); if (e && e.value !== v && e.type !== "file") e.value = v; });
+    if (typing) { const e = document.getElementById(typing.id); if (e) { e.value = typing.v; e.focus({preventScroll: true}); try { e.setSelectionRange(typing.a, typing.b); } catch (er) {} } }
     const sh = document.querySelectorAll(".sheet .in"); keep.sh.forEach((t, i) => { if (sh[i]) sh[i].scrollTop = t; });
     const hx = document.querySelectorAll("#app .seg, #app .hscroll"); keep.hx.forEach((t, i) => { if (hx[i]) hx[i].scrollLeft = t; });
     if (render.toTop) scrollTo(0, 0); else if (Math.abs(scrollY - keep.y) > 1) scrollTo(0, keep.y);

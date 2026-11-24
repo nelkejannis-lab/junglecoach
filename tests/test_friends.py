@@ -292,3 +292,31 @@ class OverlayRiotSafeTests(unittest.TestCase):
         m2 = overlay.model(dict(st, ov_hide=["gold_diff", "enemy_jg", "timers"]))
         self.assertIsNone(m2["diff"]); self.assertEqual(m2["timers"], []); self.assertIsNone(m2["ej"]); self.assertEqual(m2["fed"], [])
         self.assertEqual(m2["gpm"], {"value": 400})
+
+
+class SoundAndFocusTests(unittest.TestCase):
+    def test_sound_due(self):
+        from jc.overlay import sound_due
+        mem, snd = {}, {"on": True, "every": 60, "death": True}
+        self.assertIsNone(sound_due(snd, {"t": 100, "deaths": 0}, mem))     # first call only remembers
+        self.assertIsNone(sound_due(snd, {"t": 130, "deaths": 0}, mem))
+        self.assertEqual(sound_due(snd, {"t": 161, "deaths": 0}, mem), "remind")
+        self.assertEqual(sound_due(snd, {"t": 170, "deaths": 1, "dead": True}, mem), "death")
+        self.assertIsNone(sound_due(snd, {"t": 200, "deaths": 1, "dead": True}, mem))
+        self.assertIsNone(sound_due({"on": False}, {"t": 400, "deaths": 1}, mem))
+
+    def test_next_focus(self):
+        from jc.hud import next_focus
+        live = {"structures": [{"t": 590, "kind": "tower", "lane": "Bot", "ours": False, "name": "Turret_T2_R_03_A"}]}
+        n = next_focus(live, [{"label": "Drache", "in": "1:30"}], 600)
+        self.assertIn("Bot-Turm gefallen", n["text"]); self.assertIn("Drache", n["text"])
+        n = next_focus({"structures": []}, [], 400)
+        self.assertIn("Erster Turm", n["text"])
+        n = next_focus({"structures": []}, [{"label": "Baron", "in": "1:00"}], 1500)
+        self.assertIn("Baron in 1:00", n["text"])
+
+    def test_picker_with_notes_only(self):
+        from jc.overlay import render_picker
+        im, rects = render_picker([], None, None, notes="Mehr Wards\\nNicht facechecken")
+        self.assertGreater(im.size[1], 40)
+        self.assertEqual(rects, [])

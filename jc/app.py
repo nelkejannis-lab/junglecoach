@@ -294,12 +294,24 @@ def push_role(cfg):
         cloud(cfg, "PUT", "/api/sync/profile", {"profile": {**(r.get("profile") or {}), "role": cfg["main_role"]}})
 
 
+def pull_notes(cfg):
+    """Focus notes written on the phone win if they are newer than the PC's."""
+    r = cloud(cfg, "GET", "/api/sync/notes")
+    if not r or r.get("notes") is None:
+        return
+    oc = cfg.setdefault("overlay", {})
+    if (r.get("updated_at") or 0) > (oc.get("notes_at") or 0):
+        oc["notes"], oc["notes_at"] = r["notes"], r["updated_at"]
+        save_config(cfg)
+
+
 def sync_on_start(cfg):
     """Merges the friend list with the server (phone additions) and publishes the Riot ID."""
     if not cfg.get("auth_token"):
         return
     sync_friends(cfg)
     push_role(cfg)
+    pull_notes(cfg)
     me = cloud(cfg, "GET", "/api/me")
     if me is not None and not me.get("riot_id") and "#" in (cfg.get("riot_id") or ""):
         cloud(cfg, "PUT", "/api/me", {"riot_id": cfg["riot_id"]})
@@ -764,9 +776,13 @@ def make_handler(gd, cfg, lcu):
                 from . import i18n
                 with LOCK:
                     lv = STATE.get("live")
-                    small = {"hud": lv.get("hud"), "game_time": lv.get("game_time"), "cs_per_min": lv.get("cs_per_min")} if lv else None
+                    small = {"hud": lv.get("hud"), "game_time": lv.get("game_time"), "cs_per_min": lv.get("cs_per_min"),
+                             "t": lv.get("_t"), "deaths": lv.get("deaths"), "dead": lv.get("dead")} if lv else None
                 oc = cfg.get("overlay", {})
-                return self._send(200, {"live": small, "lang": i18n.LANG["code"],
+                return self._send(200, {"live": small, "lang": i18n.LANG["code"], "ov_hide": oc.get("hide", []),
+                                        "notes": oc.get("notes", ""),
+                                        "sound": {"on": oc.get("sound", True), "every": oc.get("sound_every", 60),
+                                                  "volume": oc.get("sound_volume", 0.5), "death": oc.get("sound_death", True)},
                                         "ov": {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
                                                "size": oc.get("size", 1.0), "move": OVERLAY["move"],
                                                "pick": OVERLAY["pick"]}})
@@ -1075,11 +1091,24 @@ def make_handler(gd, cfg, lcu):
                     # objective timers stay: dragon/baron kills are announced to everyone, the timer is not hidden info
                     hide = (hide | {"gold_diff", "enemy_jg"}) if b["riot_safe"] else (hide - {"gold_diff", "enemy_jg"})
                 oc["hide"] = sorted(hide)
+                if isinstance(b.get("notes"), str):   # own focus notes, shown in game while Tab is held
+                    oc["notes"], oc["notes_at"] = b["notes"][:500], int(time.time())
+                    cloud_bg(cfg, "PUT", "/api/sync/notes", {"notes": oc["notes"]})
+                if "sound" in b:
+                    oc["sound"] = bool(b["sound"])
+                if isinstance(b.get("sound_every"), (int, float)):
+                    oc["sound_every"] = int(max(30, min(600, b["sound_every"])))
+                if isinstance(b.get("sound_volume"), (int, float)):
+                    oc["sound_volume"] = max(0.05, min(1.0, float(b["sound_volume"])))
+                if "sound_death" in b:
+                    oc["sound_death"] = bool(b["sound_death"])
                 if "pick" in b:  # item chosen in the Tab picker (None = back to the build path)
                     OVERLAY["pick"] = int(b["pick"]) if str(b.get("pick") or "").isdigit() else None
                 save_config(cfg)
                 return self._send(200, {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
-                                        "size": oc.get("size", 1.0), "move": OVERLAY["move"], "hide": oc.get("hide", [])})
+                                        "size": oc.get("size", 1.0), "move": OVERLAY["move"], "hide": oc.get("hide", []),
+                                        "notes": oc.get("notes", ""), "sound": oc.get("sound", True), "sound_every": oc.get("sound_every", 60),
+                                        "sound_volume": oc.get("sound_volume", 0.5), "sound_death": oc.get("sound_death", True)})
             if self.path == "/api/clip-feedback":
                 b = self._body()
                 ok = recorder.set_feedback(b.get("sid"), b.get("file"), b.get("verdict"))

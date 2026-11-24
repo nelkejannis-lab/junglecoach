@@ -165,7 +165,23 @@ def analyze(gd, data, timers=None, preset_lookup=None):
                                name_team, name_pos, name_champ)
     my_cs = me.get("scores", {}).get("creepScore", 0)
     cs_min = round(my_cs / max(1, t / 60), 1) if t > 60 else 0
+    # structures: towers / inhibitors that fell (from the event feed everyone sees) – for the "next focus"
+    structures = []
+    for ev in data.get("events", {}).get("Events", []):
+        n = ev.get("EventName")
+        if n in ("TurretKilled", "InhibKilled"):
+            nm = ev.get("TurretKilled") or ev.get("InhibKilled") or ""
+            # e.g. Turret_T1_L_03_A: T1 = blue side (ORDER) structure, L/C/R = top/mid/bot lane
+            owner = "ORDER" if "_T1_" in nm else "CHAOS" if "_T2_" in nm else "?"
+            lane = {"_L_": "Top", "_C_": "Mid", "_R_": "Bot"}.get(next((k for k in ("_L_", "_C_", "_R_") if k in nm), ""), "")
+            structures.append({"t": ev.get("EventTime", 0), "kind": "inhib" if n == "InhibKilled" else "tower",
+                               "lane": lane, "ours": owner == my_team, "name": nm})
+        elif n in ("HeraldKill", "HordeKill"):
+            structures.append({"t": ev.get("EventTime", 0), "kind": "herald" if n == "HeraldKill" else "grubs",
+                               "lane": "", "ours": None, "name": n})
+    sc = me.get("scores", {})
     return {"game_time": _fmt(t), "me": gd.champ_name(my_champ) if my_champ else "?",
+            "deaths": sc.get("deaths", 0), "dead": bool(me.get("isDead")), "structures": structures,
             "cs_per_min": cs_min, "cs_hint": "Farm ok" if cs_min >= 6 or t < 180 else "Unter 6 CS/min → mehr Camps zwischen Ganks",
             "enemy": {"profile": prof, "fed": fed, "armor_stackers": armor_st, "mr_stackers": mr_st},
             "build": build, "sim": sim_res, "enemy_jungler": jungle, "objectives": objectives,

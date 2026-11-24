@@ -1225,6 +1225,16 @@ function overlayCard() {
       ${tog(rs, `ovSet({riot_safe:${!rs}})`)}</div>
     ${[["gold_diff", "Team-/Jungle-Gold-Unterschied"], ["enemy_jg", "Gegner-Jungler & gefütterte Gegner"], ["timers", "Drachen-/Herold-/Baron-Timer"]].map(([k, l]) =>
       `<div class="switch" style="padding-left:14px"><span class="small">${l}</span>${tog(!hide.includes(k), `ovSet({${k}:${hide.includes(k)}})`)}</div>`).join("")}
+    <div class="switch"><span>Erinnerungs-Ton<br><span class="small muted">Leiser Ton etwa jede ${o.sound_every || 60} s und nach jedem Tod – erinnert dich, Aufgabe und Prios zu checken.</span></span>
+      ${tog(o.sound !== false, `ovSet({sound:${o.sound === false}})`)}</div>
+    ${o.sound !== false ? `<div class="switch" style="padding-left:14px"><span class="small">Nach jedem Tod</span>${tog(o.sound_death !== false, `ovSet({sound_death:${o.sound_death === false}})`)}</div>
+    <div class="switch" style="padding-left:14px"><span class="small">Abstand <b>${o.sound_every || 60} s</b></span>
+      <input type="range" min="30" max="300" step="15" value="${o.sound_every || 60}" onchange="ovSet({sound_every:+this.value})"></div>
+    <div class="switch" style="padding-left:14px"><span class="small">Lautstärke <b>${Math.round((o.sound_volume || .5) * 100)}%</b></span>
+      <input type="range" min="0.1" max="1" step="0.05" value="${o.sound_volume || .5}" onchange="ovSet({sound_volume:+this.value})"></div>` : ""}
+    <div style="padding:12px 0;border-bottom:1px solid var(--sep)"><div>Notizzettel <span class="small muted">· im Spiel nur sichtbar, solange du Tab hältst</span></div>
+      <textarea class="f" id="ov_notes" rows="4" maxlength="500" placeholder="z. B.&#10;Vor Drache Bot-Prio checken&#10;Nicht ohne Sicht invaden&#10;Jede Back eine Control Ward" style="width:100%;margin-top:8px;resize:vertical;font:inherit">${esc(o.notes || "")}</textarea>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px"><button class="btn sec" onclick="ovSet({notes:$('#ov_notes').value}).then(()=>{msg.notes='Gespeichert ✓';render()})">Notizen speichern</button><span class="small muted">${esc(msg.notes || "Auch in der Handy-App unter „Mehr“ bearbeitbar.")}</span></div></div>
     <div class="switch" style="border:0"><span>Position<br><span class="small muted">${o.move ? "Das Overlay ist jetzt verschiebbar – mit der Maus an die gewünschte Stelle ziehen." : "Auch im Spiel mit Strg+Shift+K."}</span></span>
       <button class="btn ${o.move ? "" : "sec"}" onclick="ovSet({move:${!o.move}})">${o.move ? "Fertig – Position speichern" : "Position verschieben"}</button></div>`);
 }

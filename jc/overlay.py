@@ -16,8 +16,8 @@ KEY = "#010203"  # transparent key colour for the rounded corners
 
 L = {"de": {"now": "JETZT", "item": "Nächstes Item", "timer": "TIMER", "ejg": "GEGNER-JUNGLER", "fed": "GEFÜTTERT",
             "focus": "DEIN FOKUS", "seen": "zuletzt", "unseen": "noch nicht gesehen", "target": "Ziel",
-            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "gpm": "Gold/min", "r_good": "gut", "r_bad": "niedrig", "itemg": "Item-Wert", "move": "Mit der Maus ziehen – Strg+Shift+K oder „Fertig“ in der App speichert die Position"},
-     "en": {"now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
+            "missing": "fehlen", "buy": "Kaufbar", "ejg_s": "Gegner-JG", "fed_s": "Gefüttert", "focus_s": "Dein Fokus", "left": "noch {} g", "game": "SPIELZEIT", "team": "Team-Gold", "jg": "Jungle-Gold", "gpm": "Gold/min", "r_good": "gut", "r_bad": "niedrig", "itemg": "Item-Wert", "next_s": "Nächster Fokus", "move": "Mit der Maus ziehen – Strg+Shift+K oder „Fertig“ in der App speichert die Position"},
+     "en": {"next_s": "Next focus", "now": "NOW", "item": "NEXT ITEM", "timer": "TIMERS", "ejg": "ENEMY JUNGLER", "fed": "FED",
             "focus": "YOUR FOCUS", "seen": "last", "unseen": "not seen yet", "target": "target",
             "missing": "missing", "buy": "Affordable", "ejg_s": "Enemy JG", "fed_s": "Fed", "focus_s": "Your focus", "left": "{} g left", "game": "GAME TIME", "team": "Team gold", "jg": "Jungle gold", "gpm": "Gold/min", "r_good": "good", "r_bad": "low", "itemg": "item value", "move": "Drag with the mouse – Ctrl+Shift+K or “Done” in the app saves the position"}}
 
@@ -92,6 +92,7 @@ def model(state):
         "diff": None if "gold_diff" in hide else h.get("gold_diff"),
         "gpm": h.get("gpm"),
         "choices": h.get("choices") or [],
+        "next": (h.get("next") or {}).get("text"),
         "focus_t": (h.get("focus") or {}).get("title"),
         "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
@@ -326,6 +327,24 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
             d.text((cx, cy), "i" if col == A_BLUE else "!", font=F["icon"], fill=dark, anchor="mm")
         y = bottom + 12 * k
 
+    # ---- next focus (objectives / towers): one line with a target symbol
+    if m.get("next"):
+        top = y
+        tx = pad + 30 * k
+        yy = y + 8 * k
+        d.text((tx, yy), m["t"]["next_s"], font=F["capb"], fill=_rgb(A_PURPLE))
+        yy += lh(F["capb"])
+        for ln in _wrap(d, m["next"], F["body"], Wp - pad - 12 * k - tx)[:3]:
+            d.text((tx, yy), ln, font=F["body"], fill=W1)
+            yy += lh(F["body"])
+        bottom = yy + 7 * k
+        u.rounded_rectangle([pad, top, Wp - pad, bottom], 14 * k, fill=fill2)
+        cx, cy = pad + 15 * k, top + 8 * k + lh(F["capb"]) * .55
+        for r_, a in ((7, 255), (4.2, 255)):
+            d.ellipse([cx - r_ * k, cy - r_ * k, cx + r_ * k, cy + r_ * k], outline=_rgb(A_PURPLE), width=max(1, int(1.6 * k)))
+        d.ellipse([cx - 1.4 * k, cy - 1.4 * k, cx + 1.4 * k, cy + 1.4 * k], fill=_rgb(A_PURPLE))
+        y = bottom + 12 * k
+
     # ---- next item: rounded icon, name, gold left, thin progress bar
     if m["item"]:
         itm = m["item"]
@@ -395,25 +414,45 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
     return out.resize((int(W * scale), int(H / SS)), Image.LANCZOS)
 
 
-def render_picker(choices, current_id, icons, scale=1.0, lang="de", fonts=None):
-    """Tab picker: item icons of your build; click one to make it the 'next item' in the overlay.
-    Returns (RGBA image, [(x0, y0, x1, y1, item_id)] click areas in image pixels)."""
+def render_picker(choices, current_id, icons, scale=1.0, lang="de", fonts=None, notes=""):
+    """Tab view: your own focus notes (sticky note) + item icons of your build; click an item to make it the
+    'next item' in the overlay. Returns (RGBA image, [(x0, y0, x1, y1, item_id)] click areas in image pixels)."""
     from PIL import Image, ImageDraw
     F = fonts or pil_fonts(scale)
     k = SS * scale
-    cols = min(4, max(1, len(choices)))
+    cols = min(4, max(1, len(choices))) if choices else 4
     tile, gap, pad = 66 * k, 8 * k, 14 * k
-    rows_n = (len(choices) + cols - 1) // cols
-    head = 44 * k
+    rows_n = (len(choices) + cols - 1) // cols if choices else 0
     name_h = 30 * k
-    Wp = int(2 * pad + cols * tile + (cols - 1) * gap)
-    Hp = int(head + rows_n * (tile + name_h) + (rows_n - 1) * gap + pad)
+    Wp = int(2 * pad + max(cols, 3) * tile + (max(cols, 3) - 1) * gap)
+    probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    note_lines = []
+    for para in (notes or "").strip().splitlines()[:8]:
+        para = para.strip()
+        if para:
+            note_lines += _wrap(probe, ("• " if not para.startswith(("•", "-")) else "") + para.lstrip("-• ").strip(), F["body"], Wp - 2 * pad - 24 * k)
+    note_lines = note_lines[:10]
+    line_h = probe.textbbox((0, 0), "Äg", font=F["body"])[3] + 5 * k
+    note_h = (36 * k + len(note_lines) * line_h + 14 * k) if note_lines else 0
+    head = 44 * k if choices else 0
+    Hp = int(pad + note_h + (pad if note_lines and choices else 0) + head + rows_n * (tile + name_h) + max(0, rows_n - 1) * gap + (pad if choices else 0))
     im = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     d.rounded_rectangle([0, 0, Wp - 1, Hp - 1], 24 * k, fill=_rgb("#1c1c1e", 235), outline=_rgb("#ffffff", 40), width=max(1, int(k)))
+    y = pad
+    if note_lines:   # sticky note
+        d.rounded_rectangle([pad, y, Wp - pad, y + note_h], 16 * k, fill=_rgb("#fde68a", 235))
+        d.text((pad + 14 * k, y + 11 * k), {"de": "DEINE NOTIZEN", "en": "YOUR NOTES"}[lang], font=F["capb"], fill=_rgb("#78350f"))
+        yy = y + 34 * k
+        for ln in note_lines:
+            d.text((pad + 14 * k, yy), ln, font=F["body"], fill=_rgb("#1c1917"))
+            yy += line_h
+        y += note_h + pad
     t = {"de": ("Nächstes Item wählen", "Tab halten · Item anklicken"), "en": ("Choose next item", "Hold Tab · click an item")}[lang]
-    d.text((pad, 12 * k), t[0], font=F["bodyb"], fill=_rgb("#ffffff"))
-    d.text((Wp - pad, 14 * k), t[1], font=F["cap"], fill=_rgb("#ebebf5", 150), anchor="ra")
+    if choices:
+        d.text((pad, y - 2 * k), t[0], font=F["bodyb"], fill=_rgb("#ffffff"))
+        d.text((Wp - pad, y), t[1], font=F["cap"], fill=_rgb("#ebebf5", 150), anchor="ra")
+        head = y + 32 * k
     rects = []
     for i, c in enumerate(choices):
         r, col = divmod(i, cols)
@@ -510,6 +549,63 @@ def _ulw(hwnd, im, x, y):
     u.ReleaseDC(None, screen)
 
 
+def _chime_wav(path, kind="remind", volume=0.5):
+    """Soft reminder sound (two rising notes) or a lower one after a death – generated, no sound files."""
+    import math
+    import struct
+    import wave
+    rate = 44100
+    notes = [(880, .0, .16), (1320, .12, .30)] if kind == "remind" else [(523, .0, .22), (392, .16, .42)]
+    n = int(rate * (max(e for _, _, e in notes) + .12))
+    buf = [0.0] * n
+    for f, a, e in notes:
+        for i in range(int(rate * a), min(n, int(rate * (e + .1)))):
+            t = i / rate - a
+            env = min(1.0, t / .01) * math.exp(-t * 7)
+            buf[i] += env * (math.sin(2 * math.pi * f * t) + .25 * math.sin(4 * math.pi * f * t))
+    peak = max(1e-6, max(abs(x) for x in buf))
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(32767 * .9 * volume * x / peak)) for x in buf))
+    return path
+
+
+def play_sound(kind, volume):
+    """Plays the reminder asynchronously (Windows); silently does nothing elsewhere."""
+    try:
+        import os
+        import tempfile
+        import winsound
+        path = os.path.join(tempfile.gettempdir(), f"moosi_{kind}_{int(volume * 100)}.wav")
+        if not os.path.exists(path):
+            _chime_wav(path, kind, volume)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+    except Exception:  # noqa: BLE001 - no sound device / not Windows
+        pass
+
+
+def sound_due(snd, live, mem):
+    """Decides whether to play a reminder now: after every own death and about every `every` seconds of
+    game time (not during the first 90 s). mem keeps state between calls. Returns "death", "remind" or None."""
+    if not snd or not snd.get("on") or not live or live.get("t") is None:
+        mem.clear()
+        return None
+    t, deaths = float(live.get("t") or 0), int(live.get("deaths") or 0)
+    if "deaths" not in mem or t + 5 < mem.get("t", 0):   # new game or first call
+        mem.update(deaths=deaths, t=t, last=t)
+        return None
+    mem["t"] = t
+    if deaths > mem["deaths"]:
+        mem["deaths"], mem["last"] = deaths, t
+        return "death" if snd.get("death", True) else None
+    if t >= 90 and t - mem["last"] >= max(30, int(snd.get("every") or 60)) and not live.get("dead"):
+        mem["last"] = t
+        return "remind"
+    return None
+
+
 def run(url, cfg):
     import io
     import tkinter as tk
@@ -591,11 +687,12 @@ def run(url, cfg):
     pick_win.bind("<Button-1>", on_pick)
 
     def draw_picker():
-        key = (json.dumps(st["choices"], sort_keys=True), st["cur"], st["size"], st["lang"])
-        if key == st["pkey"] or not st["choices"]:
+        key = (json.dumps(st["choices"], sort_keys=True), st["cur"], st["size"], st["lang"], st.get("notes", ""))
+        if key == st["pkey"] or not (st["choices"] or st.get("notes")):
             return
         st["pkey"] = key
-        im, rects = render_picker(st["choices"], st["cur"], icon, base_scale * st["size"], st["lang"], fonts_for(st["size"]))
+        im, rects = render_picker(st["choices"], st["cur"], icon, base_scale * st["size"], st["lang"], fonts_for(st["size"]),
+                                  st.get("notes", ""))
         st["pimg"], st["prects"] = im, rects
         if st["pshown"]:
             place_picker()
@@ -640,7 +737,7 @@ def run(url, cfg):
 
     def apply_visibility():
         tab = bool(win and ctypes.windll.user32.GetAsyncKeyState(0x09) & 0x8000)  # Tab held (like the scoreboard)
-        pwant = tab and st["has"] and st["visible"] and bool(st["choices"]) and st["pimg"] is not None and not st["move"]
+        pwant = tab and st["has"] and st["visible"] and (bool(st["choices"]) or bool(st.get("notes"))) and st["pimg"] is not None and not st["move"]
         if pwant and not st["pshown"]:
             st["pshown"] = True
             pick_win.deiconify()
@@ -730,6 +827,12 @@ def run(url, cfg):
                 set_move(st["srv_move"])
             m = model(state)
             lang = "en" if state.get("lang") == "en" else "de"
+            if (state.get("notes") or "") != st.get("notes", ""):
+                st["notes"], st["pkey"] = state.get("notes") or "", None
+            snd = state.get("sound") or {}
+            due = sound_due(snd, state.get("live"), st.setdefault("snd", {}))
+            if due:
+                play_sound(due, float(snd.get("volume", .5)))
         except Exception:  # noqa: BLE001
             m, lang = None, "de"
         st["lang"] = lang
