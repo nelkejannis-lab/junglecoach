@@ -489,6 +489,18 @@ function avatar(av, cls = "", fallback) {
   const c = av && av.type === "champ" ? av.id : fallback;
   return c ? cImg(c, cls) : `<span class="mav ${cls}">${moosi("happy", 40)}</span>`;
 }
+// load 10 older games and append them – the list stays where you are
+async function moreGames() {
+  if (S.moreBusy || S.gamesEnd || !S.acct || !S.games) return;
+  S.moreBusy = true; render();
+  try {
+    const more = await loadGames(S.acct.puuid, 10, S.games.length);
+    const have = new Set(S.games.map(g => g.m.metadata.matchId));
+    S.games = S.games.concat(more.filter(g => !have.has(g.m.metadata.matchId)));
+    S.gamesMore = S.games.length; S.gamesEnd = more.length < 10; snapSave();
+  } catch (e) { toast(e.message); }
+  S.moreBusy = false; render();
+}
 async function loadMe() {
   try {
     S.acct = await account(S.me.riot_id);
@@ -735,7 +747,7 @@ function vGames() {
   if (!S.me.riot_id) return `<h1>Games</h1>${setupCard()}`;
   const gs = S.games;
   return `<h1>Deine <span class="g">Games</span></h1><p class="sub">Alle Queues · tippe für Details</p>${S.err ? `<div class="card red">${esc(S.err)}</div>` : ""}
-    ${gs ? gs.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") + `<button class="btn sec" onclick="S.gamesMore+=10;S.games=null;render();loadMe()">Mehr laden</button>`
+    ${gs ? gs.map(g => gameRow(g, `openMatch('${g.m.metadata.matchId}','${g.p.puuid}')`)).join("") + `<button class="btn sec" onclick="moreGames()" ${S.moreBusy ? "disabled" : ""}>${S.moreBusy ? "Lädt …" : S.gamesEnd ? "Keine älteren Games" : "Mehr laden"}</button>`
       : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'}`;
 }
 // ---- analytics helpers
