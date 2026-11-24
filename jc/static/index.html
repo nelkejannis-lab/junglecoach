@@ -1213,7 +1213,7 @@ async function ovSet(patch) {
 }
 function overlayCard() {
   const o = ovData, seg = (v, l) => `<button class="chip ${o.mode === v ? "on" : ""}" onclick="ovSet({mode:'${v}'})">${l}</button>`;
-  const hide = o.hide || [], rs = ["gold_diff", "enemy_jg", "timers"].every(k => hide.includes(k));
+  const hide = o.hide || [], rs = ["gold_diff", "enemy_jg"].every(k => hide.includes(k));
   const tog = (on, js) => `<button class="tgl ${on ? "on" : ""}" onclick="${js}" aria-pressed="${on}"><i></i></button>`;
   return card("In-Game-Overlay", "Wann es erscheint, wo es steht, wie groß und durchsichtig es ist. Tab halten zeigt die Item-Auswahl: Item anklicken = wird als nächstes Item angezeigt. Strg+Shift+J blendet alles ein/aus.", `
     <div class="switch" style="border:0"><span>Anzeigen</span><div class="chips">${seg("always", "Immer sichtbar")}${seg("tab", "Nur solange Tab gedrückt")}</div></div>
@@ -1221,7 +1221,7 @@ function overlayCard() {
       <input type="range" min="0.8" max="1.4" step="0.05" value="${o.size || 1}" onchange="ovSet({size:+this.value})"></div>
     <div class="switch"><span>Hintergrund-Deckkraft <b>${Math.round(o.opacity * 100)}%</b></span>
       <input type="range" min="0.3" max="1" step="0.02" value="${o.opacity}" onchange="ovSet({opacity:+this.value})"></div>
-    <div class="switch"><span>Riot-konformer Modus<br><span class="small muted">Blendet alles aus, was Riot für Overlays nicht erlaubt (Infos, die du im Spiel nicht selbst siehst). Empfohlen, sobald du einen Production Key beantragst.</span></span>
+    <div class="switch"><span>Riot-konformer Modus<br><span class="small muted">Blendet Infos aus, die du im Spiel nicht selbst siehst (Gegner-Gold, Gegner-Jungler). Objective-Timer bleiben – Drachen- und Baron-Kills werden im Spiel für alle angesagt. Empfohlen, sobald du einen Production Key beantragst.</span></span>
       ${tog(rs, `ovSet({riot_safe:${!rs}})`)}</div>
     ${[["gold_diff", "Team-/Jungle-Gold-Unterschied"], ["enemy_jg", "Gegner-Jungler & gefütterte Gegner"], ["timers", "Drachen-/Herold-/Baron-Timer"]].map(([k, l]) =>
       `<div class="switch" style="padding-left:14px"><span class="small">${l}</span>${tog(!hide.includes(k), `ovSet({${k}:${hide.includes(k)}})`)}</div>`).join("")}

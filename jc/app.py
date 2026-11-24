@@ -1072,7 +1072,8 @@ def make_handler(gd, cfg, lcu):
                     if key in b:
                         (hide.discard if b[key] else hide.add)(key)
                 if "riot_safe" in b:   # one switch: only what Riot allows for overlays
-                    hide = {"gold_diff", "enemy_jg", "timers"} if b["riot_safe"] else set()
+                    # objective timers stay: dragon/baron kills are announced to everyone, the timer is not hidden info
+                    hide = (hide | {"gold_diff", "enemy_jg"}) if b["riot_safe"] else (hide - {"gold_diff", "enemy_jg"})
                 oc["hide"] = sorted(hide)
                 if "pick" in b:  # item chosen in the Tab picker (None = back to the build path)
                     OVERLAY["pick"] = int(b["pick"]) if str(b.get("pick") or "").isdigit() else None
