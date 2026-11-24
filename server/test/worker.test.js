@@ -20,6 +20,8 @@ function mockDB() {
             if (ex) { ex.name = name; ex.last_login = l; } else users.push({ id: users.length + 1, provider, provider_id: pid, name, riot_id: null, created_at: c, last_login: l });
           } else if (sql.startsWith("UPDATE users SET riot_id")) {
             users.find((u) => u.id === args[1]).riot_id = args[0];
+          } else if (sql.startsWith("INSERT INTO user_data (user_id, riot_key)")) {
+            data.set(args[0], { ...(data.get(args[0]) || {}), riot_key: args[1] });
           } else if (sql.startsWith("INSERT INTO user_data")) {
             const [, col, atc] = sql.match(/user_id, (\w+), (\w+)\)/);
             data.set(args[0], { ...(data.get(args[0]) || {}), [col]: args[1], [atc]: args[2] });
@@ -179,4 +181,24 @@ test("avatar upload and serving", async () => {
   const pr = (await r.json()).profile;
   assert.equal(pr.avatar.id, j.avatar.id);
   assert.equal(pr.role, "JUNGLE");
+});
+
+test("own riot key per user: stored, used by the proxy, expired key -> 502 not 401", async () => {
+  env.DB.users.push({ id: 77, provider: "google", provider_id: "k", name: "K", riot_id: null, created_at: 1, last_login: 1 });
+  const cfgRow = await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first();
+  const H = { authorization: "Bearer " + await sign({ uid: 77, exp: Date.now() / 1000 + 600 }, cfgRow.value) };
+  let r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "PUT", headers: H, body: JSON.stringify({ key: "nope" }) }), env, ctx);
+  assert.equal(r.status, 400);
+  const key = "RGAPI-12345678-abcd-abcd-abcd-1234567890ab";
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "PUT", headers: H, body: JSON.stringify({ key }) }), env, ctx);
+  const j = await r.json();
+  assert.equal(j.set, true); assert.equal(j.tail, "90ab"); assert.ok(!JSON.stringify(j).includes(key));
+  let used = null;
+  globalThis.fetch = async (u, opt) => { used = opt.headers["X-Riot-Token"]; return new Response("{}", { status: 401 }); };
+  r = await worker.fetch(new Request("https://jc.dev/riot/euw1/lol/league/v4/entries/by-puuid/xyz", { headers: H }), env, ctx);
+  assert.equal(used, key);
+  assert.equal(r.status, 502);
+  assert.equal((await r.json()).own, true);
+  r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "DELETE", headers: H }), env, ctx);
+  assert.equal((await r.json()).set, false);
 });

@@ -176,10 +176,11 @@ async function riotProxy(req, url, env, ctx, user) {
   const cacheKey = new Request(target, { method: "GET" });
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
-  const r = await fetch(target, { headers: { "X-Riot-Token": env.RIOT_API_KEY, "User-Agent": "JungleCoach/1.0", Accept: "application/json" } });
+  const own = await userRiotKey(env, user);
+  const r = await fetch(target, { headers: { "X-Riot-Token": own || env.RIOT_API_KEY, "User-Agent": "Moosi/1.0", Accept: "application/json" } });
   // Riot rejecting OUR key (expired dev key) must not look like "your login is invalid" to the apps
   if (r.status === 401 || r.status === 403) {
-    return json({ error: "Riot-API-Key des Servers ist ungültig oder abgelaufen.", riot_key: true,
+    return json({ error: own ? "Dein eigener Riot-API-Key ist ungültig oder abgelaufen." : "Riot-API-Key des Servers ist ungültig oder abgelaufen.", riot_key: true, own: !!own,
       status: { message: "server riot key rejected", status_code: r.status } }, 502);
   }
   const body = await r.text();
@@ -190,11 +191,37 @@ async function riotProxy(req, url, env, ctx, user) {
   return res;
 }
 
+// ------------------------------------------------------------------ own Riot API key per user (optional)
+// Stored only on the server, never sent back in full (only the last 4 characters as a hint).
+const RIOT_KEY = /^RGAPI-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+async function userRiotKey(env, user) {
+  try {
+    await ensureData(env);
+    const row = await env.DB.prepare("SELECT riot_key AS v FROM user_data WHERE user_id = ?").bind(user.id).first();
+    return row && row.v && RIOT_KEY.test(row.v) ? row.v : null;
+  } catch { return null; }
+}
+async function riotKeyEndpoint(req, env, user) {
+  await ensureData(env);
+  if (req.method === "PUT") {
+    const body = await req.json().catch(() => ({}));
+    const key = String(body.key || "").trim();
+    if (!RIOT_KEY.test(key)) return json({ error: "Das ist kein gültiger Riot-Key (Format RGAPI-xxxxxxxx-…)." }, 400);
+    await env.DB.prepare(`INSERT INTO user_data (user_id, riot_key) VALUES (?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET riot_key = excluded.riot_key`).bind(user.id, key).run();
+  } else if (req.method === "DELETE") {
+    await env.DB.prepare(`INSERT INTO user_data (user_id, riot_key) VALUES (?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET riot_key = excluded.riot_key`).bind(user.id, null).run();
+  }
+  const k = await userRiotKey(env, user);
+  return json({ set: !!k, tail: k ? k.slice(-4) : null });
+}
+
 // ------------------------------------------------------------------ sync (friends, coach summary, profile, status)
 async function ensureData(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_data (user_id INTEGER PRIMARY KEY, friends TEXT, coach TEXT,
     updated_at INTEGER, friends_at INTEGER, profile TEXT, status TEXT, status_at INTEGER)`).run();
-  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER"]) {
+  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER", "riot_key TEXT"]) {
     try { await env.DB.prepare(`ALTER TABLE user_data ADD COLUMN ${col}`).run(); } catch { /* exists */ }
   }
 }
@@ -336,6 +363,7 @@ export default {
         if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
         if (p === "/api/sync/avatar") return await avatarPut(req, env, user);
+        if (p === "/api/sync/riotkey") return await riotKeyEndpoint(req, env, user);
         if (p === "/api/public/profiles" && req.method === "GET") return await publicProfiles(url, env);
         if (p.startsWith("/api/sync/")) return json({ error: "not found" }, 404);
         if (req.method === "GET") return json(user);

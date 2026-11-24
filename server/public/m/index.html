@@ -165,7 +165,7 @@ async function api(path, opt = {}) {
     throw new Error("Anmeldung abgelehnt: " + info);
   }
   if (r.status === 429) throw new Error("Riot-Limit erreicht – kurz warten und neu laden.");
-  if (r.status === 502) { const j = await r.json().catch(() => ({})); if (j.riot_key) throw new Error("Riot-Daten gerade nicht verfügbar: der Riot-Key auf dem Server ist abgelaufen."); }
+  if (r.status === 502) { const j = await r.json().catch(() => ({})); if (j.riot_key) throw new Error(j.own ? "Dein eigener Riot-Key ist abgelaufen – unter „Mehr“ einen neuen eintragen." : "Riot-Daten gerade nicht verfügbar: der Server-Key ist abgelaufen. Unter „Mehr“ kannst du deinen eigenen Key eintragen."); }
   if (!r.ok) throw new Error(r.status === 404 ? "nicht gefunden" : "Fehler " + r.status);
   return r.json();
 }
@@ -592,10 +592,29 @@ function profEditor() {
     <label class="tg"><span>Zeigen, wenn ich spiele</span><input type="checkbox" id="pe_st" ${PE.show_status !== false ? "checked" : ""}></label>
     <button class="btn" style="margin-top:12px" onclick="saveProf()">Profil speichern</button></div>`;
 }
+// Own Riot API key: stored on the Moosi server for this account, used for all your Riot requests (phone + PC)
+let RK = null, RKmsg = "";
+async function loadRK() { try { RK = await api("/api/sync/riotkey"); } catch (e) { RK = {set: false}; } if (S.tab === "more") render(); }
+async function saveRK() {
+  const v = ($("#rkin") || {}).value || "";
+  try { RK = await api("/api/sync/riotkey", {method: "PUT", body: JSON.stringify({key: v.trim()})}); RKmsg = "Gespeichert – gilt sofort für Handy und PC."; S.games = null; boot(); }
+  catch (e) { RKmsg = "Nicht gespeichert: Format muss RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx sein."; }
+  render();
+}
+function delRK() { ask("Eigenen Riot-Key entfernen? Dann wird wieder der Server-Key genutzt.", "Entfernen", async () => { try { RK = await api("/api/sync/riotkey", {method: "DELETE"}); RKmsg = "Entfernt."; } catch (e) {} render(); }); }
+function keyCard() {
+  if (RK === null) { loadRK(); return ""; }
+  return `<div class="card"><h3>Riot-API-Key</h3>
+    <p class="muted small">Optional. Trag hier deinen Key von developer.riotgames.com ein, wenn der Server-Key abgelaufen ist. Er wird verschlüsselt übertragen, nur für dein Konto genutzt und nie wieder komplett angezeigt. Entwickler-Keys laufen nach 24 Stunden ab.</p>
+    ${RK.set ? `<div class="row"><span>Eigener Key aktiv</span><b style="margin-left:auto">…${esc(RK.tail)}</b></div>` : `<div class="row"><span>Aktuell</span><b style="margin-left:auto">Server-Key</b></div>`}
+    <input id="rkin" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="RGAPI-…" style="width:100%;margin-top:10px">
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" style="flex:1" onclick="saveRK()">Speichern</button>${RK.set ? `<button class="btn sec" style="flex:1" onclick="delRK()">Entfernen</button>` : ""}</div>
+    ${RKmsg ? `<p class="small" style="margin-top:8px">${esc(RKmsg)}</p>` : ""}</div>`;
+}
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
     <div class="row"><span>Riot ID</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
-    ${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
+    ${keyCard()}${setupCard()}<button class="btn sec" onclick="logout()">Abmelden</button>
     <p class="muted small" style="text-align:center;margin-top:18px"><a style="color:var(--sec)" href="/datenschutz.html">Datenschutz</a> · <a style="color:var(--sec)" href="/impressum.html">Impressum</a><br>Moosi ist nicht mit Riot Games verbunden.</p>`;
 }
 function vLogin() {

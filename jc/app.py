@@ -1068,6 +1068,9 @@ def make_handler(gd, cfg, lcu):
                         cfg[k] = body[k].strip() if isinstance(body[k], str) else body[k]
                 if body.get("riot_api_key"):
                     cfg.pop("_key_from_build", None)  # user's own key wins over the built-in one
+                    # also store it for this account on the server, so the phone app can use it too
+                    k = (cfg.get("riot_api_key") or "").strip()
+                    threading.Thread(target=cloud, args=(cfg, "PUT", "/api/sync/riotkey", {"key": k}), daemon=True).start()
                 save_config(cfg)
                 return self._send(200, {"ok": True})
             if self.path == "/api/meta/crawl":
