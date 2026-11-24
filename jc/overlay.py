@@ -93,6 +93,7 @@ def model(state):
         "gpm": h.get("gpm"),
         "choices": h.get("choices") or [],
         "next": (h.get("next") or {}).get("short") or (h.get("next") or {}).get("text"),
+        "goals": [(g["text"], g["kind"], g.get("soon")) for g in (h.get("goals") or [])][:3],
         "focus_t": (h.get("focus") or {}).get("title"),
         "focus_v": (f"{t['target']} {h['focus']['target']}" if (h.get("focus") or {}).get("target") else None),
     }
@@ -356,32 +357,38 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         y += isz + 12 * k
 
     # ---- objective timers: capsules, the next one tinted orange
-    if m["timers"] or m.get("next"):
-        x = pad
-        hgt = lh(F["capb"]) + 9 * k
-        if m.get("next"):   # most important next goal first, purple with a target symbol
-            txt = m["next"]
+    goals = m.get("goals")
+    if goals is None:   # older payloads: focus + timers
+        goals = ([(m["next"], "focus", True)] if m.get("next") else []) + [(f"{l} {w}", "obj", so) for l, w, so in m["timers"]]
+    if goals:   # the next 3 goals (focus, objectives, towers) – chips that wrap, never cut off
+        x, hgt = pad, lh(F["capb"]) + 9 * k
+        for txt, kind, soon in goals[:3]:
             while d.textlength(txt, font=F["capb"]) > Wp - 2 * pad - 40 * k and len(txt) > 4:
                 txt = txt[:-2].rstrip() + "…"
-            w = d.textlength(txt, font=F["capb"]) + 32 * k
-            u.rounded_rectangle([x, y, x + w, y + hgt], hgt / 2, fill=_rgb(A_PURPLE, 70))
+            icon = kind in ("focus", "tower")
+            w = d.textlength(txt, font=F["capb"]) + (30 if icon else 18) * k
+            if x + w > Wp - pad and x > pad:
+                x, y = pad, y + hgt + 6 * k
+            if kind == "focus":
+                bg, fgc, ic = _rgb(A_PURPLE, 70), _rgb("#d9c8ff"), _rgb(A_PURPLE)
+            elif soon:
+                bg, fgc, ic = _rgb(A_ORANGE, 60), _rgb(A_ORANGE), None
+            else:
+                bg, fgc, ic = fill2, W1, SEC
+            u.rounded_rectangle([x, y, x + w, y + hgt], hgt / 2, fill=bg)
             cx, cy = x + 12 * k, y + hgt / 2
-            d.ellipse([cx - 5 * k, cy - 5 * k, cx + 5 * k, cy + 5 * k], outline=_rgb(A_PURPLE), width=max(1, int(1.4 * k)))
-            d.ellipse([cx - 1.6 * k, cy - 1.6 * k, cx + 1.6 * k, cy + 1.6 * k], fill=_rgb(A_PURPLE))
-            d.text((x + 22 * k, y + 4 * k), txt, font=F["capb"], fill=_rgb("#d9c8ff"))
-            x += w + 6 * k
-        for label, when, soon in m["timers"]:
-            txt = f"{label} {when}"
-            w = d.textlength(txt, font=F["capb"]) + 18 * k
-            if x + w > Wp - pad:
-                break
-            u.rounded_rectangle([x, y, x + w, y + hgt], hgt / 2, fill=_rgb(A_ORANGE, 60) if soon else fill2)
-            d.text((x + 9 * k, y + 4 * k), txt, font=F["capb"], fill=_rgb(A_ORANGE) if soon else W1)
+            if kind == "focus":   # target symbol
+                d.ellipse([cx - 5 * k, cy - 5 * k, cx + 5 * k, cy + 5 * k], outline=ic, width=max(1, int(1.4 * k)))
+                d.ellipse([cx - 1.6 * k, cy - 1.6 * k, cx + 1.6 * k, cy + 1.6 * k], fill=ic)
+            elif kind == "tower":   # small tower
+                d.rectangle([cx - 2.5 * k, cy - 3 * k, cx + 2.5 * k, cy + 5 * k], fill=ic)
+                d.polygon([(cx - 4.5 * k, cy - 3 * k), (cx + 4.5 * k, cy - 3 * k), (cx, cy - 7 * k)], fill=ic)
+            d.text((x + (21 if icon else 9) * k, y + 4 * k), txt, font=F["capb"], fill=fgc)
             x += w + 6 * k
         y += hgt + 12 * k
 
     # ---- grouped rows: label left, value right, hairline separators (only rows that have content)
-    rows = [(m["t"]["ejg_s"], m["ej"], W1), (m["t"]["fed_s"], ", ".join(m["fed"]) if m["fed"] else None, _rgb(A_RED))]
+    rows = []   # enemy jungler / fed enemies: removed on request – keeps the overlay small
     rows = [r for r in rows if r[1]]
     if rows:
         top = y

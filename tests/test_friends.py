@@ -332,3 +332,17 @@ class SoundAndFocusTests(unittest.TestCase):
         im, rects = render_picker([], None, None, notes="Mehr Wards\\nNicht facechecken")
         self.assertGreater(im.size[1], 40)
         self.assertEqual(rects, [])
+
+
+class GoalTests(unittest.TestCase):
+    def test_next_three_goals(self):
+        from jc import hud
+        live = {"structures": [{"t": 100, "kind": "tower", "lane": "Bot", "ours": False}]}
+        timers = [{"label": "Drache", "in": "0:45", "soon": True}, {"label": "Herald", "in": "2:10"}, {"label": "Baron", "in": "9:00"}]
+        g = hud.next_goals(live, timers, 600, focus={"short": "Drache vorbereiten"})
+        self.assertEqual([x["kind"] for x in g], ["focus", "obj", "obj"])
+        self.assertIn("0:45", g[0]["text"])
+        g = hud.next_goals(live, [], 600)
+        self.assertEqual(g[0]["kind"], "tower")
+        self.assertIn("T2", g[0]["text"])
+        self.assertEqual(hud.next_goals(live, timers, 600, hide={"timers"})[0]["kind"], "tower")

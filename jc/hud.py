@@ -87,6 +87,35 @@ def next_focus(live, timers, t, hide=()):
     return None
 
 
+def next_goals(live, timers, t, hide=(), focus=None, n=3):
+    """The next 3 things to play for, most important first: the focus, objectives with their timer,
+    and the next enemy tower (by lane progress). Returns [{"text", "kind": focus|obj|tower, "soon"}]."""
+    out = []
+    obj = [] if "timers" in hide else [o for o in timers if o.get("in")]
+    if focus and focus.get("short"):
+        txt = focus["short"]
+        hit = next((o for o in obj if o["label"].split()[0].lower() in txt.lower()), None)
+        if hit:   # "Drache vorbereiten" + "Drache 0:45" -> one chip
+            txt = f"{txt} · {hit['in']}"
+            obj = [o for o in obj if o is not hit]
+        out.append({"text": txt, "kind": "focus", "soon": True})
+    obj = sorted(obj, key=lambda o: 0 if o["in"] in ("jetzt", "now") else _sec(o["in"]))
+    for o in obj[:2]:
+        out.append({"text": f"{o['label']} {o['in']}", "kind": "obj", "soon": bool(o.get("soon"))})
+    # towers: enemy towers already taken per lane -> push the next one where we are furthest
+    taken = {"Top": 0, "Mid": 0, "Bot": 0}
+    for st in live.get("structures") or []:
+        if st["kind"] == "tower" and st.get("ours") is False and st.get("lane") in taken:
+            taken[st["lane"]] += 1
+    lane = max(taken, key=lambda k: taken[k])
+    if taken[lane] < 3 and not any(g["kind"] == "focus" and ("turm" in g["text"].lower() or "tower" in g["text"].lower()) for g in out):
+        if taken[lane] == 0:
+            out.append({"text": T("Erster Turm", "first tower") if t < 14 * 60 else T("Außenturm pushen", "push outer tower"), "kind": "tower", "soon": False})
+        else:
+            out.append({"text": T(f"{lane} T{taken[lane] + 1}", f"{lane} T{taken[lane] + 1}"), "kind": "tower", "soon": False})
+    return out[:n]
+
+
 def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None, hide=()):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
@@ -173,7 +202,7 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
     now = {"text": prompts[0][1], "tone": prompts[0][2]} if prompts else \
         {"text": T("Alles im Griff – Camps, Lanes mit Prio, nächstes Objective vorbereiten",
                    "All good – camps, lanes with priority, prepare the next objective"), "tone": "calm"}
-    return {"now": now, "next": nxt, "more": [{"text": p[1], "tone": p[2]} for p in prompts[1:3]],
+    return {"now": now, "next": nxt, "goals": next_goals(live, timers, t, hide, nxt), "more": [{"text": p[1], "tone": p[2]} for p in prompts[1:3]],
             "item": item, "timers": timers, "gold": int(gold) if gold is not None else None,
             "focus": focus, "cs": cs, "cs_ok": cs >= 6 or t < 180, "time": live.get("game_time"),
             "enemy_jg": {"champion": ej.get("champion"), "level": ej.get("level"),
