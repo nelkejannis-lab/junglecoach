@@ -372,12 +372,11 @@ const ICON = {
 const svgIcon = (k, s = 19) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k] || ""}</svg>`;
 document.querySelectorAll("[data-i]").forEach(e => e.innerHTML = svgIcon(e.dataset.i));
 
-// Moosi – the coach monster (own artwork): full body for big spots, head crop for small avatars.
-// Moods only change a subtle pose/filter until the mood artwork exists.
+// Moosi – the coach monster (own artwork): one pose per mood, head crop for small avatars.
+const MOOSI_POSE = {happy: "body", proud: "proud", worried: "worried", sleepy: "sleepy"};
 function moosi(mood = "happy", size = 96) {
-  const src = size < 64 ? "/moosi/head.webp" : "/moosi/body.webp";
-  const fx = mood === "sleepy" ? "filter:saturate(.75) brightness(.9);" : mood === "worried" ? "transform:rotate(-4deg);" : "";
-  return `<img class="moosi" src="${src}" width="${size}" height="${size}" alt="Moosi" draggable="false" style="object-fit:contain;display:block;${fx}">`;
+  const src = size < 64 ? "/moosi/head.webp" : `/moosi/${MOOSI_POSE[mood] || "body"}.webp`;
+  return `<img class="moosi" src="${src}" width="${size}" height="${size}" alt="Moosi" draggable="false" style="object-fit:contain;display:block">`;
 }
 // App logo (round badge)
 function moosiLogo(size = 64) {

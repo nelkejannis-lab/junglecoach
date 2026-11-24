@@ -120,12 +120,11 @@
 <div id="app"></div>
 <nav class="tabs" id="tabs" style="display:none"></nav>
 <script>
-// Moosi – the coach monster (own artwork): full body for big spots, head crop for small avatars.
-// Moods only change a subtle pose/filter until the mood artwork exists.
+// Moosi – the coach monster (own artwork): one pose per mood, head crop for small avatars.
+const MOOSI_POSE = {happy: "body", proud: "proud", worried: "worried", sleepy: "sleepy"};
 function moosi(mood = "happy", size = 96) {
-  const src = size < 64 ? "/moosi/head.webp" : "/moosi/body.webp";
-  const fx = mood === "sleepy" ? "filter:saturate(.75) brightness(.9);" : mood === "worried" ? "transform:rotate(-4deg);" : "";
-  return `<img class="moosi" src="${src}" width="${size}" height="${size}" alt="Moosi" draggable="false" style="object-fit:contain;display:block;${fx}">`;
+  const src = size < 64 ? "/moosi/head.webp" : `/moosi/${MOOSI_POSE[mood] || "body"}.webp`;
+  return `<img class="moosi" src="${src}" width="${size}" height="${size}" alt="Moosi" draggable="false" style="object-fit:contain;display:block">`;
 }
 // App logo (round badge)
 function moosiLogo(size = 64) {
