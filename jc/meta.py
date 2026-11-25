@@ -1032,3 +1032,191 @@ class MetaStats:
             t["tier"] = "S" if q < 0.1 else "A" if q < 0.3 else "B" if q < 0.6 else "C" if q < 0.85 else "D"
             t["rank"] = i + 1
         return out
+
+
+# ---------------------------------------------------------------- server statistics (no big local database)
+AGG_PATH = os.path.join(DATA_DIR, "meta_agg.sqlite")
+SHARD_PATH = os.path.join(DATA_DIR, "meta_shards.sqlite")
+SHARD_URL = "https://github.com/nelkejannis-lab/junglecoach-data/releases/download/meta-latest/shard-{}.sqlite.gz"
+SHARD_MAX_AGE = 6 * 3600
+_AGG = {"db": None, "mtime": 0}
+_SHARD_LOCK = threading.Lock()
+
+
+def _agg_db():
+    """Shared read connection to the small pre-computed statistics (reopened when a new file arrives)."""
+    try:
+        mt = os.path.getmtime(AGG_PATH)
+    except OSError:
+        return None
+    if _AGG["db"] is None or mt != _AGG["mtime"]:
+        _AGG["db"] = sqlite3.connect(AGG_PATH, check_same_thread=False)
+        _AGG["mtime"] = mt
+    return _AGG["db"]
+
+
+class AggStats(MetaStats):
+    """Same interface as MetaStats, but built for downloads of a few MB instead of the whole database:
+    global numbers (win rates, matchups, counters, tier list, benchmarks, death causes) come from the crawler's
+    pre-computed agg file; detailed champion data (runes, items, build path, team fit) from a per-champion
+    shard that is downloaded on demand and cached."""
+
+    def __init__(self, gd, db=None):
+        super().__init__(gd, db or connect(SHARD_PATH))
+        self.agg = _agg_db()
+
+    # -- helpers
+    def _a(self, sql, args=()):
+        a = _agg_db()
+        return a.execute(sql, args).fetchall() if a is not None else []
+
+    def _name(self, champ):
+        """Riot championName as stored (e.g. 'FiddleSticks') for a Data Dragon id ('Fiddlesticks')."""
+        r = self._a("SELECT champ FROM mainrole WHERE champ=? OR lower(champ)=lower(?) LIMIT 1", (champ, champ))
+        return r[0][0] if r else champ
+
+    def ensure(self, champ):
+        """Downloads (or refreshes) the shard of this champion into the local cache."""
+        if not champ:
+            return
+        name = self._name(champ)
+        key = f"shard:{name}"
+        with _SHARD_LOCK:
+            self.db.execute("CREATE TABLE IF NOT EXISTS shard_meta(k TEXT PRIMARY KEY, at REAL)")
+            r = self.db.execute("SELECT at FROM shard_meta WHERE k=?", (key,)).fetchone()
+            if r and time.time() - r[0] < SHARD_MAX_AGE:
+                return
+            import gzip
+            import shutil
+            import tempfile
+            import urllib.request
+            tmp = tempfile.mkdtemp()
+            try:
+                gz, raw = os.path.join(tmp, "s.gz"), os.path.join(tmp, "s.sqlite")
+                req = urllib.request.Request(SHARD_URL.format(name), headers={"User-Agent": "Mozilla/5.0 Moosi/1.0"})
+                with urllib.request.urlopen(req, timeout=60) as resp, open(gz, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+                with gzip.open(gz, "rb") as s, open(raw, "wb") as d:
+                    shutil.copyfileobj(s, d)
+                self.db.execute("DELETE FROM games WHERE champ=?", (name,))
+                merge_from(self.db, raw)
+                self.db.execute("INSERT OR REPLACE INTO shard_meta VALUES (?,?)", (key, time.time()))
+                self.db.commit()
+            except Exception:  # noqa: BLE001 - offline / unknown champion: keep what we have
+                self.db.execute("INSERT OR REPLACE INTO shard_meta VALUES (?,?)", (key, time.time() - SHARD_MAX_AGE + 600))
+                self.db.commit()
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+    # -- global numbers from the agg file
+    def current_patch(self):
+        r = self._a("SELECT v FROM meta WHERE k='patch'")
+        return r[0][0] if r else super().current_patch()
+
+    def total(self, patch=None):
+        r = self._a("SELECT v FROM meta WHERE k='rows'")
+        return int(r[0][0]) if r else 0
+
+    def main_role(self, champ):
+        r = self._a("SELECT role FROM mainrole WHERE champ=? OR lower(champ)=lower(?)", (champ, champ))
+        return r[0][0] if r else None
+
+    def role_total(self, role):
+        r = self._a("SELECT SUM(n) FROM cr WHERE role=? AND br='all' AND scope='cur'", (role,))
+        return (r[0][0] or 0) if r else 0
+
+    def tierlist(self, min_games=30, bracket=None, role="JUNGLE"):
+        rows = self._a("SELECT champ, w, n FROM cr WHERE role=? AND br=? AND scope='cur'", (role, bracket if bracket in BRACKETS else "all"))
+        matches = max(sum(r[2] for r in rows) / 2, 1)
+        out = [{"champion": c, "games": n, "winrate": round(100 * _shrunk(w, n, 0.5, 200), 1), "raw_winrate": round(100 * w / n, 1),
+                "adj_winrate": round(100 * _shrunk(w, n, 0.5, 200), 1), "pickrate": round(100 * n / matches, 1)}
+               for c, w, n in rows if n >= min_games]
+        out.sort(key=lambda x: -(x["adj_winrate"] + min(x["pickrate"], 20) * 0.05))
+        for i, t in enumerate(out):
+            q = i / max(len(out), 1)
+            t["tier"] = "S" if q < 0.1 else "A" if q < 0.3 else "B" if q < 0.6 else "C" if q < 0.85 else "D"
+            t["rank"] = i + 1
+        return out
+
+    def _scopes(self, bracket):
+        b = bracket if bracket in BRACKETS else None
+        return ([(b, "cur", "dein Elo")] if b else []) + [("all", "cur", "alle Elos"), ("all", "all", "alle Patches")]
+
+    def draft_parts(self, champ_id, role, lane_enemy=None, enemy_ids=(), bracket=None):
+        name = self._name(champ_id)
+        out = {"games": 0, "wr": None, "lane": None, "lane_games": 0, "team": None, "team_vs": []}
+        for br, scope, label in self._scopes(bracket):
+            r = self._a("SELECT w, n FROM cr WHERE champ=? AND role=? AND br=? AND scope=?", (name, role, br, scope))
+            if r and r[0][1] >= 40:
+                w, n = r[0]
+                break
+        else:
+            return out
+        base = _shrunk(w, n, 0.5, 300)
+        out.update(games=n, scope=label, wr=round(100 * base - 50, 1))
+        if lane_enemy:
+            r = self._a("SELECT w, n FROM lane WHERE champ=? AND role=? AND enemy=? AND br=? AND scope=?",
+                        (name, role, self._name(lane_enemy), br, scope))
+            if r:
+                lw, ln = r[0]
+                out["lane"] = round(max(-8, min(8, 100 * (_shrunk(lw, ln, base, 40) - base))), 1)
+                out["lane_games"] = ln
+        tot = 0.0
+        for e in enemy_ids:
+            if not e or e == lane_enemy:
+                continue
+            r = self._a("SELECT w, n FROM vs WHERE champ=? AND role=? AND enemy=? AND br=? AND scope=?", (name, role, self._name(e), br, scope))
+            if r and r[0][1] >= 10:
+                ew, en = r[0]
+                d = max(-3, min(3, 100 * (_shrunk(ew, en, base, 60) - base)))
+                tot += d
+                out["team_vs"].append({"enemy": e, "delta": round(d, 1), "games": en})
+        out["team"] = round(max(-6, min(6, tot)), 1) if out["team_vs"] else None
+        return out
+
+    def lane_counters(self, enemy_id, role, bracket=None, k=6, min_games=25):
+        en = self._name(enemy_id)
+        res = []
+        for br, scope, _ in self._scopes(bracket):
+            rows = self._a("SELECT champ, w, n FROM lane WHERE enemy=? AND role=? AND br=? AND scope=?", (en, role, br, scope))
+            res = [{"champion": c, "games": n, "winrate": round(100 * _shrunk(w, n, 0.5, 40), 1)} for c, w, n in rows if n >= min_games]
+            if len(res) >= 3:
+                break
+        return sorted(res, key=lambda x: -x["winrate"])[:k]
+
+    def benchmarks(self, champ, role="JUNGLE", bracket=None, min_games=30):
+        if champ is not None:
+            self.ensure(champ)
+            return super().benchmarks(champ, role, bracket, min_games)
+        for br, label in ([(bracket, f"alle {role.title()}-Spieler in deinem Elo")] if bracket in BRACKETS else []) + [("all", f"alle {role.title()}-Spieler")]:
+            rows = self._a("SELECT metric, n, q FROM bench WHERE role=? AND br=?", (role, br))
+            if rows and max(r[1] for r in rows) >= min_games:
+                return {"scope": label, "games": max(r[1] for r in rows), "dist": {m: json.loads(q) for m, n, q in rows if n >= min_games}}
+        return None
+
+    def death_benchmark(self, role="JUNGLE", bracket=None, min_games=40):
+        order = ["low", "mid", "high", "apex"]
+        b = bracket if bracket in order else "mid"
+        better = order[min(order.index(b) + 1, len(order) - 1)]
+        for br, label in ((better, f"Gewinner in {better.title()}-Elo"), ("all", "Gewinner aller Elos")):
+            r = self._a("SELECT games, per_game FROM death WHERE role=? AND br=?", (role, br))
+            if r and r[0][0] >= min_games:
+                return {"scope": label, "games": r[0][0], "per_game": json.loads(r[0][1])}
+        return None
+
+    # -- detailed champion data: load the champion's shard first
+    def champion(self, champ_id, min_games=25, bracket=None):
+        self.ensure(champ_id)
+        return super().champion(self._name(champ_id), min_games, bracket)
+
+    def build_path(self, champ_id, bracket=None, role=None):
+        self.ensure(champ_id)
+        return super().build_path(self._name(champ_id), bracket, role)
+
+    def matchup(self, champ_id, enemy_id, bracket=None):
+        self.ensure(champ_id)
+        return super().matchup(self._name(champ_id), self._name(enemy_id), bracket)
+
+    def team_fit(self, champ_id, enemy_ids, bracket=None, min_option_games=15):
+        self.ensure(champ_id)
+        return super().team_fit(self._name(champ_id), [self._name(e) for e in enemy_ids], bracket, min_option_games)

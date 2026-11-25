@@ -1,6 +1,6 @@
 ; Inno Setup script – builds Moosi-Setup.exe
 #define AppName "Moosi"
-#define AppVersion "1.13.2"
+#define AppVersion "1.14.0"
 #define AppExe "Moosi.exe"
 
 [Setup]

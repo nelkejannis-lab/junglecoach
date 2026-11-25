@@ -426,7 +426,8 @@ def warm_meta(gd, cfg):
         for role in ("JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"):
             cached_tierlist(gd, cfg, role)
         main = cfg.get("main_role") or "JUNGLE"
-        refs = list(cfg.get("champion_pool", [])) + [t["champion"] for t in cached_tierlist(gd, cfg, main)[:12]]
+        # only your own champions: every other champion is downloaded when it shows up in champ select
+        refs = list(cfg.get("champion_pool", []))[:3]
         for ref in refs:
             c = gd.champ(ref)
             if c:
@@ -497,8 +498,13 @@ def champion_page(gd, cfg, c, role=None):
 
 
 def meta_stats(gd):
-    if META["stats"] is None and os.path.exists(meta.DB_PATH):
-        META["stats"] = meta.MetaStats(gd)
+    """Pre-computed server statistics + per-champion downloads (AggStats). Only someone crawling with an own
+    developer key still has a full local database."""
+    if META["stats"] is None:
+        if os.path.exists(meta.AGG_PATH):
+            META["stats"] = meta.AggStats(gd)
+        elif os.path.exists(meta.DB_PATH):
+            META["stats"] = meta.MetaStats(gd)
     return META["stats"]
 LOCK = threading.Lock()
 
@@ -1210,6 +1216,9 @@ def start(cfg=None):
                 MCACHE.clear()
                 first = True
             if first:
+                ms = meta_stats(gd)
+                if isinstance(ms, meta.AggStats):
+                    meta_cloud.prefetch_pool(cfg, ms)
                 warm_meta(gd, cfg)  # Meta tab ready without waiting
                 first = False
             time.sleep(900)

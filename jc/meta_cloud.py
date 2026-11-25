@@ -43,54 +43,55 @@ def _merge_gz(db, gz, tmp):
     return n
 
 
+AGG_URL = "https://github.com/nelkejannis-lab/junglecoach-data/releases/download/meta-latest/agg.sqlite.gz"
+
+
 def update(cfg, force=False, max_age_h=1):
-    """Every hour: download only the small hourly deltas of the crawler (new games since the last check).
-    The full database (big) is only loaded the first time or when the app was off for days."""
-    url = cfg.get("meta_cloud_url", DEFAULT_URL)
-    if not url:
+    """Every hour: the crawler's small pre-computed statistics (a few MB). Champion details are downloaded
+    per champion on demand (meta.AggStats.ensure). The old full database (up to 1.5 GB) is not needed anymore."""
+    if not cfg.get("meta_cloud_url", DEFAULT_URL):
         STATE["status"] = "aus"
         return False
     try:
-        last = float(open(STAMP).read()) if os.path.exists(STAMP) else 0
-    except (OSError, ValueError):
+        last = os.path.getmtime(meta.AGG_PATH) if os.path.exists(meta.AGG_PATH) else 0
+    except OSError:
         last = 0
-    if not force and time.time() - last < max_age_h * 3600 and last:
+    if not force and last and time.time() - last < max_age_h * 3600:
         STATE.update(status="aktuell", updated=last)
         return False
     STATE["status"] = "lädt…"
     tmp = tempfile.mkdtemp()
     try:
-        deltas, applied = [], 0
-        try:
-            rel = _get(RELEASE_API, timeout=30)
-            deltas = sorted(((int(a["name"][6:-10]), a["browser_download_url"]) for a in rel.get("assets", [])
-                             if a["name"].startswith("delta-") and a["name"].endswith(".sqlite.gz")))
-        except Exception:  # noqa: BLE001 - API limit etc.: fall back to the full file
-            deltas = []
-        db = meta.connect()
-        newest = last
-        if last and deltas and deltas[0][0] <= last:   # gap-free: only the new hours
-            for ts, durl in deltas:
-                if ts > last:
-                    gz = os.path.join(tmp, f"d{ts}.gz")
-                    _get(durl, gz)
-                    applied += _merge_gz(db, gz, tmp)
-                    newest = max(newest, ts)
-        elif not last or not deltas or deltas[0][0] > last:   # first start or off for too long: whole database
-            gz = os.path.join(tmp, "meta.sqlite.gz")
-            _get(url, gz, timeout=600)
-            applied = _merge_gz(db, gz, tmp)
-            newest = max([time.time()] + [t for t, _ in deltas])
-        if applied:
-            meta.prune_balanced(db, max_matches=MAX_MATCHES, enough_current=MAX_MATCHES * 6)
-        total = db.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-        db.close()
-        with open(STAMP, "w") as f:
-            f.write(str(newest or time.time()))
-        STATE.update(status=f"aktualisiert (+{applied})" if applied else "aktuell", games=total, updated=time.time())
-        return bool(applied)
+        gz = os.path.join(tmp, "agg.sqlite.gz")
+        _get(cfg.get("meta_agg_url", AGG_URL), gz, timeout=180)
+        raw = meta.AGG_PATH + ".new"
+        with gzip.open(gz, "rb") as src, open(raw, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+        os.replace(raw, meta.AGG_PATH)
+        import sqlite3
+        c = sqlite3.connect(meta.AGG_PATH)
+        games = int((c.execute("SELECT v FROM meta WHERE k='matches'").fetchone() or [0])[0])
+        c.close()
+        # free the disk space of the old full download (only a cache; own crawling needs an own key)
+        if os.path.exists(meta.DB_PATH) and not (cfg.get("riot_api_key") or "").startswith("RGAPI-"):
+            for f in (meta.DB_PATH, meta.DB_PATH + "-wal", meta.DB_PATH + "-shm"):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+        STATE.update(status="aktualisiert", games=games, updated=time.time())
+        return True
     except Exception as e:
         STATE["status"] = f"nicht erreichbar ({type(e).__name__})"
         return False
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def prefetch_pool(cfg, ms):
+    """Main + backup picks are downloaded in advance, so champ select doesn't wait for them."""
+    for ref in (cfg.get("champion_pool") or [])[:3]:
+        try:
+            ms.ensure(ref)
+        except Exception:  # noqa: BLE001
+            pass
