@@ -135,7 +135,7 @@ def backfill_history(cfg, rid, per_round=20, cap=1000):
             continue
         m = api.get(f"/lol/match/v5/matches/{mid}")
         info = m.get("info", {})
-        if info.get("gameDuration", 0) < 15 * 60:
+        if info.get("gameDuration", 0) < 5 * 60:
             continue
         me = next((p for p in info.get("participants", []) if p.get("puuid") == acct["puuid"]), None)
         if not me:
@@ -326,13 +326,9 @@ def coach_plan(gd, cfg, rev, cache=None):
     if not games:
         return {"ready": False, "reason": "Noch keine Games analysiert. Die Analyse läuft automatisch nach jedem "
                                           "Game – oder jetzt im Analyse-Tab starten."}
-    cached = cache.get("plan")
-    if cached and cached.get("_n") == len(games) and cached.get("_t") == games[0].get("game_start"):
-        return cached
     ms = meta_stats(gd)
     if not ms:
         return {"ready": False, "reason": "Die Vergleichsdatenbank wird noch geladen …"}
-    ms = meta.MetaStats(gd, ms.db)
     bracket = current_bracket(cfg)
     counts = {}
     for g in games:
@@ -342,6 +338,7 @@ def coach_plan(gd, cfg, rev, cache=None):
     by = {k: ms.benchmarks(None, k[1], bracket) for k in counts}
     by = {k: b for k, b in by.items() if b}
     main = max(counts, key=counts.get)
+    games = [g for g in games if (g["champion"], g.get("role") or "JUNGLE") == main]
     plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(None, main[1], None),
                          bench_by_champ=by)
     plan["roles"] = sorted({k[1] for k in counts})
@@ -351,6 +348,9 @@ def coach_plan(gd, cfg, rev, cache=None):
     except Exception:  # noqa: BLE001 - progress is a bonus, never break the plan
         plan["progress"] = []
     plan["account"] = rev.get("account")
+    from .learning import update_task
+    plan["session_task"] = update_task(rev.get("account") or cfg.get("riot_id"), main, plan, games)
+    plan["analysis_version"] = coach.VERSION
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
     if cache is COACH and plan.get("ready"):
         cloud_bg(cfg, "PUT", "/api/sync/coach", {"plan": mobile_summary(plan)})

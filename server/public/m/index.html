@@ -866,10 +866,23 @@ function gameScores(info) {
     if (role === "UTILITY") { const sup = ((p.totalHealsOnTeammates || 0) + (p.totalDamageShieldedOnTeammates || 0)) / mins;
       c.fight = .6 * r(kp, R.kp) + .4 * Math.max(r(dmg, R.dmg), r(sup, R.sup)); }
     else c.fight = .5 * r(dmg, R.dmg) + .5 * r(kp, R.kp);
-    const rr = Object.keys(w).reduce((s, x) => s + w[x] * c[x], 0);
-    const used = Object.keys(w).filter(x => w[x] > 0).sort((x, y) => w[x] * (c[x] - 1) - w[y] * (c[y] - 1));
+    const mates = P.filter(q => q.teamId === p.teamId);
+    const has = fs => fs.every(f => p[f] != null), teamHas = fs => mates.every(q => fs.every(f => q[f] != null));
+    const available = {
+      res: has(["totalMinionsKilled","neutralMinionsKilled","goldEarned"]) && teamHas(["goldEarned"]) && t.gold > 0,
+      fight: has(["kills","assists","totalDamageDealtToChampions"]) && teamHas(["kills","totalDamageDealtToChampions"]) && t.k > 0 && t.dmg > 0,
+      obj: has(["damageDealtToObjectives"]) && teamHas(["damageDealtToObjectives"]) && t.obj > 0,
+      vis: has(["visionScore"]), surv: has(["deaths"])
+    };
+    if (role === "UTILITY") available.fight = available.fight && has(["totalHealsOnTeammates","totalDamageShieldedOnTeammates"]);
+    const active = Object.keys(w).filter(x => w[x] > 0 && available[x]);
+    const coverage = active.reduce((s,x) => s + w[x],0);
+    if (!coverage) return;
+    const rr = active.reduce((s, x) => s + w[x] * c[x], 0) / coverage;
+    const used = [...active].sort((x, y) => w[x] * (c[x] - 1) - w[y] * (c[y] - 1));
     out[p.puuid] = {score: Math.round(Math.max(1, Math.min(10, 5.5 + (rr - 1) * 4.5)) * 10) / 10, win: !!p.win,
-      cats: Object.fromEntries(Object.keys(w).filter(x => w[x] > 0).map(x => [x, Math.round(c[x] * 100) / 100])), why: [GS_L[used[used.length - 1]], GS_L[used[0]]]};
+      version: 3, coverage: Math.round(coverage * 100) / 100, reference: "fixed_role_model", unavailable: Object.keys(w).filter(x => w[x] > 0 && !available[x]).map(x => GS_L[x]),
+      cats: Object.fromEntries(active.map(x => [x, Math.round(c[x] * 100) / 100])), why: [GS_L[used[used.length - 1]], GS_L[used[0]]]};
   });
   const order = Object.keys(out).sort((x, y) => out[y].score - out[x].score);
   order.forEach((u, i) => { out[u].rank = i + 1; out[u].badge = null; });
@@ -1459,7 +1472,7 @@ function afterRender(app) {
   lastSheet = sk; lastPlayer = pk;
 }
 // Moosi's task: tick it off as a small reward
-const taskKey = t => "jc_done_" + new Date().toISOString().slice(0, 10) + "_" + (t || "").slice(0, 40);
+const taskKey = t => "jc_practice_" + ((S.coach && S.coach.account) || "") + "_" + ((S.coach && S.coach.session_task && S.coach.session_task.id) || t || "");
 function toggleTask(btn) {
   const task = S.coach && S.coach.session_task; if (!task) return;
   const k = taskKey(task.title), done = !LS.get(k);

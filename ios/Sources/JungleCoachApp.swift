@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import AuthenticationServices
+import Security
 
 // Jungle Coach for iPhone: shows the mobile web app (stats, past games, friends, coach summary)
 // and handles the Google / Discord login natively with ASWebAuthenticationSession.
@@ -28,9 +29,9 @@ struct WebContainer: UIViewRepresentable {
         cfg.userContentController.add(context.coordinator, name: "jcLogin")
         cfg.userContentController.add(context.coordinator, name: "jcToken")
         cfg.userContentController.add(context.coordinator, name: "jcHaptic")
-        // The login token is also kept natively (UserDefaults) and handed to the page before it starts,
+        // The login token is also kept natively (Keychain) and handed to the page before it starts,
         // so a lost WebView storage never sends the user back to the login screen.
-        if let t = UserDefaults.standard.string(forKey: "jc_token"), Coordinator.validToken(t) {
+        if let t = TokenStore.load(), Coordinator.validToken(t) {
             cfg.userContentController.addUserScript(WKUserScript(source: "window.__jcToken = '\(t)';",
                                                                  injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
@@ -82,6 +83,9 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
 
     // The page asks for a login: open Google / Discord in the system login sheet, get the token back.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.protocol == "https",
+              message.frameInfo.securityOrigin.host == URL(string: SERVER)?.host else { return }
         if message.name == "jcHaptic" {   // graded haptics: light taps, medium tab switch, success on check-off
             switch message.body as? String {
             case "success": UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -91,7 +95,7 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
             return
         }
         if message.name == "jcToken" {   // page logged out or the server rejected the token
-            UserDefaults.standard.removeObject(forKey: "jc_token")
+            TokenStore.clear()
             return
         }
         guard let provider = message.body as? String, ["google", "discord"].contains(provider) else { return }
@@ -105,7 +109,7 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
             guard let token = items.first(where: { $0.name == "token" })?.value, Coordinator.validToken(token) else {
                 self?.reportError("kein gültiges Token erhalten (\(url.absoluteString.prefix(60)))"); return
             }
-            UserDefaults.standard.set(token, forKey: "jc_token")
+            guard TokenStore.save(token) else { self?.reportError("Anmeldung konnte nicht sicher gespeichert werden"); return }
             DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.jcSetToken('\(token)')") }
         }
         s.presentationContextProvider = self
@@ -149,5 +153,35 @@ final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate,
             return
         }
         decisionHandler(.allow)
+    }
+}
+
+enum TokenStore {
+    static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "app.moosi.session", kSecAttrAccount as String: "jc_token"]
+    static func load() -> String? {
+        var q = query
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        if SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess,
+           let data = result as? Data, let value = String(data: data, encoding: .utf8) { return value }
+        if let old = UserDefaults.standard.string(forKey: "jc_token"), Coordinator.validToken(old), save(old) {
+            UserDefaults.standard.removeObject(forKey: "jc_token")
+            return old
+        }
+        return nil
+    }
+    static func save(_ token: String) -> Bool {
+        let attributes: [String: Any] = [kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return true }
+        if status != errSecItemNotFound { return false }
+        return SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) == errSecSuccess
+    }
+    static func clear() {
+        SecItemDelete(query as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: "jc_token")
     }
 }

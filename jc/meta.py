@@ -199,7 +199,7 @@ def store_match(db, match, tier=None, focus=None, all_players=True, timeline=Non
     info = match["info"]
     mid = match["metadata"]["matchId"]
     db.execute("INSERT OR IGNORE INTO seen VALUES (?)", (mid,))
-    if info.get("gameDuration", 0) < 15 * 60:  # skip remakes / early FF
+    if info.get("gameDuration", 0) < 5 * 60:  # exclude very short incomplete games; retain early surrenders
         db.commit()
         return 0
     parts = info["participants"]
@@ -321,7 +321,7 @@ class Crawler:
                     seen.add(mid)
                     m = api.get(f"/lol/match/v5/matches/{mid}")
                     tl = None
-                    if self.cfg.get("meta_timelines") and m.get("info", {}).get("gameDuration", 0) >= 15 * 60:
+                    if self.cfg.get("meta_timelines") and m.get("info", {}).get("gameDuration", 0) >= 5 * 60:
                         try:  # exact purchase order (costs one extra request per match)
                             tl = api.get(f"/lol/match/v5/matches/{mid}/timeline")
                         except Exception:  # noqa: BLE001
@@ -964,7 +964,7 @@ class MetaStats:
     def benchmarks(self, champ, role="JUNGLE", bracket=None, min_games=30):
         """Distribution of every detail value for this champion + role (+ elo), widening the scope
         (elo -> all elos -> role over all champions) until there is enough data."""
-        ck = (champ, role, bracket, min_games)
+        ck = (champ, role, bracket, min_games, self.current_patch(), self.db.total_changes)
         cache = self.__dict__.setdefault("_bench_cache", {})
         hit = cache.get(ck)
         if hit and time.time() - hit[0] < 1800:   # role-wide lookups read many rows: keep 30 min
@@ -985,8 +985,10 @@ class MetaStats:
             tries.append(("role=? AND tier IN (%s)" % ",".join("?" * len(tiers)), [role, *tiers],
                           f"alle {role.title()}-Spieler in deinem Elo"))
         tries.append(("role=?", [role], f"alle {role.title()}-Spieler"))
+        patch = self.current_patch()
         for where, args, label in tries:
-            rows = self.db.execute(f"SELECT stats, win FROM games WHERE stats IS NOT NULL AND {where}", args).fetchall()
+            rows = self.db.execute(f"SELECT stats, win FROM games WHERE stats IS NOT NULL AND patch=? AND {where}", [patch, *args]).fetchall()
+            label = f"Patch {patch}, {label}"
             if len(rows) >= min_games:
                 dist = {}
                 for st, _ in rows:
@@ -1187,11 +1189,14 @@ class AggStats(MetaStats):
     def benchmarks(self, champ, role="JUNGLE", bracket=None, min_games=30):
         if champ is not None:
             self.ensure(champ)
-            return super().benchmarks(champ, role, bracket, min_games)
+            result = super().benchmarks(self._name(champ), role, bracket, min_games)
+            if result and result["scope"].split(", ", 1)[-1].startswith(str(self._name(champ)) + " "):
+                return result
+            return self.benchmarks(None, role, bracket, min_games)
         for br, label in ([(bracket, f"alle {role.title()}-Spieler in deinem Elo")] if bracket in BRACKETS else []) + [("all", f"alle {role.title()}-Spieler")]:
             rows = self._a("SELECT metric, n, q FROM bench WHERE role=? AND br=?", (role, br))
             if rows and max(r[1] for r in rows) >= min_games:
-                return {"scope": label, "games": max(r[1] for r in rows), "dist": {m: json.loads(q) for m, n, q in rows if n >= min_games}}
+                return {"scope": label + " (aggregierte Referenz; Patch-Abgrenzung nicht belegt)", "games": max(r[1] for r in rows), "dist": {m: json.loads(q) for m, n, q in rows if n >= min_games}}
         return None
 
     def death_benchmark(self, role="JUNGLE", bracket=None, min_games=40):

@@ -103,7 +103,8 @@ NOT_FOR_ROLE = {
 }
 # depends on the champion's kit, not on how well you play (Jinx has almost no CC, Leona a lot) -> never a coaching goal
 KIT_METRICS = {"cc"}
-LAST_GAMES = 10
+VERSION = 3
+LAST_GAMES = 30
 CORE = ["jcs10", "cs10", "kp", "vpm", "deaths", "gpm", "dpm", "early_kills", "drag", "cw", "scuttles", "dead_share"]
 
 
@@ -157,13 +158,16 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     bench: benchmark of the main champion (MetaStats.benchmarks); bench_by_champ: {champion: benchmark}
     so every game is compared with players of the champion actually played."""
     now = now or time.time()
-    games = sorted([g for g in games if g.get("stats")], key=lambda g: -(g.get("game_start") or 0))[:LAST_GAMES]
+    games = sorted([dict(g, stats=dict(g["stats"])) for g in games if g.get("stats")], key=lambda g: -(g.get("game_start") or 0))[:LAST_GAMES]
     for g in games:  # only values that fit the role played
         skip = NOT_FOR_ROLE.get(g.get("role") or "JUNGLE", set()) | KIT_METRICS
         g["stats"] = {k: v for k, v in g["stats"].items() if k not in skip}
     if not games or not bench:
         return {"ready": False, "reason": "Analysiere zuerst ein paar Ranked-Games (Analyse-Tab) – "
                                           "und es braucht Vergleichsdaten aus der Meta-Datenbank."}
+    roles = [g.get("role") or "JUNGLE" for g in games]
+    selected_role = max(set(roles), key=roles.count)
+    games = [g for g in games if (g.get("role") or "JUNGLE") == selected_role]
     dist = bench["dist"]
     by = bench_by_champ or {}
     n = len(games)
@@ -289,6 +293,10 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     for _, w in cands[:3]:
         m = w["metric"]
         title, drill_txt = drill(m, main_role)
+        drill_txt = ("Prüfe nach dem Match zwei passende Szenen zu " + title +
+                     ": Welche Optionen hattest du, und warum hast du dich so entschieden? "
+                     "Übe die begründete Entscheidung in drei passenden Spielen. "
+                     "Orientierungswert: {t}; ein höherer Messwert allein beweist keine bessere Entscheidung.")
         higher = METRICS[m][1]
         hit = [g for g in games[:10] if m in g["stats"]]
         ok = [g for g in hit if (g["stats"][m] >= w["target"]) == higher or g["stats"][m] == w["target"]]
@@ -297,7 +305,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
         why = f"Du: {w['you']} · besser als {w['percentile']}% · Ziel {w['target_txt']} (Top 25%: {w['top']})"
         if impact.get(m, 0) >= 8:
             why += f" · in Siegen deutlich besser als in Niederlagen"
-        focus.append({"metric": m, "title": title, "why": why, "drill": drill_txt.format(t=w["target_txt"]),
+        focus.append({"metric": m, "role": main_role, "champion": games[0].get("champion"), "title": title, "why": why, "drill": drill_txt.format(t=w["target_txt"]),
                       "target": w["target_txt"], "target_val": w["target"], "higher": higher, "last10": f"{len(ok)}/{len(hit)}",
                       "week": {"done": len(week_ok), "games": len(week)}})
     if tilt.get("rule") and len(focus) < 3:
@@ -340,7 +348,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     if focus:
         f0 = focus[0]
         task = {"metric": f0["metric"], "title": f0["title"], "drill": f0["drill"], "target": f0["target"],
-                "check": f"Nach der Session prüft der Coach: {f0['target']} erreicht? (zuletzt {f0['last10'] or '–'})"}
+                "check": f"Statistischer Orientierungswert: {f0['target']} erreicht? (zuletzt {f0['last10'] or '–'})"}
     confidence = ("sehr vorläufig" if n < 5 else "vorläufig") + f" – Basis {n} Games, Vergleich {bench['games']} Games ({bench['scope']})"
 
     return {"ready": True, "games": n, "scope": bench["scope"], "bench_games": bench["games"],
@@ -363,7 +371,9 @@ def progress(history, focus, now=None, days=30):
         if m not in METRICS or f.get("target_val") is None:
             continue
         pts = sorted(((g.get("game_start") or 0, g["stats"][m], bool(g.get("win"))) for g in history
-                      if (g.get("game_start") or 0) >= start and m in (g.get("stats") or {})), key=lambda x: x[0])
+                      if (g.get("game_start") or 0) >= start and m in (g.get("stats") or {})
+                      and (not f.get("role") or (g.get("role") or "JUNGLE") == f["role"])
+                      and (not f.get("champion") or g.get("champion") == f["champion"])), key=lambda x: x[0])
         if len(pts) < 2:
             out.append({"metric": m, "title": f["title"], "points": [], "enough": False})
             continue

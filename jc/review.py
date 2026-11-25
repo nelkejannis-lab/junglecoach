@@ -228,7 +228,7 @@ def run(api_key, platform, riot_id, count=30, queue=420, progress=None, prev=Non
         done += 1
         m = api.get(f"/lol/match/v5/matches/{mid}")
         info = m["info"]
-        if info.get("gameDuration", 0) < 15 * 60:
+        if info.get("gameDuration", 0) < 5 * 60:
             continue  # remake
         me = next(p for p in info["participants"] if p["puuid"] == puuid)
         role = me.get("teamPosition") or ""

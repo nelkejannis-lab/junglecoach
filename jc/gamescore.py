@@ -12,7 +12,7 @@ Built so the SAME performance always gets the SAME number:
 The same formula runs in the mobile/web app (server/public/m/index.html, gameScores) – keep both in sync,
 tests/test_gamescore.py has shared reference cases.
 """
-VERSION = 2
+VERSION = 3
 SR_QUEUES = {400, 420, 430, 440, 490, 700, 0}   # Summoner's Rift (draft, solo, blind, flex, quickplay, clash, custom)
 
 REF = {   # "good" = 1.0 per role
@@ -71,10 +71,30 @@ def scores(info):
             c["fight"] = .6 * _r(kp, R["kp"]) + .4 * max(_r(dmg, R["dmg"]), _r(sup, R["sup"]))
         else:
             c["fight"] = .5 * _r(dmg, R["dmg"]) + .5 * _r(kp, R["kp"])
-        rr = sum(w[x] * c[x] for x in w)
-        used = sorted((x for x in w if w[x] > 0), key=lambda x: w[x] * (c[x] - 1))
+        mates = [q for q in P if q["teamId"] == p["teamId"]]
+        def has(fields):
+            return all(p.get(f) is not None for f in fields)
+        def team_has(fields):
+            return all(all(q.get(f) is not None for f in fields) for q in mates)
+        available = {
+            "res": has(("totalMinionsKilled", "neutralMinionsKilled", "goldEarned")) and team_has(("goldEarned",)) and t["gold"] > 0,
+            "fight": has(("kills", "assists", "totalDamageDealtToChampions")) and team_has(("kills", "totalDamageDealtToChampions")) and t["k"] > 0 and t["dmg"] > 0,
+            "obj": has(("damageDealtToObjectives",)) and team_has(("damageDealtToObjectives",)) and t["obj"] > 0,
+            "vis": has(("visionScore",)),
+            "surv": has(("deaths",)),
+        }
+        if role == "UTILITY":
+            available["fight"] = available["fight"] and has(("totalHealsOnTeammates", "totalDamageShieldedOnTeammates"))
+        active = {x: w[x] for x in w if w[x] > 0 and available[x]}
+        coverage = sum(active.values())
+        if not coverage:
+            continue
+        rr = sum(active[x] * c[x] for x in active) / coverage
+        used = sorted(active, key=lambda x: w[x] * (c[x] - 1))
         out[p["puuid"]] = {"score": round(max(1.0, min(10.0, 5.5 + (rr - 1) * 4.5)), 1), "win": bool(p.get("win")),
-                           "cats": {x: round(c[x], 2) for x in w if w[x] > 0},
+                           "version": VERSION, "coverage": round(coverage, 2), "reference": "fixed_role_model",
+                           "unavailable": [LABEL[x] for x in w if w[x] > 0 and not available[x]],
+                           "cats": {x: round(c[x], 2) for x in active},
                            "why": [LABEL[used[-1]], LABEL[used[0]]]}
     order = sorted(out, key=lambda u: -out[u]["score"])
     for i, u in enumerate(order):

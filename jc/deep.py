@@ -44,12 +44,13 @@ def _targets(champ):
 
 CAUSES = {  # cause -> (label, what to do differently)
     "trade": ("Tausch", "Dein Team hat im selben Moment etwas geholt – prüfe, ob es das wert war."),
-    "outnumbered": ("Unterzahl", "Mehr Gegner als Verbündete in der Nähe: ohne Info nicht nachrücken, früher abdrehen."),
+    "outnumbered": ("Mehrere Gegner beteiligt", "Mehr Gegner als Verbündete in der Nähe: ohne Info nicht nachrücken, früher abdrehen."),
     "deep": ("Tief im Gegner-Jungle", "Invades nur mit Lane-Prio und wenn du weißt, wo der Gegner-Jungler ist."),
     "gold": ("Gold nicht ausgegeben", "Mit viel Gold kein Risiko: erst zurück und kaufen, dann kämpfen."),
     "level": ("Level-Nachteil", "2+ Level hinten: Duelle meiden, farmen und auf Team-Fights warten."),
     "vision": ("Ohne Sicht", "Vor Flussbewegungen ein Ward oder Sweeper nutzen – Gegner im Fog einplanen."),
-    "jungler": ("Gegner-Jungler-Gank", "Gegner-Jungler-Position tracken; wenn er unsichtbar ist, vorsichtiger stehen."),
+    "jungler": ("Gegner-Jungler beteiligt", "Gegner-Jungler-Position tracken; wenn er unsichtbar ist, vorsichtiger stehen."),
+    "unknown": ("Ursache offen", "Im Clip Optionen, Sicht und Unterstützung prüfen; die Timeline belegt die Ursache nicht."),
     "duel": ("Duell verloren", "Vor dem Duell: Level, Items, Cooldowns (Smite/Flash) vergleichen."),
 }
 
@@ -78,7 +79,7 @@ def death_cost(ev, ts, frames, pid, events, team, gpm):
     m = min(int(ts // 60), len(frames) - 1)
     lvl = frames[m]["participantFrames"].get(str(pid), {}).get("level") or 1
     dead = _BRW[min(max(lvl, 1), 18) - 1] * (1 + max(0, ts / 60 - 15) * 0.02)   # rough late-game increase
-    bounty = (ev.get("bounty") or 300) + (ev.get("shutdownBounty") or 0)
+    bounty = (ev.get("bounty") if ev.get("bounty") is not None else 300) + (ev.get("shutdownBounty") or 0)
     missed = round(dead * gpm / 60)
     lost = []
     for e in events:
@@ -91,7 +92,7 @@ def death_cost(ev, ts, frames, pid, events, team, gpm):
         elif e.get("type") == "BUILDING_KILL" and e.get("teamId") == team:
             lost.append("Turm" if e.get("buildingType") == "TOWER_BUILDING" else "Inhibitor")
     obj = sum(OBJ_VALUE.get(x, 400) for x in lost)
-    return {"cost": bounty + missed + obj, "dead_s": round(dead), "bounty": bounty, "missed": missed, "lost": lost}
+    return {"cost": bounty, "estimated_missed": missed, "cost_basis": "Kill-Gold; Folgekosten nicht kausal zugerechnet", "dead_s": round(dead), "bounty": bounty, "missed": missed, "lost": lost}
 
 
 def death_causes_all(match, timeline):
@@ -148,25 +149,21 @@ def death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of):
             took.append(OBJ_NAMES.get(raw, raw))
     ej_inv = any(x.get("teamPosition") == "JUNGLE" and x["participantId"] in killers for x in parts)
     area = region(*xy, team) if p else "?"
-    # main cause (first match wins – most useful lesson first)
-    if took:
-        cause = "trade"
-    elif len(killers) >= 2 and len(killers) > len(allies_near) + 1:
+    # Context labels describe observations, never infer visibility or a causal trade.
+    if len(killers) >= 2:
         cause = "outnumbered"
-    elif area.startswith("gegnerischer") and len(killers) >= 1 and not own_wards:
+    elif area.startswith("gegnerischer"):
         cause = "deep"
     elif unspent >= 1300:
         cause = "gold"
     elif level_gap <= -2:
         cause = "level"
-    elif ej_inv and len(killers) >= 2:
+    elif ej_inv:
         cause = "jungler"
-    elif not own_wards and not team_wards:
-        cause = "vision"
     else:
-        cause = "duel"
+        cause = "unknown"
     facts = [f"{len(killers)} Gegner beteiligt ({', '.join(champ[k] for k in killers)})",
-             f"ca. {len(allies_near)} Verbündete in der Nähe"]
+             f"Minuten-Snapshots: {len(allies_near)} Verbündete grob nahe; Anwesenheit im Todesmoment unbekannt"]
     if unspent >= 700:
         facts.append(f"{unspent} Gold nicht ausgegeben")
     if level_gap:
@@ -174,7 +171,7 @@ def death_context(ev, ts, frames, parts, pid, team, events, my_wards, team_of):
     facts.append(f"{len(own_wards)} eigene / {len(team_wards)} Team-Wards in 90 s davor")
     if took:
         facts.append("gleichzeitig geholt: " + ", ".join(sorted(set(took))))
-    return {"cause": cause, "cause_label": CAUSES[cause][0], "tip": CAUSES[cause][1], "facts": facts,
+    return {"evidence_type": "timeline_context", "uncertainty": "Sicht, Absicht und tatsächliche Unterstützung sind nicht belegt.", "cause": cause, "cause_label": CAUSES[cause][0], "tip": CAUSES[cause][1], "facts": facts,
             "killers": [champ[k] for k in killers], "allies_near": len(allies_near), "unspent": unspent,
             "level_gap": level_gap, "trade": sorted(set(took))}
 
@@ -184,7 +181,7 @@ def deep_analyze(match, timeline, puuid):
     parts = info["participants"]
     me = next(p for p in parts if p["puuid"] == puuid)
     pid, team = me["participantId"], me["teamId"]
-    ej = next((p for p in parts if p["teamId"] != team and p.get("teamPosition") == "JUNGLE"), None)
+    ej = next((p for p in parts if p["teamId"] != team and p.get("teamPosition") == me.get("teamPosition")), None)
     ej_pid = ej["participantId"] if ej else None
     frames = timeline["info"]["frames"]
     pos_by_pid = {p["participantId"]: p.get("teamPosition") for p in parts}
@@ -259,7 +256,9 @@ def deep_analyze(match, timeline, puuid):
         raw = ev.get("monsterSubType") or ev.get("monsterType")
         objectives.append({"min": round(ts / 60, 1), "type": OBJ_NAMES.get(raw, raw),
                            "ours": ev.get("killerTeamId") == team,
-                           "present": bool(mp and _dist(mp, pit) < 3500)})
+                           "present": ev.get("killerId") == pid or pid in ev.get("assistingParticipantIds", []),
+                           "near_snapshot": bool(mp and _dist(mp, pit) < 3500),
+                           "presence_note": "Nur dokumentierte Beteiligung; fehlender Eintrag beweist keine Abwesenheit"})
 
     # ---- ganks / early impact
     ganks = {"kills": 0, "by_lane": {}}
@@ -287,7 +286,7 @@ def deep_analyze(match, timeline, puuid):
         "Gank-Impact": _clamp(kp * 110 + ganks["kills"] * 4),
         "Objectives": _clamp(obj_share * 70 + presence * 30),
         "Vision": _clamp(vpm / max(t_vpm, 0.1) * 70 + me.get("detectorWardsPlaced", 0) * 3),
-        "Überleben": _clamp(100 - me["deaths"] * 9 - bad_deaths * 8),
+        "Überleben": _clamp(100 - me["deaths"] * 9),
     }
     advice = {
         "Tempo & Farm": f"Gold @10 {gd10:+} vs Gegner-Jungler, {jcs10} Jungle-CS @10 (Vergleich ~{t_jcs}: {t_scope}). "
@@ -308,9 +307,15 @@ def deep_analyze(match, timeline, puuid):
         top = max(causes, key=causes.get)
         if top != "trade" and causes[top] >= 2:
             advice["Überleben"] += f" Häufigste Todesursache: {CAUSES[top][0]} ({causes[top]}×) – {CAUSES[top][1]}"
+    from .gamescore import scores as match_scores, LABEL, VERSION as SCORE_VERSION
+    shared = match_scores(info).get(puuid)
+    if shared:
+        cats = {LABEL[k]: round(v * 50) for k, v in shared["cats"].items()}
+        advice = {name: "Rollenbezogener Modellwert aus Matchdaten. Feste Referenz, keine validierte Elo-Norm. "
+                  "Prüfe zwei konkrete Szenen; der Messwert allein erklärt keine Ursache." for name in cats}
     ranked = sorted(cats.items(), key=lambda kv: kv[1])
     return {
-        "v": 3,
+        "v": 4, "score_version": SCORE_VERSION,
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
         "overall": _grade(sum(cats.values()) / len(cats)),

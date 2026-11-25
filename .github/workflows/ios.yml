@@ -1,6 +1,8 @@
 # Baut die iPhone-App (Moosi.ipa) – ohne Signatur, zum Installieren per Sideloadly/AltStore.
 name: iOS app
 on:
+  push:
+    branches: ["codex/analysis-coach-v3"]
   workflow_dispatch:
     inputs:
       tag:

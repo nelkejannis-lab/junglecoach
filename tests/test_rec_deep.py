@@ -77,8 +77,10 @@ class DeepTests(unittest.TestCase):
         self.assertTrue(any(t.startswith("mehrere Gegner") for t in d["tags"]))
         self.assertIn("im gegnerischen Jungle", d["tags"])
         self.assertTrue(any("Objective an Gegner" in t for t in d["tags"]))
-        self.assertEqual(len(r["categories"]), 5); self.assertEqual(len(r["priorities"]), 3)
-        self.assertTrue(all(o["present"] for o in r["objectives"]))
+        self.assertEqual(len(r["categories"]), 2); self.assertEqual(len(r["priorities"]), 2)
+        self.assertTrue(all(not o["present"] for o in r["objectives"]))
+        self.assertEqual(d["cause_label"], "Mehrere Gegner beteiligt")
+        self.assertEqual(d["cost"], d["bounty"])
         self.assertEqual(r["game_start"], 1000)
 
 
