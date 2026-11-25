@@ -9,7 +9,7 @@ on:
         required: false
         default: ""
   push:
-    branches: ["codex/presence-updater", "release/v1.15.6"]
+    branches: ["codex/presence-updater", "release/v1.15.7"]
     tags: ["v*"]
 permissions:
   contents: write
@@ -47,12 +47,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: Moosi-Setup, path: dist/Moosi-Setup.exe }
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.6'
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.7'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Moosi-Setup.exe
-          tag_name: ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.6' && 'v1.15.6') || github.ref_name }}
+          tag_name: ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.7' && 'v1.15.7') || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Moosi ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.6' && 'v1.15.6') || github.ref_name }}
+          name: Moosi ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.7' && 'v1.15.7') || github.ref_name }}
           body: "Installer herunterladen, ausführen, fertig. SmartScreen-Warnung: Weitere Informationen → Trotzdem ausführen."
 

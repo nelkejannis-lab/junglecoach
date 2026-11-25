@@ -1165,6 +1165,22 @@ const PA_TIPS = {
 };
 const paMainRole = G => { const c = {}; G.forEach(g => { if (g.pos) c[g.pos] = (c[g.pos] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "MIDDLE"; };
 function playerAnalysis(rows) {
+  const result = analyzeWindow(rows);
+  if (!result) return result;
+  const sorted = (rows || []).slice().sort((a,b) => (b.ended || 0) - (a.ended || 0));
+  if (sorted.length >= 20) {
+    const recent = analyzeWindow(sorted.slice(0,10)), prior = analyzeWindow(sorted.slice(10,20));
+    if (recent && prior && recent.role === prior.role) {
+      const changes = recent.skills.map(skill => {
+        const before = prior.skills.find(x => x.k === skill.k);
+        return before && {label:skill.label, delta:skill.v-before.v};
+      }).filter(Boolean).sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta));
+      result.change = changes[0];
+    }
+  }
+  return result;
+}
+function analyzeWindow(rows) {
   const G = (rows || []).filter(g => g && !g.remake && g.pos !== undefined);
   if (G.length < 3) return null;
   const pt = r => Math.max(1, Math.min(10, 5.5 + (r - 1) * 4.5));
@@ -1211,10 +1227,13 @@ const paCol = v => v >= 7 ? "#34d399" : v >= 5.5 ? "#22d3ee" : v >= 4 ? "#fbbf24
 let anTab = "games", anPage = 0;
 const anRows = () => (!profQuery && profData && !profData.error && profData.games) || [];
 function analysisFocus(analysis) {
+  const change = analysis.change;
+  const progress = change && Math.abs(change.delta) >= .1 ? '<p class="small"><b>Dein Verlauf · ' + esc(change.label) + '</b><br>' + (change.delta > 0 ? '+' : '') + change.delta.toFixed(1) + ' Punkte · letzte 10 Matches gegenüber den 10 davor</p>' : "";
+
   const skill = analysis.weaknesses[0];
-  if (!skill) return "";
+  if (!skill) return progress;
   const gap = Math.max(0, 5.5 - skill.v).toFixed(1);
-  return '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
+  return progress + '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
     '<b>Dein Trainingsfokus · ' + esc(skill.label) + '</b><div class="muted">' +
     gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</aside>';
 }

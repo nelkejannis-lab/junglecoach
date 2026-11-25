@@ -14,8 +14,8 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Moosi
-        CFBundleShortVersionString: "1.15.6"
-        CFBundleVersion: "43"
+        CFBundleShortVersionString: "1.15.7"
+        CFBundleVersion: "44"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
