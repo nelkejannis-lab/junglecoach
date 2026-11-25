@@ -1,0 +1,22 @@
+name: Export radar benchmarks
+on:
+  push:
+    branches: ["release/v1.15.8"]
+permissions:
+  contents: write
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download meta-latest -R nelkejannis-lab/junglecoach-data -p meta.sqlite.gz
+          gunzip meta.sqlite.gz
+          python scripts/radar_reference.py
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.15.8
+          target_commitish: ${{ github.sha }}
+          files: radar-tiers.json

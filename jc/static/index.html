@@ -1168,6 +1168,7 @@ function playerAnalysis(rows) {
   const result = analyzeWindow(rows);
   if (!result) return result;
   const sorted = (rows || []).slice().sort((a,b) => (b.ended || 0) - (a.ended || 0));
+  result.radarRows = sorted.filter(g=>!g.remake && g.pos===result.role).slice(0,10);
   if (sorted.length >= 20) {
     const recent = analyzeWindow(sorted.slice(0,10)), prior = analyzeWindow(sorted.slice(10,20));
     if (recent && prior && recent.role === prior.role) {
@@ -1233,27 +1234,39 @@ function analysisFocus(analysis) {
   const skill = analysis.weaknesses[0];
   if (!skill) return progress;
   const gap = Math.max(0, 5.5 - skill.v).toFixed(1);
-  return progress + '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
+  return progress + '<div class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
     '<b>Dein Trainingsfokus · ' + esc(skill.label) + '</b><div class="muted">' +
-    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</aside>';
+    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</div>';
 }
-function analysisRadar(skills) {
-  if (skills.length < 3) return "";
-  const point = (i, radius) => {
-    const angle = i * Math.PI * 2 / skills.length - Math.PI / 2;
-    return [155 + Math.cos(angle) * radius, 111 + Math.sin(angle) * radius];
-  };
-  const polygon = (radii, attrs) => '<polygon points="' + skills.map((_, i) => point(i, radii[i]).join(",")).join(" ") + '" ' + attrs + '/>';
-  const labels = skills.map((skill, i) => {
-    const [x, y] = point(i, 94), [ax, ay] = point(i, 72);
-    return '<line x1="155" y1="111" x2="' + ax + '" y2="' + ay + '" stroke="currentColor" opacity=".25"/>' +
-      '<text x="' + x + '" y="' + (y + 4) + '" text-anchor="middle" fill="currentColor" font-size="10">' + esc(skill.label) + '</text>';
-  }).join("");
-  return '<figure style="margin:0 0 12px;text-align:center"><svg role="img" aria-label="Fähigkeiten im Vergleich zum Richtwert 5,5" viewBox="0 0 310 222" style="width:100%;max-width:340px;color:var(--txt)">' +
-    polygon(skills.map(() => 72), 'fill="none" stroke="currentColor" opacity=".3"') + labels +
-    polygon(skills.map(() => 72 * .55), 'fill="none" stroke="#b4a4dc" stroke-dasharray="4 4"') +
-    polygon(skills.map(skill => 72 * skill.v / 10), 'fill="#22c4c8" fill-opacity=".22" stroke="#22c4c8" stroke-width="2"') +
-    '</svg><figcaption class="muted small">Türkis: Spieler · gestrichelt: Richtwert 5,5</figcaption></figure>';
+let moosiRadarReference;
+async function loadRadarReference(){
+  try {
+    const r=await fetch("https://moosi.app/api/radar-tiers"); if(!r.ok) throw Error();
+    moosiRadarReference=await r.json(); render();
+  } catch {setTimeout(loadRadarReference,60000);}
+}
+setTimeout(loadRadarReference,500);
+function analysisRadar(A,tier){
+  const tiers=["IRON","BRONZE","SILVER","GOLD","PLATINUM","EMERALD","DIAMOND","MASTER","GRANDMASTER","CHALLENGER"];
+  const i=tiers.indexOf(tier), next=i>=0?tiers[i+1]:null;
+  const ref=moosiRadarReference?.[next]?.[A.role];
+  const dims=[["gpm","Gold/min",600],["vpm","Vision/min",2.5],["kp","Killbeteiligung %",100],["deaths","Überleben",10],["dmg_share","Schadensanteil %",50]];
+  const axes=dims.flatMap(([key,label,scale])=>{
+    const vals=A.radarRows.map(g=>g[key]).filter(Number.isFinite);
+    if(!vals.length)return [];
+    const own=vals.reduce((a,b)=>a+b,0)/vals.length*(key==="dmg_share"?100:1), goal=ref?.[key];
+    const norm=v=>Math.min(1,Math.max(0,key==="deaths"?1-v/scale:v/scale));
+    return [{key,label,own,goal,you:norm(own),target:Number.isFinite(goal)?norm(goal):null}];
+  });
+  if(axes.length<3)return "";
+  const point=(i,v)=>{const t=i*2*Math.PI/axes.length-Math.PI/2;return [250+155*v*Math.cos(t),195+155*v*Math.sin(t)]};
+  const poly=(values,attrs)=>'<polygon points="'+values.map((v,i)=>point(i,v).join(",")).join(" ")+'" '+attrs+'/>';
+  const has=axes.every(x=>x.target!==null);
+  const num=v=>v.toLocaleString("de-DE",{maximumFractionDigits:2});
+  const labels=axes.map((x,i)=>{const [a,b]=point(i,1.14);return '<text x="'+a+'" y="'+b+'" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-size="13">'+esc(x.label)+'</text>'}).join("");
+  const focus=has?axes.slice().sort((a,b)=>(b.target-b.you)-(a.target-a.you))[0]:null;
+  const note=focus&&focus.target>focus.you?'<p><b>Größter Abstand · '+esc(focus.key==="deaths"?"Tode pro Match":focus.label)+'</b><br>Du: '+num(focus.own)+' · '+next+': '+num(focus.goal)+'</p>':"";
+  return '<figure style="margin:8px auto;text-align:center"><svg role="img" aria-label="Rollenvergleich" viewBox="0 0 500 390" style="display:block;width:100%;max-width:630px;margin:auto">'+[.25,.5,.75,1].map(v=>poly(axes.map(()=>v),'fill="none" stroke="currentColor" opacity=".15"')).join("")+poly(axes.map(x=>x.you),'fill="#20c7bf" fill-opacity=".22" stroke="#20c7bf" stroke-width="3"')+(has?poly(axes.map(x=>x.target),'fill="none" stroke="#c8b4ff" stroke-width="3" stroke-dasharray="7 5"'):"")+labels+'</svg><figcaption>Türkis: deine letzten '+A.radarRows.length+' Rollen-Matches · '+(has?'Gestrichelt: '+next+'-Lobbys ('+ref.n+' Referenzmatches)':next?'Keine Vergleichsdaten für '+next:tier==="CHALLENGER"?'Höchste Elo erreicht':'Solo/Duo-Rang fehlt')+'</figcaption></figure>'+note;
 }
 function playerHero(A, opts = {}) {
   const sk = A.skills.map(x => `<div class="sk" title="${esc(x.what)}"><div class="skl"><b>${esc(x.label)}</b></div>
@@ -1264,7 +1277,7 @@ function playerHero(A, opts = {}) {
       <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Moosi-Score · Ø letzte 10 Games</div>
         <div class="pa-mini"><div><b>${A.wr}%</b><span>Winrate · ${A.wins}S ${A.n - A.wins}N</span></div><div><b>${A.kda}</b><span>KDA · ${A.kda_avg}</span></div>${tr ? `<div>${tr}</div>` : ""}</div>
         <div class="chips" style="justify-content:center;margin-top:10px">${A.roles.slice(0, 3).map(r => `<span class="chip">${PA_ROLE[r.r] || r.r} ${r.pct}%</span>`).join("")}</div></div>
-      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${analysisRadar(A.skills)}${analysisFocus(A)}${sk}</div>
+      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${analysisRadar(A, profData?.ranks?.solo?.tier)}${analysisFocus(A)}${sk}</div>
       <div class="pa-sw">
         <div class="pa-box good"><div class="pa-h">Stärken</div>${A.strengths.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span></div>`).join("") || '<div class="muted small">Noch keine klare Stärke – alles im Mittelfeld.</div>'}</div>
         <div class="pa-box bad"><div class="pa-h">Daran arbeiten</div>${A.weaknesses.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span><p class="small muted" style="margin:3px 0 8px">${esc(x.tip)}</p></div>`).join("") || '<div class="muted small">Keine großen Schwächen. Stark!</div>'}</div>

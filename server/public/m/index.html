@@ -749,6 +749,7 @@ function playerAnalysis(rows) {
   const result = analyzeWindow(rows);
   if (!result) return result;
   const sorted = (rows || []).slice().sort((a,b) => (b.ended || 0) - (a.ended || 0));
+  result.radarRows = sorted.filter(g=>!g.remake && g.pos===result.role).slice(0,10);
   if (sorted.length >= 20) {
     const recent = analyzeWindow(sorted.slice(0,10)), prior = analyzeWindow(sorted.slice(10,20));
     if (recent && prior && recent.role === prior.role) {
@@ -823,34 +824,46 @@ function analysisFocus(analysis) {
   const skill = analysis.weaknesses[0];
   if (!skill) return progress;
   const gap = Math.max(0, 5.5 - skill.v).toFixed(1);
-  return progress + '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
+  return progress + '<div class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
     '<b>Dein Trainingsfokus · ' + esc(skill.label) + '</b><div class="muted">' +
-    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</aside>';
+    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</div>';
 }
-function analysisRadar(skills) {
-  if (skills.length < 3) return "";
-  const point = (i, radius) => {
-    const angle = i * Math.PI * 2 / skills.length - Math.PI / 2;
-    return [155 + Math.cos(angle) * radius, 111 + Math.sin(angle) * radius];
-  };
-  const polygon = (radii, attrs) => '<polygon points="' + skills.map((_, i) => point(i, radii[i]).join(",")).join(" ") + '" ' + attrs + '/>';
-  const labels = skills.map((skill, i) => {
-    const [x, y] = point(i, 94), [ax, ay] = point(i, 72);
-    return '<line x1="155" y1="111" x2="' + ax + '" y2="' + ay + '" stroke="currentColor" opacity=".25"/>' +
-      '<text x="' + x + '" y="' + (y + 4) + '" text-anchor="middle" fill="currentColor" font-size="10">' + esc(skill.label) + '</text>';
-  }).join("");
-  return '<figure style="margin:0 0 12px;text-align:center"><svg role="img" aria-label="Fähigkeiten im Vergleich zum Richtwert 5,5" viewBox="0 0 310 222" style="width:100%;max-width:340px;color:var(--txt)">' +
-    polygon(skills.map(() => 72), 'fill="none" stroke="currentColor" opacity=".3"') + labels +
-    polygon(skills.map(() => 72 * .55), 'fill="none" stroke="#b4a4dc" stroke-dasharray="4 4"') +
-    polygon(skills.map(skill => 72 * skill.v / 10), 'fill="#22c4c8" fill-opacity=".22" stroke="#22c4c8" stroke-width="2"') +
-    '</svg><figcaption class="muted small">Türkis: Spieler · gestrichelt: Richtwert 5,5</figcaption></figure>';
+let moosiRadarReference;
+async function loadRadarReference(){
+  try {
+    const r=await fetch("https://moosi.app/api/radar-tiers"); if(!r.ok) throw Error();
+    moosiRadarReference=await r.json(); render();
+  } catch {setTimeout(loadRadarReference,60000);}
 }
-function paCard(A, title) {
+setTimeout(loadRadarReference,500);
+function analysisRadar(A,tier){
+  const tiers=["IRON","BRONZE","SILVER","GOLD","PLATINUM","EMERALD","DIAMOND","MASTER","GRANDMASTER","CHALLENGER"];
+  const i=tiers.indexOf(tier), next=i>=0?tiers[i+1]:null;
+  const ref=moosiRadarReference?.[next]?.[A.role];
+  const dims=[["gpm","Gold/min",600],["vpm","Vision/min",2.5],["kp","Killbeteiligung %",100],["deaths","Überleben",10],["dmg_share","Schadensanteil %",50]];
+  const axes=dims.flatMap(([key,label,scale])=>{
+    const vals=A.radarRows.map(g=>g[key]).filter(Number.isFinite);
+    if(!vals.length)return [];
+    const own=vals.reduce((a,b)=>a+b,0)/vals.length*(key==="dmg_share"?100:1), goal=ref?.[key];
+    const norm=v=>Math.min(1,Math.max(0,key==="deaths"?1-v/scale:v/scale));
+    return [{key,label,own,goal,you:norm(own),target:Number.isFinite(goal)?norm(goal):null}];
+  });
+  if(axes.length<3)return "";
+  const point=(i,v)=>{const t=i*2*Math.PI/axes.length-Math.PI/2;return [250+155*v*Math.cos(t),195+155*v*Math.sin(t)]};
+  const poly=(values,attrs)=>'<polygon points="'+values.map((v,i)=>point(i,v).join(",")).join(" ")+'" '+attrs+'/>';
+  const has=axes.every(x=>x.target!==null);
+  const num=v=>v.toLocaleString("de-DE",{maximumFractionDigits:2});
+  const labels=axes.map((x,i)=>{const [a,b]=point(i,1.14);return '<text x="'+a+'" y="'+b+'" dominant-baseline="middle" text-anchor="middle" fill="currentColor" font-size="13">'+esc(x.label)+'</text>'}).join("");
+  const focus=has?axes.slice().sort((a,b)=>(b.target-b.you)-(a.target-a.you))[0]:null;
+  const note=focus&&focus.target>focus.you?'<p><b>Größter Abstand · '+esc(focus.key==="deaths"?"Tode pro Match":focus.label)+'</b><br>Du: '+num(focus.own)+' · '+next+': '+num(focus.goal)+'</p>':"";
+  return '<figure style="margin:8px auto;text-align:center"><svg role="img" aria-label="Rollenvergleich" viewBox="0 0 500 390" style="display:block;width:100%;max-width:630px;margin:auto">'+[.25,.5,.75,1].map(v=>poly(axes.map(()=>v),'fill="none" stroke="currentColor" opacity=".15"')).join("")+poly(axes.map(x=>x.you),'fill="#20c7bf" fill-opacity=".22" stroke="#20c7bf" stroke-width="3"')+(has?poly(axes.map(x=>x.target),'fill="none" stroke="#c8b4ff" stroke-width="3" stroke-dasharray="7 5"'):"")+labels+'</svg><figcaption>Türkis: deine letzten '+A.radarRows.length+' Rollen-Matches · '+(has?'Gestrichelt: '+next+'-Lobbys ('+ref.n+' Referenzmatches)':next?'Keine Vergleichsdaten für '+next:tier==="CHALLENGER"?'Höchste Elo erreicht':'Solo/Duo-Rang fehlt')+'</figcaption></figure>'+note;
+}
+function paCard(A, title, radarTier=(S.league||[]).find(x=>x.queueType==="RANKED_SOLO_5x5")?.tier) {
   if (!A) return "";
   return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Score</span></div>
       <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · als ${PA_ROLE[A.role] || A.role} · 5,5 = gut</div>
         <div class="pa-kpi"><span><b>${A.wr}%</b> WR</span><span><b>${A.kda}</b> KDA</span>${A.trend != null ? `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"}${Math.abs(A.trend).toFixed(1)}</span>` : ""}</div></div></div>
-    ${analysisRadar(A.skills)}${analysisFocus(A)}
+    ${analysisRadar(A, radarTier)}${analysisFocus(A)}
     ${A.skills.map(x => `<div class="sk"><span>${esc(x.label)}</span><div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("")}
     ${A.strengths.length ? `<div class="pa-sw good">💪 <b>Stark:</b> ${A.strengths.map(x => esc(x.label)).join(", ")}</div>` : ""}
     ${A.weaknesses.map(x => `<div class="pa-sw bad">🎯 <b>${esc(x.label)} ${x.v.toFixed(1)}:</b> ${esc(x.tip)}</div>`).join("")}
@@ -1232,7 +1245,7 @@ function vFriend(rid) {
       <h2>${esc(name)} ${roleChip(pub.role || gamesRole(d.games))}</h2>${pub.bio ? `<div class="small" style="color:#c9d2e6;margin-bottom:4px">${esc(pub.bio)}</div>` : ""}
       ${(pub.favs || []).length ? `<div style="display:flex;gap:5px;margin:4px 0">${pub.favs.map(c => cImg(c, "fav")).join("")}</div>` : ""}<div>${d.league ? rankTxt(r) + (r ? ` · ${Math.round(100 * r.wins / Math.max(1, r.wins + r.losses))}% Saison` : "") : "…"}</div>
       ${A ? `<div class="dots" style="margin-top:8px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}</div>` : ""}</div></div>
-    ${paCard(playerAnalysis(paRows(d.games)), "Analyse von " + name)}
+    ${paCard(playerAnalysis(paRows(d.games)), "Analyse von " + name,(d.league||[]).find(x=>x.queueType==="RANKED_SOLO_5x5")?.tier || null)}
     ${A && M ? `<div class="card"><h3>Du vs ${esc(name)} <span class="muted small" style="font-weight:500">· je 10 Games</span></h3>
       <div class="cmph" style="margin-bottom:6px"><b style="color:var(--acc)">Du</b><span></span><b style="color:var(--purple)">${esc(name)}</b></div>
       ${bar2("Winrate", M.wr, A.wr, v => v + "%")}${bar2("Ø Game-Score", M.score, A.score, v => v.toFixed(1))}${bar2("KDA", M.kda, A.kda, v => v)}${bar2("Kill-Beteil.", M.kp, A.kp, v => v + "%")}

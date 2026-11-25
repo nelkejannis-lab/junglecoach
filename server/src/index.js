@@ -425,6 +425,10 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
+      if (p === "/api/radar-tiers") {
+        const r = await fetch("https://github.com/nelkejannis-lab/junglecoach/releases/download/v1.15.8/radar-tiers.json",{cf:{cacheTtl:300}});
+        return new Response(r.ok?r.body:"{}", {status:r.ok?200:503,headers:{"content-type":"application/json","access-control-allow-origin":"*","cache-control":r.ok?"public,max-age=3600":"no-store"}});
+      }
     try {
       let m;
       if (p === "/api/health") return json({ ok: true,
