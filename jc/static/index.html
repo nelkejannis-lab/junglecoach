@@ -241,6 +241,10 @@
   .hero-banner .art::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,#0b101d 0%,rgba(11,16,29,.94) 34%,rgba(11,16,29,.35) 70%,rgba(11,16,29,.15) 100%),
     linear-gradient(0deg,rgba(11,16,29,.9),transparent 45%); }
   .hero-banner .in { position:relative; display:grid; grid-template-columns:auto 1fr auto; gap:26px; align-items:center; padding:30px 34px; min-height:270px; }
+  .roster-form { display:flex; flex-wrap:wrap; gap:4px; margin:9px 0 5px; }
+  .roster-form span { display:grid; place-items:center; width:19px; height:19px; border-radius:5px; background:var(--card2); font-size:10px; font-weight:800; }
+  .roster-focus { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .roster-focus span { border:1px solid var(--line); border-radius:8px; padding:4px 7px; font-size:11px; }
   .roster-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; overflow-wrap:anywhere; }
   @media (max-width:700px) { .roster-grid { grid-template-columns:1fr; } }
   .hero-banner.coach-hero .in { grid-template-columns:minmax(0,1fr) auto; }
@@ -921,9 +925,29 @@ async function loadLivePlayers() {
     setTimeout(loadLivePlayers, 400);
   }
 }
+function rosterForm(games) {
+  const valid = (games || []).filter(g => !g.remake);
+  if (!valid.length) return "";
+  const wins = valid.filter(g => g.win).length;
+  const marks = valid.slice().reverse().map(g => {
+    const score = Number.isFinite(g.score) ? " · Moosi " + g.score.toFixed(1) + "/10" : "";
+    const title = [g.champion, g.win ? "Sieg" : "Niederlage"].filter(Boolean).join(" · ") + score;
+    return '<span class="' + (g.win ? "green" : "red") + '" title="' + esc(title) + '">' + (g.win ? "S" : "N") + '</span>';
+  }).join("");
+  return '<div class="roster-form" aria-label="Spielverlauf, ältestes Match zuerst">' + marks + '</div>' +
+    '<div class="small muted">' + wins + ' Siege · ' + (valid.length - wins) + ' Niederlagen aus ' + valid.length + ' Matches</div>';
+}
+function rosterWeaknesses(analysis) {
+  if (!analysis || !analysis.weaknesses.length) return "";
+  return '<div class="roster-focus">' + analysis.weaknesses.map(skill =>
+    '<span title="Moosi-Richtwert: 5,5">' + esc(skill.label) + ' <b>' + skill.v.toFixed(1) + ' / 10</b></span>'
+  ).join("") + '</div>';
+}
 function liveRoster(roster) {
   if (!roster) return "";
-  const columns = [["Dein Team", roster.allies], ["Gegner", roster.enemies]];
+  const roleOrder = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
+  const laneOrder = players => players.slice().sort((a, b) => (roleOrder.includes(a.role) ? roleOrder.indexOf(a.role) : 5) - (roleOrder.includes(b.role) ? roleOrder.indexOf(b.role) : 5));
+  const columns = [["Dein Team", laneOrder(roster.allies)], ["Gegner", laneOrder(roster.enemies)]];
   return card("Spielerübersicht", "Solo/Duo-Rang und Auffälligkeiten aus bis zu 10 aktuellen Matches", '<div class="roster-grid">' + columns.map(([label, players]) =>
     '<section><h3>' + label + '</h3>' + players.map(p => {
       const data = livePlayers.get(p.riot_id);
@@ -932,11 +956,11 @@ function liveRoster(roster) {
       const rankLabel = rank ? [rank.tier, rank.division, rank.lp + " LP"].join(" · ") : data && data.ranks ? "Solo/Duo: ohne Rang" : "Rang nicht verfügbar";
       const notes = !p.riot_id ? "Riot-ID nicht sichtbar" : !data || data.loading ? "Stats werden geladen …" :
         data.error ? "Stats nicht verfügbar" : !analysis ? "Zu wenige bewertbare Matches" :
-        analysis.weaknesses.length ? analysis.weaknesses.map(x => x.label + " " + x.v.toFixed(1)).join(" · ") + " (" + analysis.n + " Matches)" : "Keine klare Schwäche in " + analysis.n + " Matches";
+        analysis.weaknesses.length ? "Unter dem Moosi-Richtwert (5,5)" : "Keine klare Schwäche in " + analysis.n + " Matches";
       return '<div class="fcard" style="margin-bottom:8px"><div style="display:flex;gap:8px;align-items:center">' +
         (p.champion ? cImg(p.champion, 32, 8) : "") + '<div><b>' + esc(p.riot_id || p.champion || "Spieler") + '</b>' +
         '<div class="small muted">' + esc([ROLE_DE[p.role], rankLabel].filter(Boolean).join(" · ")) + '</div></div></div>' +
-        '<p class="small muted" style="margin:8px 0 0">' + esc(notes) + '</p></div>';
+        rosterForm(data && data.games) + '<p class="small muted" style="margin:8px 0 0">' + esc(notes) + '</p>' + rosterWeaknesses(analysis) + '</div>';
     }).join("") + '</section>').join("") + '</div>', true);
 }
 function renderLive() {
@@ -1186,6 +1210,14 @@ const paCol = v => v >= 7 ? "#34d399" : v >= 5.5 ? "#22d3ee" : v >= 4 ? "#fbbf24
 
 let anTab = "games", anPage = 0;
 const anRows = () => (!profQuery && profData && !profData.error && profData.games) || [];
+function analysisFocus(analysis) {
+  const skill = analysis.weaknesses[0];
+  if (!skill) return "";
+  const gap = Math.max(0, 5.5 - skill.v).toFixed(1);
+  return '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
+    '<b>Dein Trainingsfokus · ' + esc(skill.label) + '</b><div class="muted">' +
+    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</aside>';
+}
 function analysisRadar(skills) {
   if (skills.length < 3) return "";
   const point = (i, radius) => {
@@ -1213,7 +1245,7 @@ function playerHero(A, opts = {}) {
       <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Moosi-Score · Ø letzte 10 Games</div>
         <div class="pa-mini"><div><b>${A.wr}%</b><span>Winrate · ${A.wins}S ${A.n - A.wins}N</span></div><div><b>${A.kda}</b><span>KDA · ${A.kda_avg}</span></div>${tr ? `<div>${tr}</div>` : ""}</div>
         <div class="chips" style="justify-content:center;margin-top:10px">${A.roles.slice(0, 3).map(r => `<span class="chip">${PA_ROLE[r.r] || r.r} ${r.pct}%</span>`).join("")}</div></div>
-      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${analysisRadar(A.skills)}${sk}</div>
+      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${analysisRadar(A.skills)}${analysisFocus(A)}${sk}</div>
       <div class="pa-sw">
         <div class="pa-box good"><div class="pa-h">Stärken</div>${A.strengths.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span></div>`).join("") || '<div class="muted small">Noch keine klare Stärke – alles im Mittelfeld.</div>'}</div>
         <div class="pa-box bad"><div class="pa-h">Daran arbeiten</div>${A.weaknesses.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span><p class="small muted" style="margin:3px 0 8px">${esc(x.tip)}</p></div>`).join("") || '<div class="muted small">Keine großen Schwächen. Stark!</div>'}</div>

@@ -800,6 +800,14 @@ function paRows(games) {
       score: (gameScores(m)[p.puuid] || {}).score ?? null};
   });
 }
+function analysisFocus(analysis) {
+  const skill = analysis.weaknesses[0];
+  if (!skill) return "";
+  const gap = Math.max(0, 5.5 - skill.v).toFixed(1);
+  return '<aside class="small" style="border-left:3px solid #2dd4bf;padding:8px 10px;margin:8px 0 14px">' +
+    '<b>Dein Trainingsfokus · ' + esc(skill.label) + '</b><div class="muted">' +
+    gap + ' Punkte bis zum Richtwert 5,5</div>' + (skill.tip ? '<div>' + esc(skill.tip) + '</div>' : '') + '</aside>';
+}
 function analysisRadar(skills) {
   if (skills.length < 3) return "";
   const point = (i, radius) => {
@@ -823,7 +831,7 @@ function paCard(A, title) {
   return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Score</span></div>
       <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · als ${PA_ROLE[A.role] || A.role} · 5,5 = gut</div>
         <div class="pa-kpi"><span><b>${A.wr}%</b> WR</span><span><b>${A.kda}</b> KDA</span>${A.trend != null ? `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"}${Math.abs(A.trend).toFixed(1)}</span>` : ""}</div></div></div>
-    ${analysisRadar(A.skills)}
+    ${analysisRadar(A.skills)}${analysisFocus(A)}
     ${A.skills.map(x => `<div class="sk"><span>${esc(x.label)}</span><div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("")}
     ${A.strengths.length ? `<div class="pa-sw good">💪 <b>Stark:</b> ${A.strengths.map(x => esc(x.label)).join(", ")}</div>` : ""}
     ${A.weaknesses.map(x => `<div class="pa-sw bad">🎯 <b>${esc(x.label)} ${x.v.toFixed(1)}:</b> ${esc(x.tip)}</div>`).join("")}
