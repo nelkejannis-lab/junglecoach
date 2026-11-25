@@ -36,10 +36,68 @@ DRILLS = {
     "dmg_share": ("Schadensanteil", "Mehr Zeit in Teamfights statt beim Farmen zu verbringen. Ziel: {t}."),
     "cc": ("CC einsetzen", "CC auf den gefährlichsten Gegner, nicht den nächsten. Ziel: {t} s CC."),
 }
+# what to practise depends on the ROLE: an ADC is not told to "take camps between ganks", a support not to farm
+DRILLS_ROLE = {
+    "TOP": {
+        "cs10": ("Lane-Farm", "Übungstool: 10 Min nur last-hitten, Ziel {t} CS. Im Spiel: vor dem Back die Wave in den Turm pushen, "
+                              "nach dem Back zuerst zur Wave – keine Wave am eigenen Turm verlieren."),
+        "kp": ("Map-Einfluss", "Teleport für Drachen-, Grubs- und Herald-Fights aufheben, nach einem Turm zum Fluss rotieren. Ziel: {t} Kill-Beteiligung."),
+        "deaths": ("Gank-Schutz", "Ohne Sicht im Fluss/Tri-Busch nicht über die Lane-Mitte pushen – Gegner-Jungler-Ganks sind der häufigste "
+                                  "Top-Tod. Ziel: höchstens {t} Tode."),
+        "vpm": ("Vision", "Beim Pushen Ward im Fluss oder Tri-Busch, Control Ward im Fluss-Busch. Ziel: {t} Vision/Min."),
+        "cw": ("Control Wards", "Jeden Back eine Control Ward in den Fluss-Busch auf deiner Seite. Ziel: {t} pro Spiel."),
+        "gpm": ("Gold-Effizienz", "Plates holen, nach der Lane-Phase die Side-Lane farmen, keine Wave verfallen lassen. Ziel: {t} Gold/Min."),
+        "dpm": ("Trades & Duelle", "Kurz traden, wenn die wichtige Fähigkeit des Gegners auf Cooldown ist; in Fights Frontline oder Flanke. Ziel: {t} Schaden/Min."),
+        "drag": ("Objectives", "Mit Lane-Prio zu Grubs/Herald; macht dein Team Drache, Splitpush auf der anderen Seite. Ziel: {t}."),
+        "dmg_share": ("Schadensanteil", "In Fights nicht nur tanken: Fähigkeiten auf Gegner in Reichweite, Flanke suchen. Ziel: {t}."),
+    },
+    "MIDDLE": {
+        "cs10": ("Lane-Farm", "Übungstool: 10 Min last-hitten, Ziel {t} CS. Wave nie für einen Roam verfallen lassen – erst pushen, dann gehen."),
+        "kp": ("Roams", "Nach jeder gepushten Wave: Fluss/Scuttle mit dem Jungler oder Roam bot/top. Ziel: {t} Kill-Beteiligung."),
+        "deaths": ("Weniger sterben", "Mid hat zwei Gank-Seiten: ohne Sicht in beiden Flüssen nicht über die Mitte pushen. Ziel: höchstens {t} Tode."),
+        "vpm": ("Vision", "Je ein Ward links und rechts im Fluss, Control Ward im Mid-Busch. Ziel: {t} Vision/Min."),
+        "cw": ("Control Wards", "Jeden Back eine Control Ward in einen Mid-Busch oder Fluss-Eingang. Ziel: {t} pro Spiel."),
+        "gpm": ("Gold-Effizienz", "Mid-Wave halten und freie Side-Waves nehmen, wenn das Team nichts startet. Ziel: {t} Gold/Min."),
+        "dpm": ("Schaden in Kämpfen", "Poke/Burst auf erreichbare Carries – nicht nur Waves clearen. Ziel: {t} Schaden/Min."),
+        "drag": ("Objectives", "Mid-Prio = Objective-Prio: vor Drache/Grubs die Wave pushen und mit dem Jungler hin. Ziel: {t}."),
+        "dmg_share": ("Schadensanteil", "Du bist einer der zwei Hauptschadensquellen: Fights nur mit Ultimate und Items starten. Ziel: {t}."),
+    },
+    "BOTTOM": {
+        "cs10": ("Last-Hitting", "Übungstool: 10 Min nur last-hitten, Ziel {t} CS. In der Lane: erst die Wave, dann traden – CS ist dein wichtigster Wert."),
+        "kp": ("In Fights dabei", "Ab dem Mid-Game mit Support und Team gruppieren (Drache, Mid) statt alleine vor dem gegnerischen Turm zu farmen. "
+                                  "Ziel: {t} Kill-Beteiligung."),
+        "deaths": ("Positionierung", "In Fights hinten bleiben und den nächsten erreichbaren Gegner schlagen (Front-to-Back); nie ohne Sicht "
+                                     "alleine in eine Side-Lane. Ziel: höchstens {t} Tode."),
+        "vpm": ("Vision", "Trinket immer benutzen (Tri-Busch, Fluss) und jeden Back eine Control Ward – den Großteil macht dein Support. "
+                          "Ziel: {t} Vision/Min."),
+        "cw": ("Control Wards", "Jeden Back eine Control Ward: Bot-Tri-Busch oder Drachen-Eingang. Ziel: {t} pro Spiel."),
+        "gpm": ("Farm-Effizienz", "Mid-Game: freie Side-Waves farmen, aber 60 s vor Objectives zurück beim Team. Ziel: {t} Gold/Min."),
+        "dpm": ("Dauerschaden", "In Fights durchgehend autoattacken und kiten – auf den nächsten erreichbaren Gegner, nicht nur auf den Carry hinten. "
+                                "Ziel: {t} Schaden/Min."),
+        "dmg_share": ("Schadensanteil", "Du bist der Hauptschaden: Kämpfe dort nehmen, wo du sicher schlagen kannst, und mit fertigen Items. Ziel: {t}."),
+        "drag": ("Drachen & Türme", "Nach gewonnener Lane (Push + Prio) sofort Turm-Plates oder Drache mit dem Jungler. Ziel: {t}."),
+    },
+    "UTILITY": {
+        "kp": ("Präsenz", "Nach der Lane-Phase mit dem Jungler Sicht setzen und roamen – bei jedem Fight dabei sein. Ziel: {t} Kill-Beteiligung."),
+        "deaths": ("Weniger sterben", "Facechecks mit Sweeper oder Ward statt mit dem Körper; nie alleine tief in den Gegner-Jungle. "
+                                      "Ziel: höchstens {t} Tode."),
+        "vpm": ("Vision", "Support-Item-Wards nie voll liegen lassen, ab Level 9 Sweeper, vor Objectives 60–90 s früher warden. Ziel: {t} Vision/Min."),
+        "cw": ("Control Wards", "Immer 1–2 Control Wards auf der Map: Fluss + nächstes Objective. Ziel: {t} pro Spiel."),
+        "dpm": ("Lane-Druck", "Harass/Poke, wenn der Gegner last-hittet; in Fights Fähigkeiten auf den gefährlichsten Gegner. Ziel: {t} Schaden/Min."),
+        "drag": ("Objectives", "Sicht um Drache/Baron 60–90 s vorher mit dem Jungler aufbauen, gegnerische Wards räumen. Ziel: {t}."),
+        "cc": ("CC einsetzen", "Engage oder Peel: CC auf den Gegner, der deinen Carry angreift – nicht auf den nächsten. Ziel: {t} s CC."),
+    },
+}
+
+
+def drill(metric, role):
+    return (DRILLS_ROLE.get(role or "JUNGLE") or {}).get(metric) or DRILLS.get(metric)
+
+
 # values that make no sense for a role (junglers and supports don't farm lane minions, laners no jungle camps)
 NOT_FOR_ROLE = {
     "JUNGLE": {"cs10"},
-    "UTILITY": {"cs10", "jcs10", "scuttles", "enemy_jungle", "early_kills", "gpm"},
+    "UTILITY": {"cs10", "jcs10", "scuttles", "enemy_jungle", "early_kills", "gpm", "dmg_share"},
     "TOP": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
     "MIDDLE": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
     "BOTTOM": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
@@ -213,9 +271,11 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     # ---- focus areas: weakness x how much it separates your wins from losses
     impact = {p["metric"]: p["gap"] for p in patterns}
     cands = []
+    roles = [g.get("role") or "JUNGLE" for g in games]
+    main_role = max(set(roles), key=roles.count) if roles else "JUNGLE"
     for w in weaknesses:
         m = w["metric"]
-        if m not in DRILLS:
+        if not drill(m, main_role):
             continue
         weight = (50 - w["percentile"]) + max(0, impact.get(m, 0)) * 1.5
         if cons and cons.get("wobbly", {}).get("metric") == m:
@@ -227,7 +287,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
                         + time.localtime(now).tm_min * 60)
     for _, w in cands[:3]:
         m = w["metric"]
-        title, drill = DRILLS[m]
+        title, drill_txt = drill(m, main_role)
         higher = METRICS[m][1]
         hit = [g for g in games[:10] if m in g["stats"]]
         ok = [g for g in hit if (g["stats"][m] >= w["target"]) == higher or g["stats"][m] == w["target"]]
@@ -236,7 +296,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
         why = f"Du: {w['you']} · besser als {w['percentile']}% · Ziel {w['target_txt']} (Top 25%: {w['top']})"
         if impact.get(m, 0) >= 8:
             why += f" · in Siegen deutlich besser als in Niederlagen"
-        focus.append({"metric": m, "title": title, "why": why, "drill": drill.format(t=w["target_txt"]),
+        focus.append({"metric": m, "title": title, "why": why, "drill": drill_txt.format(t=w["target_txt"]),
                       "target": w["target_txt"], "target_val": w["target"], "higher": higher, "last10": f"{len(ok)}/{len(hit)}",
                       "week": {"done": len(week_ok), "games": len(week)}})
     if tilt.get("rule") and len(focus) < 3:
@@ -253,14 +313,22 @@ def analyze(games, bench, now=None, bench_by_champ=None):
 
     # ---- player type (fun + useful)
     top = {x["metric"]: x["percentile"] for x in profile}
-    if top.get("jcs10", 0) >= 65 and top.get("kp", 50) < 50:
+    lane = main_role in ("TOP", "MIDDLE", "BOTTOM")
+    if lane and top.get("cs10", 0) >= 65 and top.get("kp", 50) < 50:
+        ptype = ("Farm-Maschine", "Du farmst stark, bist aber selten an Kills beteiligt – den Vorsprung in Türme und Teamfights umsetzen.")
+    elif lane and top.get("kp", 0) >= 65 and top.get("cs10", 50) < 45:
+        ptype = ("Teamfighter", "Du bist bei jedem Fight dabei, verlierst aber Farm – zwischen den Fights Side-Waves mitnehmen.")
+    elif main_role == "UTILITY" and top.get("vpm", 0) >= 65 and top.get("kp", 0) >= 55:
+        ptype = ("Map-Kontrolle", "Viel Sicht und überall dabei – genau das, was ein Support liefern soll.")
+    elif main_role == "JUNGLE" and top.get("jcs10", 0) >= 65 and top.get("kp", 50) < 50:
         ptype = ("Farm-Maschine", "Du farmst stark, bist aber selten an Kills beteiligt – nutze dein Tempo für mehr Ganks.")
-    elif top.get("kp", 0) >= 65 and top.get("jcs10", 50) < 45:
+    elif main_role == "JUNGLE" and top.get("kp", 0) >= 65 and top.get("jcs10", 50) < 45:
         ptype = ("Aggro-Ganker", "Du bist überall dabei, vernachlässigst aber den Farm – Ganks mit Camps verbinden.")
     elif top.get("vpm", 0) >= 65 and top.get("drag", 0) >= 55:
         ptype = ("Objective-Kontrolleur", "Du spielst um Sicht und Objectives – das gewinnt Games, weiter so.")
     elif top.get("deaths", 50) <= 35:
-        ptype = ("Draufgänger", "Viele Tode – mehr Infos sammeln, bevor du in den Fight gehst.")
+        ptype = ("Draufgänger", "Viele Tode – mehr Infos sammeln, bevor du in den Fight gehst."
+                 if main_role != "BOTTOM" else "Viele Tode – in Fights weiter hinten stehen und Front-to-Back spielen.")
     elif cons and cons["score"] >= 75:
         ptype = ("Fels in der Brandung", "Sehr konstant – jetzt gezielt deine Schwächen anheben.")
     else:

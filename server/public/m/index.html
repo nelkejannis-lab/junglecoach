@@ -685,22 +685,64 @@ const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, 
 // ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
 // weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
 // rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
-const PA_B = {   // "good" Silver–Platinum values per role (= 5.5 points)
-  TOP: {csm: 6.8, gpm: 390, kda: 2.6, dmg: .25, deaths: 5.2, vpm: .7, kp: 45, obj: .22},
-  JUNGLE: {csm: 5.6, gpm: 370, kda: 3.0, dmg: .18, deaths: 5.0, vpm: 1.0, kp: 60, obj: .30},
-  MIDDLE: {csm: 7.2, gpm: 400, kda: 2.8, dmg: .27, deaths: 5.0, vpm: .7, kp: 55, obj: .15},
-  BOTTOM: {csm: 7.6, gpm: 410, kda: 2.8, dmg: .28, deaths: 5.0, vpm: .55, kp: 55, obj: .18},
-  UTILITY: {csm: 1.2, gpm: 270, kda: 2.9, dmg: .10, deaths: 5.5, vpm: 2.1, kp: 60, obj: .05},
+const PA_B = {   // "good" Silver–Platinum values per role (= 5.5 points). Pro averages for orientation: damage share
+  // bot .26 / mid .26 / top .23 / jungle .16 / support .08, CS/min bot 8.7 / mid 8.3 / top 7.8 / jungle 5.7 / support 1.1
+  TOP: {csm: 6.6, gpm: 380, kda: 2.5, dmg: .23, deaths: 5.2, vpm: .55, kp: 40, obj: .25, fightDmg: .5},
+  JUNGLE: {csm: 5.5, gpm: 360, kda: 3.0, dmg: .16, deaths: 5.0, vpm: .95, kp: 58, obj: .32, fightDmg: .4},
+  MIDDLE: {csm: 6.9, gpm: 390, kda: 2.8, dmg: .26, deaths: 5.0, vpm: .6, kp: 52, obj: .16, fightDmg: .6},
+  BOTTOM: {csm: 7.1, gpm: 400, kda: 2.9, dmg: .27, deaths: 4.8, vpm: .45, kp: 52, obj: .22, fightDmg: .6},
+  UTILITY: {csm: 1.0, gpm: 260, kda: 2.8, dmg: .09, deaths: 5.8, vpm: 1.9, kp: 58, obj: .05, fightDmg: .25},
 };
+// what each skill means and what to do – per ROLE (an ADC is never told to clear camps, a support never to farm)
 const PA_SKILLS = [
-  ["farm", "Farmen", "CS und Gold pro Minute", "Mehr CS: Wellen zwischen Kämpfen mitnehmen, Camps auf dem Weg clearen, nicht ohne Grund recallen."],
-  ["fight", "Kämpfen", "KDA und Schaden-Anteil", "Kämpfe nur mit Level-/Item-Vorteil oder Überzahl nehmen – und dann voll Schaden machen."],
-  ["survive", "Überleben", "Tode pro Game", "Weniger sterben: ohne Sicht nicht vorlaufen, nach Kills zurückziehen, Gegner-Jungler im Kopf behalten."],
-  ["vision", "Vision", "Visionscore pro Minute", "Pro Back eine Control Ward kaufen, Trinket immer benutzen, vor Objectives warden."],
-  ["team", "Teamplay", "Kill-Beteiligung", "Bei Kämpfen und Objectives dabei sein – auf die Map schauen, Team-Fights nicht verpassen."],
-  ["obj", "Objectives", "Schaden an Türmen, Drachen, Baron", "Nach jedem Kill: Turm, Drache oder Grubs – Vorteile in Objectives umwandeln."],
-  ["steady", "Konstanz", "Schwankung deiner Game-Scores", "Gleiche Champions und denselben Plan spielen – weniger Coinflip-Games."],
+  ["farm", "Farmen", "CS und Gold pro Minute"], ["fight", "Kämpfen", "KDA und Schaden-Anteil"], ["survive", "Überleben", "Tode pro Game"],
+  ["vision", "Vision", "Visionscore pro Minute"], ["team", "Teamplay", "Kill-Beteiligung"], ["obj", "Objectives", "Schaden an Türmen, Drachen, Baron"],
+  ["steady", "Konstanz", "Schwankung deiner Game-Scores"],
 ];
+const PA_LBL = {
+  TOP: {fight: "Trades & Duelle", team: "Map-Einfluss", obj: "Türme & Splitpush"},
+  JUNGLE: {farm: "Clear & Farm", team: "Ganks & Präsenz", obj: "Objectives"},
+  MIDDLE: {fight: "Schaden", team: "Roams & Präsenz"},
+  BOTTOM: {farm: "Farmen", fight: "Schaden", survive: "Positionierung", team: "Teamfights", obj: "Türme & Drachen"},
+  UTILITY: {fight: "Kampfbeitrag", team: "Präsenz", obj: "Objective-Sicht"},
+};
+const PA_TIPS = {
+  TOP: {farm: "Vor dem Back die Wave in den Turm pushen, nach dem Back zuerst zur Wave – keine Wave verlieren, Plates holen.",
+    fight: "Kurz traden, wenn die wichtige Fähigkeit des Gegners auf Cooldown ist; Level-6-Spike und Item-Vorsprung nutzen.",
+    survive: "Ohne Sicht im Fluss/Tri-Busch nicht über die Lane-Mitte pushen – Ganks sind der häufigste Top-Tod.",
+    vision: "Beim Pushen ein Ward in den Fluss oder Tri-Busch, jeden Back eine Control Ward.",
+    team: "Teleport für Drachen- und Grubs-Fights aufheben, nach einem Turm zum Fluss rotieren.",
+    obj: "Mit Lane-Vorteil Türme schlagen und splitpushen, während das Team auf der anderen Seite spielt.",
+    steady: "Wenige Champions spielen und jedes Game gleich anfangen – sicherer Lane-Plan statt Coinflip-Trades."},
+  JUNGLE: {farm: "Zwischen Ganks immer ein Camp mitnehmen, Full Clear sauber unter 3:15 – keine Leerlauf-Wege.",
+    fight: "Ganks und Duelle nur mit Level-/Item-Vorteil oder Überzahl; vorher Gegner-Jungler-Position checken.",
+    survive: "Vor jedem Invade oder Facecheck: Weiß ich, wo der Gegner-Jungler ist? Wenn nein, nicht reingehen.",
+    vision: "Control Wards an Objective-Eingängen, ab Min 14 Sweeper, gegnerische Wards um Drache räumen.",
+    team: "Lanes mit Prio und CC ganken, bei Fights auf deiner Seite der Map immer dabei sein.",
+    obj: "Nach jedem Kill: Drache, Grubs oder Herald – Vorteile sofort in Objectives umwandeln.",
+    steady: "Gleiche Start-Route und fester Plan für die ersten 4 Minuten – weniger Coinflip-Games."},
+  MIDDLE: {farm: "Wave nie für einen Roam verfallen lassen – erst pushen, dann gehen; Side-Waves nehmen, wenn nichts los ist.",
+    fight: "Burst/Poke auf erreichbare Carries in Fights, nicht nur Waves clearen; mit Ultimate kämpfen.",
+    survive: "Zwei Gank-Seiten: ohne Sicht in beiden Flüssen nicht über die Lane-Mitte pushen.",
+    vision: "Je ein Ward links und rechts im Fluss, Control Ward im Mid-Busch.",
+    team: "Nach gepushter Wave mit dem Jungler zur Scuttle oder roamen – bot/top helfen.",
+    obj: "Mid-Prio = Objective-Prio: vor Drache/Grubs pushen und mit dem Jungler hin.",
+    steady: "Wenige Champions, fester Lane-Plan – weniger Hochrisiko-Roams ohne Prio."},
+  BOTTOM: {farm: "CS ist dein wichtigster Wert: erst die Wave, dann traden; im Mid-Game freie Side-Waves farmen.",
+    fight: "In Fights durchgehend schlagen und kiten – auf den nächsten erreichbaren Gegner, nicht auf den Carry hinten.",
+    survive: "In Fights hinten bleiben (Front-to-Back) und nie ohne Sicht alleine in eine Side-Lane.",
+    vision: "Trinket immer benutzen und jeden Back eine Control Ward – den Großteil der Sicht macht dein Support.",
+    team: "Ab dem Mid-Game mit Support und Team gruppieren (Drache, Mid), statt alleine vor dem gegnerischen Turm zu stehen.",
+    obj: "Nach gewonnener Lane sofort Turm-Plates und Drache mit dem Jungler – ADCs schlagen Türme am schnellsten.",
+    steady: "Sichere Lane-Phase statt riskanter Trades – Items fertig haben, bevor du kämpfst."},
+  UTILITY: {fight: "Harass/Poke, wenn der Gegner last-hittet; in Fights CC auf den Gegner, der deinen Carry angreift.",
+    survive: "Facechecks mit Sweeper oder Ward statt mit dem Körper; nie alleine tief in den Gegner-Jungle.",
+    vision: "Support-Wards nie voll liegen lassen, ab Level 9 Sweeper, vor Objectives 60–90 s früher warden.",
+    team: "Nach der Lane-Phase mit dem Jungler Sicht setzen und bei jedem Fight dabei sein.",
+    obj: "Sicht um Drache/Baron früh aufbauen und gegnerische Wards räumen – das ist dein Objective-Beitrag.",
+    steady: "Wenige Champions, gleicher Plan: Lane-Druck, dann Sicht – weniger Coinflip-Engages."},
+};
+const paMainRole = G => { const c = {}; G.forEach(g => { if (g.pos) c[g.pos] = (c[g.pos] || 0) + 1; }); return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "MIDDLE"; };
 function playerAnalysis(rows) {
   const G = (rows || []).filter(g => g && !g.remake && g.pos !== undefined);
   if (G.length < 3) return null;
@@ -710,7 +752,7 @@ function playerAnalysis(rows) {
   G.forEach(g => {
     const B = PA_B[g.pos] || PA_B.MIDDLE, kda = (g.kills + g.assists) / Math.max(1, g.deaths);
     if (g.pos !== "UTILITY") per.farm.push(pt(.6 * g.cs_min / B.csm + .4 * (g.gpm || B.gpm) / B.gpm));
-    per.fight.push(pt(.5 * Math.min(2, kda / B.kda) + .5 * (g.dmg_share != null ? g.dmg_share / B.dmg : 1)));
+    per.fight.push(pt((1 - B.fightDmg) * Math.min(2, kda / B.kda) + B.fightDmg * Math.min(2, g.dmg_share != null ? g.dmg_share / B.dmg : 1)));
     per.survive.push(pt(Math.min(2, B.deaths / Math.max(1.5, g.deaths)) * .8 + .2));
     if (g.vpm != null) per.vision.push(pt(g.vpm / B.vpm));
     per.team.push(pt((g.kp || 0) / B.kp));
@@ -720,7 +762,9 @@ function playerAnalysis(rows) {
   const mean = avg(scores);
   const sd = scores.length > 2 ? Math.sqrt(avg(scores.map(x => (x - mean) ** 2))) : null;
   const val = {...Object.fromEntries(Object.entries(per).map(([k, a]) => [k, avg(a)])), steady: sd == null ? null : Math.max(1, Math.min(10, 10.5 - sd * 2.6))};
-  const skills = PA_SKILLS.map(([k, label, what, tip]) => ({k, label, what, tip, v: val[k] == null ? null : Math.round(val[k] * 10) / 10})).filter(s => s.v != null);
+  const role = paMainRole(G);   // labels + tips of the role you play most
+  const skills = PA_SKILLS.map(([k, label, what]) => ({k, label: (PA_LBL[role] || {})[k] || label, what, tip: (PA_TIPS[role] || PA_TIPS.MIDDLE)[k] || "",
+    v: val[k] == null ? null : Math.round(val[k] * 10) / 10})).filter(s => s.v != null && !(role === "UTILITY" && s.k === "farm"));
   const sorted = skills.slice().sort((a, b) => b.v - a.v);
   const champs = {};
   G.forEach(g => { const c = champs[g.champion] ||= {c: g.champion, name: g.name || g.champion, n: 0, w: 0, k: 0, d: 0, a: 0, s: []};
@@ -737,7 +781,7 @@ function playerAnalysis(rows) {
       .sort((x, y) => y.n - x.n || y.wr - x.wr).slice(0, 6),
     roles: Object.entries(roles).sort((x, y) => y[1] - x[1]).map(([r, n]) => ({r, pct: Math.round(100 * n / G.length)})),
     form: G.slice(0, MS_N).map(g => ({win: g.win, score: g.score, c: g.champion})),
-    trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
+    role, trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
   };
 }
 const PA_ROLE = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support"};
@@ -757,7 +801,7 @@ function paRows(games) {
 function paCard(A, title) {
   if (!A) return "";
   return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Moosi-Score</span></div>
-      <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · 5,5 = gut für die Rolle</div>
+      <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · als ${PA_ROLE[A.role] || A.role} · 5,5 = gut</div>
         <div class="pa-kpi"><span><b>${A.wr}%</b> WR</span><span><b>${A.kda}</b> KDA</span>${A.trend != null ? `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"}${Math.abs(A.trend).toFixed(1)}</span>` : ""}</div></div></div>
     ${A.skills.map(x => `<div class="sk"><span>${esc(x.label)}</span><div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("")}
     ${A.strengths.length ? `<div class="pa-sw good">💪 <b>Stark:</b> ${A.strengths.map(x => esc(x.label)).join(", ")}</div>` : ""}
