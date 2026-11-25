@@ -241,6 +241,10 @@
   .hero-banner .art::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,#0b101d 0%,rgba(11,16,29,.94) 34%,rgba(11,16,29,.35) 70%,rgba(11,16,29,.15) 100%),
     linear-gradient(0deg,rgba(11,16,29,.9),transparent 45%); }
   .hero-banner .in { position:relative; display:grid; grid-template-columns:auto 1fr auto; gap:26px; align-items:center; padding:30px 34px; min-height:270px; }
+  .hero-banner.coach-hero .in { grid-template-columns:minmax(0,1fr) auto; }
+  .coach-match-score { padding:14px 18px; border:1px solid var(--line); border-radius:14px; background:#0b101de8; }
+  .coach-match-score strong { display:block; font-size:34px; line-height:1.15; }
+  @media (max-width:900px) { .hero-banner.coach-hero .in { grid-template-columns:1fr; } .coach-match-score { justify-self:start; } }
   .hero-banner .tag { display:inline-flex; gap:6px; align-items:center; font-size:11px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:var(--acc);
     background:rgba(45,212,191,.12); border:1px solid rgba(45,212,191,.3); padding:4px 10px; border-radius:99px; }
   .hero-banner h2 { font-size:44px; line-height:1.05; letter-spacing:-1.2px; margin:12px 0 8px; font-weight:900; }
@@ -459,7 +463,7 @@ function moosiLogo(size = 64) {
 const lm = document.getElementById("logo-m"); if (lm) lm.innerHTML = moosiLogo(40);
 
 let friendsData = null, friendView = null, friendCoach = {}, friendMsg = "";
-async function loadFriends() { try { friendsData = await getJson("/api/friends"); renderRail(); if (view === "friends") render(); } catch (e) {} }
+async function loadFriends() { try { friendsData = await getJson("/api/friends"); renderRail(); if (view === "friends" || view === "coach") render(); } catch (e) {} }
 async function addFriend(rid) {
   rid = (rid || "").trim(); if (!rid) return;
   const r = await fetch("/api/friends", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({add: rid})});
@@ -1333,12 +1337,16 @@ function coachBody(c, who) {
   const pt = c.player_type, cons = c.consistency, t = c.tilt;
   const counts = {}; (c.trend || []).forEach(g => g.champion && (counts[g.champion] = (counts[g.champion] || 0) + 1));
   const mainChamp = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || ((cfgData || {}).champion_pool || [])[0];
-  let h = `<div class="hero-banner"><div class="art" style="background-image:url('${mainChamp ? splash(mainChamp) : ""}')"></div><div class="in">
-      ${ring(c.score, "Leistung")}
+  const roster = friendsData || {};
+  const account = String(c.account || "").toLowerCase();
+  const entry = who ? (roster.friends || []).find(f => f.riot_id.toLowerCase() === account) : roster.me;
+  const recent = entry && (!account || entry.riot_id.toLowerCase() === account) ? entry.recent : null;
+  const matchScore = recent && recent.score_last_10;
+  let h = `<div class="hero-banner coach-hero"><div class="art" style="background-image:url('${mainChamp ? splash(mainChamp) : ""}')"></div><div class="in">
       <div><span class="tag">✦ Dein Spielertyp</span><h2 class="g">${esc(pt.name)}</h2><p>${esc(pt.text)}</p>
         <div class="meta"><span>${c.games} Games${(c.roles || []).length > 1 ? " · " + c.roles.map(r => ROLE_DE[r] || r).join(", ") : ""}</span>${c.account ? `<span>${esc(c.account)}</span>` : ""}
           <span>vs ${esc(c.scope)} · ${c.bench_games.toLocaleString("de-DE")} Games</span>${c.confidence ? `<span title="${esc(c.confidence)}">⚖️ ${esc(c.confidence.split(" – ")[0])}</span>` : ""}</div></div>
-      ${cons ? ring(cons.score, "Konstanz", 110) : ""}</div></div>`;
+      <div class="coach-match-score"><span>Moosi-Score · letzte 10 Matches</span><strong>${Number.isFinite(matchScore) ? matchScore.toFixed(1) + " / 10" : "–"}</strong></div></div></div>`;
   if (!who) h += pcRecap();
   if (c.session_task) h += card("", "",
     `<div style="display:flex;gap:18px;align-items:center">${moosi(c.score >= 60 ? "proud" : "happy", 92)}<div style="flex:1"><div class="fcard"><div class="k">${who ? `Moosis Aufgabe für ${esc(who)}s nächste Session` : "Moosis Aufgabe für deine nächste Session"}</div><h4>${esc(c.session_task.title)}</h4><div class="drill">🎯 ${esc(c.session_task.drill)}</div>

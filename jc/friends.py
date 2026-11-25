@@ -40,9 +40,9 @@ def remove(cfg, rid):
     cfg["friends"] = [f for f in cfg.get("friends", []) if f.lower() != norm(rid).lower()]
 
 
-def _avg_score(games):
+def _avg_score(games, window=20):
     # Moosi-Score: average game score of the last 10 real games – same rule as moosiScore() in the apps
-    sc = [g["score"] for g in sorted(games, key=lambda g: -(g.get("ended") or 0))[:20]
+    sc = [g["score"] for g in sorted(games, key=lambda g: -(g.get("ended") or 0))[:window]
           if g.get("score") is not None and not g.get("remake")][:10]
     return int(sum(round(s * 10) for s in sc) / len(sc) + 0.5) / 10 if sc else None
 
@@ -63,6 +63,7 @@ def summarize(prof):
             "role": (roles[0].get("role") if roles and isinstance(roles[0], dict) else None),
             "recent": {"games": rec.get("games", 0), "wins": rec.get("wins", 0), "kda": rec.get("kda"),
                        "score": _avg_score(prof.get("games") or []),
+                       "score_last_10": _avg_score(prof.get("games") or [], window=10),
                        "score_matches": [g.get("match_id") for g in valid_games if g.get("score") is not None][:10]},
             "at": time.time()}
 
