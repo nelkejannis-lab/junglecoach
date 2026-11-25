@@ -46,9 +46,8 @@ struct WebContainer: UIViewRepresentable {
         web.allowsBackForwardNavigationGestures = true
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator        // shows JavaScript alert()/confirm() as native dialogs
-        let refresh = UIRefreshControl()
-        refresh.addTarget(context.coordinator, action: #selector(Coordinator.reload(_:)), for: .valueChanged)
-        web.scrollView.refreshControl = refresh
+        // no native pull-to-refresh: it reloaded the whole app when scrolling up (the web app refreshes by itself)
+        // (bounce stays, only the reload is gone)
         context.coordinator.web = web
         web.load(URLRequest(url: URL(string: SERVER + "/m/")!))
         return web

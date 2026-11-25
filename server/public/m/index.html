@@ -361,8 +361,8 @@ window.imgFb = el => {
   if (fb && !el.dataset.fb && cur.includes(`/cdn/${S.ver}/`)) { S.ddBad = true; el.dataset.fb = 1; el.src = cur.replace(`/cdn/${S.ver}/`, `/cdn/${fb}/`); return; }
   el.style.visibility = "hidden";
 };
-const cImg = (c, cls = "c") => `<img class="${cls}" src="${DD()}/img/champion/${encodeURIComponent(c)}.png" loading="lazy" onerror="imgFb(this)">`;
-const iImg = i => i ? `<img src="${DD()}/img/item/${i}.png" loading="lazy" onerror="imgFb(this)">` : "<i></i>";
+const cImg = (c, cls = "c") => `<img class="${cls}" src="${DD()}/img/champion/${encodeURIComponent(c)}.png" decoding="async" onerror="imgFb(this)">`;
+const iImg = i => i ? `<img src="${DD()}/img/item/${i}.png" decoding="async" onerror="imgFb(this)">` : "<i></i>";
 const splash = c => `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${encodeURIComponent(c)}_0.jpg`;
 const rankTxt = r => r ? `<span class="tierc ${r.tier}">${r.tier[0] + r.tier.slice(1).toLowerCase()} ${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier) ? "" : r.rank}</span> · ${r.leaguePoints} LP` : '<span class="muted">Unranked</span>';
 const solo = l => (l || []).find(e => e.queueType === "RANKED_SOLO_5x5") || (l || []).find(e => e.queueType === "RANKED_FLEX_SR");
@@ -865,7 +865,7 @@ function gameScores(info) {
 }
 const SPELL = {1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash", 6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
   12: "SummonerTeleport", 13: "SummonerMana", 14: "SummonerDot", 21: "SummonerBarrier", 32: "SummonerSnowball"};
-const sImg = id => SPELL[id] ? `<img src="${DD()}/img/spell/${SPELL[id]}.png" loading="lazy" onerror="imgFb(this)">` : "<i></i>";
+const sImg = id => SPELL[id] ? `<img src="${DD()}/img/spell/${SPELL[id]}.png" decoding="async" onerror="imgFb(this)">` : "<i></i>";
 const POS = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "ADC", UTILITY: "Support"};
 const POS_ORDER = {TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4};
 const QUEUE = {420: "Solo/Duo", 440: "Flex", 400: "Normal", 430: "Normal", 450: "ARAM", 490: "Quickplay", 1700: "Arena", 1900: "URF"};
