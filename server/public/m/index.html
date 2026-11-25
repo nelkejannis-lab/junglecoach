@@ -830,37 +830,53 @@ function gameRow(g, onclick) {
     <div class="res"><span class="${p.win ? "green" : "red"}">${p.win ? "Sieg" : "Niederlage"}</span>${(() => { const v = gameScores(m)[p.puuid]; return v ? `<div style="margin-top:2px">${v.badge ? `<span class="gsb mvp">${v.badge}</span>` : `<span class="muted small" style="font-weight:700">#${v.rank}</span>`} <b style="font-size:15px;color:${paCol(v.score)}">${v.score.toFixed(1)}</b><span class="muted" style="font-size:10px"> Pkt</span></div>` : ""; })()}<div class="muted" style="font-weight:600">${ago < 24 ? ago + " h" : Math.round(ago / 24) + " T"}</div></div></div>`;
 }
 // ---- who played best: same formula as jc/gamescore.py (keep in sync)
+// Game score v2 – same formula as jc/gamescore.py (keep in sync): fixed role reference (5.5 = good player of the
+// role), no win bonus, no lobby stretching, 5 independent categories, ARAM/Arena not scored.
+const GS_Q = new Set([400, 420, 430, 440, 490, 700, 0]);
+const GS_REF = {
+  TOP: {csm: 6.6, gold: .22, dmg: .23, kp: .40, obj: .25, vpm: .55, d10: 1.6},
+  JUNGLE: {csm: 5.5, gold: .21, dmg: .16, kp: .58, obj: .32, vpm: .95, d10: 1.5},
+  MIDDLE: {csm: 6.9, gold: .22, dmg: .26, kp: .52, obj: .16, vpm: .60, d10: 1.5},
+  BOTTOM: {csm: 7.1, gold: .23, dmg: .27, kp: .52, obj: .22, vpm: .45, d10: 1.45},
+  UTILITY: {csm: 1.0, gold: .13, dmg: .09, kp: .58, obj: .05, vpm: 1.9, d10: 1.75, sup: 350},
+  NONE: {csm: 5.5, gold: .20, dmg: .20, kp: .52, obj: .20, vpm: .8, d10: 1.55},
+};
 const GS_W = {
-  DEFAULT: {kp: .20, kda: .18, dmg: .20, gold: .10, cs: .10, vis: .07, tank: .05, obj: .05, deaths: .12},
-  TOP: {kp: .15, kda: .16, dmg: .18, gold: .10, cs: .12, vis: .06, tank: .12, obj: .06, deaths: .12},
-  JUNGLE: {kp: .22, kda: .16, dmg: .14, gold: .08, cs: .08, vis: .08, tank: .08, obj: .14, deaths: .12},
-  UTILITY: {kp: .26, kda: .18, dmg: .08, gold: .04, cs: 0, vis: .24, tank: .08, obj: .04, deaths: .10}};
-const GS_REF = {kp: .8, kda: 8, dmg: .4, gold: .3, cs: 9, tank: .35, obj: .4, deaths: .4};
+  TOP: {res: .25, fight: .25, obj: .20, vis: .08, surv: .22}, JUNGLE: {res: .18, fight: .25, obj: .25, vis: .12, surv: .20},
+  MIDDLE: {res: .25, fight: .30, obj: .10, vis: .10, surv: .25}, BOTTOM: {res: .30, fight: .30, obj: .12, vis: .05, surv: .23},
+  UTILITY: {res: 0, fight: .35, obj: .05, vis: .32, surv: .28}, NONE: {res: .22, fight: .28, obj: .15, vis: .12, surv: .23},
+};
+const GS_L = {res: "Farm & Gold", fight: "Kämpfe", obj: "Objectives", vis: "Vision", surv: "Überleben"};
+const _gsc = new WeakMap();
 function gameScores(info) {
-  const P = info.participants || [], cap = x => Math.max(0, Math.min(1, x)), mins = Math.max(1, (info.gameDuration || 0) / 60), T = {};
-  if (P.length < 2) return {};
-  P.forEach(p => { const t = T[p.teamId] ||= {k: 0, d: 0, dmg: 0, gold: 0, tank: 0, obj: 0};
-    t.k += p.kills || 0; t.d += p.deaths || 0; t.dmg += p.totalDamageDealtToChampions || 0; t.gold += p.goldEarned || 0;
-    t.tank += (p.totalDamageTaken || 0) + (p.damageSelfMitigated || 0); t.obj += p.damageDealtToObjectives || 0; });
-  const out = {};
+  if (_gsc.has(info)) return _gsc.get(info);
+  const P = info.participants || [], out = {};
+  if (P.length < 2 || (info.queueId != null && !GS_Q.has(info.queueId)) || info.gameMode === "ARAM" || info.gameMode === "CHERRY") { _gsc.set(info, out); return out; }
+  const mins = Math.max(1, (info.gameDuration || 0) / 60), team = {};
+  P.forEach(p => { const t = team[p.teamId] ||= {k: 0, dmg: 0, gold: 0, obj: 0};
+    t.k += p.kills || 0; t.dmg += p.totalDamageDealtToChampions || 0; t.gold += p.goldEarned || 0; t.obj += p.damageDealtToObjectives || 0; });
+  const r = (v, ref) => ref ? Math.max(0, Math.min(2, v / ref)) : 1;
   P.forEach(p => {
-    const t = T[p.teamId], role = p.teamPosition || "", w = GS_W[role] || GS_W.DEFAULT, k = p.kills || 0, d = p.deaths || 0, a = p.assists || 0;
-    const cs = (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0);
-    const x = {kp: cap((k + a) / Math.max(1, t.k) / GS_REF.kp), kda: cap((k + a) / Math.max(1, d) / GS_REF.kda),
-      dmg: cap((p.totalDamageDealtToChampions || 0) / Math.max(1, t.dmg) / GS_REF.dmg), gold: cap((p.goldEarned || 0) / Math.max(1, t.gold) / GS_REF.gold),
-      cs: cap(cs / mins / GS_REF.cs), vis: cap((p.visionScore || 0) / mins / (role === "UTILITY" ? 2.5 : 1.5)),
-      tank: cap(((p.totalDamageTaken || 0) + (p.damageSelfMitigated || 0)) / Math.max(1, t.tank) / GS_REF.tank),
-      obj: cap((p.damageDealtToObjectives || 0) / Math.max(1, t.obj) / GS_REF.obj)};
-    const pos = Object.entries(w).filter(([kk]) => kk !== "deaths").reduce((s, [, v]) => s + v, 0);
-    const raw = Object.keys(x).reduce((s, kk) => s + w[kk] * x[kk], 0) - w.deaths * cap(d / Math.max(1, t.d) / GS_REF.deaths);
-    out[p.puuid] = {abs: 8.4 * raw / pos + 1.2 + (p.win ? .4 : 0), win: !!p.win};
+    const t = team[p.teamId], role = GS_W[p.teamPosition] ? p.teamPosition : "NONE", R = GS_REF[role], w = GS_W[role];
+    const k = p.kills || 0, d = p.deaths || 0, a = p.assists || 0, kp = (k + a) / Math.max(1, t.k), dmg = (p.totalDamageDealtToChampions || 0) / Math.max(1, t.dmg);
+    const cs = ((p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0)) / mins;
+    const c = {res: .6 * r(cs, R.csm) + .4 * r((p.goldEarned || 0) / Math.max(1, t.gold), R.gold),
+      obj: r((p.damageDealtToObjectives || 0) / Math.max(1, t.obj), R.obj), vis: r((p.visionScore || 0) / mins, R.vpm),
+      surv: r(R.d10, Math.max(.5, d / mins * 10))};
+    if (role === "UTILITY") { const sup = ((p.totalHealsOnTeammates || 0) + (p.totalDamageShieldedOnTeammates || 0)) / mins;
+      c.fight = .6 * r(kp, R.kp) + .4 * Math.max(r(dmg, R.dmg), r(sup, R.sup)); }
+    else c.fight = .5 * r(dmg, R.dmg) + .5 * r(kp, R.kp);
+    const rr = Object.keys(w).reduce((s, x) => s + w[x] * c[x], 0);
+    const used = Object.keys(w).filter(x => w[x] > 0).sort((x, y) => w[x] * (c[x] - 1) - w[y] * (c[y] - 1));
+    out[p.puuid] = {score: Math.round(Math.max(1, Math.min(10, 5.5 + (rr - 1) * 4.5)) * 10) / 10, win: !!p.win,
+      cats: Object.fromEntries(Object.keys(w).filter(x => w[x] > 0).map(x => [x, Math.round(c[x] * 100) / 100])), why: [GS_L[used[used.length - 1]], GS_L[used[0]]]};
   });
-  const mean = Object.values(out).reduce((t, v) => t + v.abs, 0) / Object.keys(out).length;   // same spread as jc/gamescore.py
-  Object.values(out).forEach(v => { v.score = Math.round(10 * Math.max(1, Math.min(10, 5.5 + (v.abs - mean) * 1.9 + (v.win ? .3 : -.3)))) / 10; delete v.abs; });
-  const order = Object.keys(out).sort((a, b) => out[b].score - out[a].score);
+  const order = Object.keys(out).sort((x, y) => out[y].score - out[x].score);
   order.forEach((u, i) => { out[u].rank = i + 1; out[u].badge = null; });
   const bw = order.find(u => out[u].win);
   if (bw) out[bw].badge = "MVP";
+  Object.values(out).forEach(v => delete v.win);
+  _gsc.set(info, out);
   return out;
 }
 const SPELL = {1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash", 6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
