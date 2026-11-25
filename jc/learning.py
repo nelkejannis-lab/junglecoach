@@ -60,6 +60,15 @@ def _update_task(account, context, plan, games, directory=None, now=None):
                      "Ein Haken bestätigt nur deine eigene Übung, keine Beherrschung.")
     task["evidence"] = [{"match_id": g.get("match_id"), "game_start": g.get("game_start"),
                          "value": g["stats"].get(task["metric"])} for g in sorted(games, key=lambda g: -(g.get("game_start") or 0))[:2]]
+    task["scenes"] = []
+    for g in sorted(games, key=lambda g: -(g.get("game_start") or 0)):
+        for clip in g.get("clips") or []:
+            if g.get("session_id") and clip.get("file"):
+                task["scenes"].append({"session_id": g["session_id"], "file": clip["file"],
+                    "title": clip.get("title") or "Replay-Szene", "kind": clip.get("kind", "review")})
+        if len(task["scenes"]) >= 2:
+            break
+    task["scenes"] = task["scenes"][:2]
     os.makedirs(root, exist_ok=True)
     temporary = path + ".tmp"
     with open(temporary, "w", encoding="utf-8") as f:

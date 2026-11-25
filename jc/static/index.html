@@ -1326,7 +1326,7 @@ function coachBody(c, who) {
   if (!who) h += pcRecap();
   if (c.session_task) h += card("", "",
     `<div style="display:flex;gap:18px;align-items:center">${moosi(c.score >= 60 ? "proud" : "happy", 92)}<div style="flex:1"><div class="fcard"><div class="k">${who ? `Moosis Aufgabe für ${esc(who)}s nächste Session` : "Moosis Aufgabe für deine nächste Session"}</div><h4>${esc(c.session_task.title)}</h4><div class="drill">🎯 ${esc(c.session_task.drill)}</div>
-      <div class="small muted">${esc(c.session_task.check)}</div></div></div></div>`, true);
+      <div class="small muted">${esc(c.session_task.check)}</div>${(c.session_task.scenes || []).map(s => `<a class="small" href="/clips/${encodeURIComponent(s.session_id)}/${encodeURIComponent(s.file)}" target="_blank" rel="noopener">▶ ${esc(s.title)} · selbst prüfen</a>`).join("<br>")}</div></div></div>`, true);
   h += card("Deine Schwerpunkte", "Das bringt dir gerade am meisten Winrate – automatisch gewählt aus Schwächen, die in deinen Niederlagen den Unterschied machen.",
     c.focus.length ? `<div class="focus">${c.focus.map((f, i) => `<div class="fcard"><div class="k">Schwerpunkt ${i + 1}</div><h4>${esc(f.title)}</h4>
       <div class="small muted">${esc(f.why)}</div><div class="drill">🎯 ${esc(f.drill)}</div>

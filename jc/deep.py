@@ -44,7 +44,7 @@ def _targets(champ):
 
 CAUSES = {  # cause -> (label, what to do differently)
     "trade": ("Tausch", "Dein Team hat im selben Moment etwas geholt – prüfe, ob es das wert war."),
-    "outnumbered": ("Mehrere Gegner beteiligt", "Mehr Gegner als Verbündete in der Nähe: ohne Info nicht nachrücken, früher abdrehen."),
+    "outnumbered": ("Mehrere Gegner beteiligt", "Mehrere Gegner waren beteiligt. Prüfe im Clip, ob dein Engage, Rückweg und Unterstützung sinnvoll waren."),
     "deep": ("Tief im Gegner-Jungle", "Invades nur mit Lane-Prio und wenn du weißt, wo der Gegner-Jungler ist."),
     "gold": ("Gold nicht ausgegeben", "Mit viel Gold kein Risiko: erst zurück und kaufen, dann kämpfen."),
     "level": ("Level-Nachteil", "2+ Level hinten: Duelle meiden, farmen und auf Team-Fights warten."),
@@ -266,7 +266,8 @@ def deep_analyze(match, timeline, puuid):
         ts = ev.get("timestamp", 0) / 1000
         if ev.get("type") == "CHAMPION_KILL" and ts < 14 * 60 and \
                 (ev.get("killerId") == pid or pid in ev.get("assistingParticipantIds", [])):
-            lane = pos_by_pid.get(ev.get("victimId"), "?")
+            position = ev.get("position")
+            lane = region(position["x"], position["y"], team) if position else "Ort unbekannt"
             ganks["kills"] += 1
             ganks["by_lane"][lane] = ganks["by_lane"].get(lane, 0) + 1
 
@@ -320,7 +321,7 @@ def deep_analyze(match, timeline, puuid):
         "v": 4, "score_version": SCORE_VERSION,
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
-        "overall": _grade(sum(cats.values()) / len(cats)) if cats else "–",
+        "overall": _grade((shared["score"] - 1) / 9 * 100) if shared else "–",
         "priorities": [{"name": k, "grade": _grade(v), "score": v, "advice": advice[k]} for k, v in ranked[:3]],
         "curve": curve, "deaths": deaths, "death_causes": causes, "death_cost": sum(d["cost"] for d in deaths), "objectives": objectives, "ganks": ganks,
         "stats": {"kp": round(kp * 100), "vision_per_min": round(vpm, 2), "jungle_cs_10": jcs10,
