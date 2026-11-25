@@ -199,12 +199,16 @@ test("own riot key per user: stored, used by the proxy, expired key -> 502 not 4
   r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "PUT", headers: H, body: JSON.stringify({ key }) }), env, ctx);
   const j = await r.json();
   assert.equal(j.set, true); assert.equal(j.tail, "90ab"); assert.ok(!JSON.stringify(j).includes(key));
-  let used = null;
-  globalThis.fetch = async (u, opt) => { used = opt.headers["X-Riot-Token"]; return new Response("{}", { status: 401 }); };
+  const used = [];
+  globalThis.fetch = async (u, opt) => { used.push(opt.headers["X-Riot-Token"]); return new Response("{}", { status: 401 }); };
   r = await worker.fetch(new Request("https://jc.dev/riot/euw1/lol/league/v4/entries/by-puuid/xyz", { headers: H }), env, ctx);
-  assert.equal(used, key);
-  assert.equal(r.status, 502);
-  assert.equal((await r.json()).own, true);
+  assert.equal(used[0], key);                 // own key first …
+  assert.notEqual(used[1], key);              // … expired -> falls back to the server key
+  assert.equal(r.status, 502);                // both rejected -> 502 (not 401: the login is fine)
+  // own key expired but the server key works -> the user just gets the data
+  globalThis.fetch = async (u, opt) => new Response("{}", { status: opt.headers["X-Riot-Token"] === key ? 401 : 200 });
+  r = await worker.fetch(new Request("https://jc.dev/riot/euw1/lol/league/v4/entries/by-puuid/abc", { headers: H }), env, ctx);
+  assert.equal(r.status, 200);
   r = await worker.fetch(new Request("https://jc.dev/api/sync/riotkey", { method: "DELETE", headers: H }), env, ctx);
   assert.equal((await r.json()).set, false);
 });
