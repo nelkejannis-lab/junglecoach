@@ -238,8 +238,14 @@ async function riotProxy(req, url, env, ctx, user) {
   const cacheKey = new Request(target, { method: "GET" });
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
-  const own = await userRiotKey(env, user);
-  const r = await fetch(target, { headers: { "X-Riot-Token": own || await globalRiotKey(env), "User-Agent": "Moosi/1.0", Accept: "application/json" } });
+  let own = await userRiotKey(env, user);
+  const get = (k) => fetch(target, { headers: { "X-Riot-Token": k, "User-Agent": "Moosi/1.0", Accept: "application/json" } });
+  let r = await get(own || await globalRiotKey(env));
+  // an expired OWN key must not block the user while the admin key works: fall back to the server key
+  if ((r.status === 401 || r.status === 403) && own) {
+    const g = await globalRiotKey(env);
+    if (g && g !== own) { r = await get(g); own = null; }
+  }
   // Riot rejecting OUR key (expired dev key) must not look like "your login is invalid" to the apps
   if (r.status === 401 || r.status === 403) {
     return json({ error: own ? "Dein eigener Riot-API-Key ist ungültig oder abgelaufen." : "Riot-API-Key des Servers ist ungültig oder abgelaufen.", riot_key: true, own: !!own,
