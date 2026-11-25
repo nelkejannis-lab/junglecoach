@@ -343,6 +343,7 @@
   .prio-c { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; background:var(--card2); border:1px solid var(--sep); }
   .prio-c.main { border-color:rgba(45,212,191,.5); background:rgba(45,212,191,.08); } .prio-c.alt { border-color:rgba(245,196,81,.3); }
   .prio-c .x { width:28px; height:28px; border:0; border-radius:8px; background:rgba(255,255,255,.06); color:var(--sec); cursor:pointer; } .acc { color:var(--acc); }
+  .gpts { width:58px; flex:none; text-align:center; } .gpts b { display:block; font-size:20px; line-height:1.1; } .gpts span { font-size:10.5px; color:var(--sec); }
 </style>
 </head>
 <body>
@@ -686,7 +687,8 @@ function renderProfile() {
       <div style="width:150px;flex:none"><b class="${g.remake ? "muted" : g.win ? "green" : "red"}">${g.remake ? "Remake" : g.win ? "Sieg" : "Niederlage"}</b>
         <div class="muted small">${esc(g.queue)}${g.role ? " · " + esc(g.role) : ""} · ${g.duration} Min</div><div class="muted small">${ago(g.ended)}</div></div>
       <div style="width:150px;flex:none"><b>${g.kills} / <span class="red">${g.deaths}</span> / ${g.assists}</b><div class="muted small">KDA ${g.kda} · KP ${g.kp}%</div><div class="muted small">${g.cs} CS (${g.cs_min}/Min)</div></div>
-      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-left:auto">${g.items.map(itemImg).join("")}</div><span class="muted">›</span></li>`) +
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-left:auto">${g.items.map(itemImg).join("")}</div>
+      <div class="gpts" title="Game-Score 1–10 (wie in der Rangliste)">${g.score != null && !g.remake ? `<b style="color:${paCol(g.score)}">${g.score.toFixed(1)}</b><span>Punkte</span>` : '<b class="muted">–</b><span>Punkte</span>'}</div><span class="muted">›</span></li>`) +
     `<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
        ${p.has_more ? `<button class="btn sec" onclick="moreGames()" ${profLoading || la.running ? "disabled" : ""}>${profLoading ? "Lädt…" : "20 weitere laden"}</button>
        <button class="btn sec" onclick="loadAllGames()" ${la.running ? "disabled" : ""}>${la.running ? esc(la.message) : "Alle Games laden"}</button>` : '<span class="small muted">Alle verfügbaren Games geladen.</span>'}
