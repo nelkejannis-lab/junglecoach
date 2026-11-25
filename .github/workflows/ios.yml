@@ -2,7 +2,7 @@
 name: iOS app
 on:
   push:
-    branches: ["codex/analysis-coach-v3"]
+    branches: ["codex/analysis-coach-v3", "release/v1.15.0"]
   workflow_dispatch:
     inputs:
       tag:
@@ -32,8 +32,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: Moosi-iOS, path: Moosi.ipa }
       - name: Release
-        if: inputs.tag != ''
+        if: inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.0'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
+          tag_name: ${{ inputs.tag || 'v1.15.0' }}
+          target_commitish: ${{ github.sha }}
           files: Moosi.ipa

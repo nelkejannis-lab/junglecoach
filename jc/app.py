@@ -331,8 +331,10 @@ def coach_plan(gd, cfg, rev, cache=None):
         return {"ready": False, "reason": "Die Vergleichsdatenbank wird noch geladen …"}
     bracket = current_bracket(cfg)
     counts = {}
-    for g in games:
-        key = (g["champion"], g.get("role") or "JUNGLE")
+    for g in games[:30]:
+        if g.get("role") not in coach.NOT_FOR_ROLE:
+            continue
+        key = (g["champion"], g["role"])
         counts[key] = counts.get(key, 0) + 1
     # always compare with good players of the same ROLE (not the same champion) – more data, fairer
     by = {k: ms.benchmarks(None, k[1], bracket) for k in counts}
@@ -352,6 +354,7 @@ def coach_plan(gd, cfg, rev, cache=None):
     plan["session_task"] = update_task(rev.get("account") or cfg.get("riot_id"), main, plan, games)
     plan["analysis_version"] = coach.VERSION
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
+    plan["_cache_key"] = cache_key
     if cache is COACH and plan.get("ready"):
         cloud_bg(cfg, "PUT", "/api/sync/coach", {"plan": mobile_summary(plan)})
     cache["plan"] = plan

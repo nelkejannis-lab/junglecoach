@@ -313,12 +313,14 @@ def deep_analyze(match, timeline, puuid):
         cats = {LABEL[k]: round(v * 50) for k, v in shared["cats"].items()}
         advice = {name: "Rollenbezogener Modellwert aus Matchdaten. Feste Referenz, keine validierte Elo-Norm. "
                   "Prüfe zwei konkrete Szenen; der Messwert allein erklärt keine Ursache." for name in cats}
+    else:
+        cats, advice = {}, {}
     ranked = sorted(cats.items(), key=lambda kv: kv[1])
     return {
         "v": 4, "score_version": SCORE_VERSION,
         "game_start": info.get("gameStartTimestamp", info.get("gameCreation", 0)) / 1000,
         "categories": [{"name": k, "score": v, "grade": _grade(v)} for k, v in cats.items()],
-        "overall": _grade(sum(cats.values()) / len(cats)),
+        "overall": _grade(sum(cats.values()) / len(cats)) if cats else "–",
         "priorities": [{"name": k, "grade": _grade(v), "score": v, "advice": advice[k]} for k, v in ranked[:3]],
         "curve": curve, "deaths": deaths, "death_causes": causes, "death_cost": sum(d["cost"] for d in deaths), "objectives": objectives, "ganks": ganks,
         "stats": {"kp": round(kp * 100), "vision_per_min": round(vpm, 2), "jungle_cs_10": jcs10,

@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 import time
+import threading
+_LOCK = threading.RLock()
 from .paths import DATA_DIR
 
 VERSION = 1
@@ -22,6 +24,10 @@ BEHAVIOUR = {
     "scuttles": "Vor einer Scuttle-Entscheidung Lane-Priorität und verfügbare Alternativen prüfen.",
 }
 def update_task(account, context, plan, games, directory=None, now=None):
+    with _LOCK:
+        return _update_task(account, context, plan, games, directory, now)
+
+def _update_task(account, context, plan, games, directory=None, now=None):
     now = time.time() if now is None else now
     root = directory or os.path.join(DATA_DIR, "learning")
     identity = json.dumps([account or "", *context], ensure_ascii=False)

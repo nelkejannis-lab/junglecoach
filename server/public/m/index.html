@@ -1000,8 +1000,8 @@ function lpToday() {
 function recapCard() {
   const t0 = dayStart(), gs = (S.games || []).filter(g => (g.m.info.gameEndTimestamp || g.m.info.gameCreation) >= t0);
   if (!gs.length) return "";
-  const w = gs.filter(g => g.p.win).length, l = gs.length - w, sc = gs.map(g => (gameScores(g.m.info)[g.p.puuid] || {}));
-  const avg = sc.reduce((t, v) => t + (v.score || 0), 0) / gs.length, mvp = sc.filter(v => v.badge).length;
+  const w = gs.filter(g => g.p.win).length, l = gs.length - w, sc = gs.map(g => (gameScores(g.m.info)[g.p.puuid] || {})).filter(v => Number.isFinite(v.score));
+  const avg = sc.reduce((t, v) => t + v.score, 0) / Math.max(1, sc.length), mvp = sc.filter(v => v.badge).length;
   const lp = lpToday(), task = S.coach && S.coach.session_task, done = task && !!LS.get(taskKey(task.title));
   const mood = w > l && avg >= 5.5 ? "proud" : l >= w + 2 || avg < 4.2 ? "worried" : gs.length >= 6 ? "sleepy" : "happy";
   const say = mood === "proud" ? (mvp ? `${mvp}× MVP – genau so weiter!` : "Starke Session – du spielst sauber.")

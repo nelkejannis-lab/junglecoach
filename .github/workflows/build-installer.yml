@@ -9,7 +9,7 @@ on:
         required: false
         default: ""
   push:
-    branches: ["codex/analysis-coach-v3"]
+    branches: ["codex/analysis-coach-v3", "release/v1.15.0"]
     tags: ["v*"]
 permissions:
   contents: write
@@ -23,6 +23,7 @@ jobs:
         with:
           repository: nelkejannis-lab/junglecoach-data
           path: benchmark-source
+          ref: cc31e54fb4c965d79632cf66ee4c5a40aef0c8a9
       - name: Place benchmark source beside app
         shell: pwsh
         run: Copy-Item -LiteralPath benchmark-source -Destination ../junglecoach-data -Recurse
@@ -46,11 +47,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: Moosi-Setup, path: dist/Moosi-Setup.exe }
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.0'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Moosi-Setup.exe
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.0' && 'v1.15.0') || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Jungle Coach ${{ inputs.tag || github.ref_name }}
+          name: Moosi ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.0' && 'v1.15.0') || github.ref_name }}
           body: "Installer herunterladen, ausführen, fertig. SmartScreen-Warnung: Weitere Informationen → Trotzdem ausführen."
