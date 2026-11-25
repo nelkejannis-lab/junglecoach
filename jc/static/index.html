@@ -339,6 +339,10 @@
   .pick-parts { padding:0 14px 12px 66px; }
   .src-meta { color:var(--purple); border-color:rgba(192,132,252,.3); background:rgba(192,132,252,.1); } .src-pool { color:var(--gold); border-color:rgba(245,196,81,.3); background:rgba(245,196,81,.1); }
   .src-counter { color:#f87171; border-color:rgba(248,113,113,.3); background:rgba(248,113,113,.1); }
+  .prio { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:8px; margin-bottom:12px; }
+  .prio-c { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; background:var(--card2); border:1px solid var(--sep); }
+  .prio-c.main { border-color:rgba(45,212,191,.5); background:rgba(45,212,191,.08); } .prio-c.alt { border-color:rgba(245,196,81,.3); }
+  .prio-c .x { width:28px; height:28px; border:0; border-radius:8px; background:rgba(255,255,255,.06); color:var(--sec); cursor:pointer; } .acc { color:var(--acc); }
 </style>
 </head>
 <body>
@@ -1523,11 +1527,16 @@ function poolHtml() {
   const name = id => (champList.find(c => c.id === id) || {name: id}).name;
   const q = poolQ.trim().toLowerCase();
   const list = champList.filter(c => !q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
-  return `<div class="chips" style="margin-bottom:10px;min-height:32px">${poolSel.map(id => `<button class="chip on" style="display:flex;gap:6px;align-items:center" onclick="poolToggle('${id}')" title="Entfernen">${cImg(id, 22, 7)} ${esc(name(id))} ✕</button>`).join("") || '<span class="muted small">Noch keine Champions gewählt – unten antippen.</span>'}</div>
+  const PRIO = ["Main", "Ausweichpick 1", "Ausweichpick 2"];
+  return `<div class="prio">${poolSel.map((id, i) => `<div class="prio-c ${i === 0 ? "main" : i < 3 ? "alt" : ""}">${cImg(id, 40, 11)}
+      <div style="flex:1;min-width:0"><div class="small ${i === 0 ? "acc" : "muted"}" style="font-weight:700">${PRIO[i] || "Pool"}</div><b>${esc(name(id))}</b></div>
+      ${i ? `<button class="x" onclick="poolMove('${id}',-1)" title="Höher priorisieren">▲</button>` : ""}${i < poolSel.length - 1 ? `<button class="x" onclick="poolMove('${id}',1)" title="Niedriger priorisieren">▼</button>` : ""}
+      <button class="x" onclick="poolToggle('${id}')" title="Entfernen">✕</button></div>`).join("") || '<span class="muted small">Noch keine Champions gewählt – unten antippen. Der erste ist dein Main, die nächsten zwei deine Ausweichpicks.</span>'}</div>
     <div class="tsearch" style="max-width:none;height:42px;margin-bottom:10px"><span class="ic">${svgIcon("search")}</span><input id="poolq" placeholder="Champion suchen …" value="${esc(poolQ)}" oninput="poolQ=this.value;poolRefresh(true)"></div>
     <div class="poolgrid">${list.map(c => `<button class="pc ${poolSel.includes(c.id) ? "on" : ""}" onclick="poolToggle('${c.id}')" title="${esc(c.name)}">${cImg(c.id, 52, 12)}<span>${esc(c.name)}</span></button>`).join("") || '<span class="muted small">Kein Champion gefunden.</span>'}</div>
-    <p class="small muted" style="margin:8px 0 0">${poolSel.length} gewählt · die ersten zwei gelten als deine Mains. Speichern unten mit „Sichern“.</p>`;
+    <p class="small muted" style="margin:8px 0 0">Reihenfolge = Priorität: <b>Main</b>, dann <b>2 Ausweichpicks</b> (falls gebannt/weggepickt oder schlechtes Matchup). Im Champ Select bekommen sie auf ihrer Rolle einen Bonus in der Bewertung. Speichern unten mit „Sichern“.</p>`;
 }
+function poolMove(id, d) { const i = poolSel.indexOf(id), j = i + d; if (i < 0 || j < 0 || j >= poolSel.length) return; [poolSel[i], poolSel[j]] = [poolSel[j], poolSel[i]]; poolRefresh(); }
 function poolToggle(id) { poolSel = poolSel.includes(id) ? poolSel.filter(x => x !== id) : [...poolSel, id]; poolRefresh(); }
 function poolRefresh(keepFocus) {
   const box = document.getElementById("poolbox"); if (!box) return;

@@ -119,7 +119,7 @@ class ChampSelectMetaTests(unittest.TestCase):
         out = champselect.analyze(GD, session, {"champion_pool": ["LeeSin", "Viego"]}, MetaTests.ms)
         # iTero-like ratings: every suggestion (and the own pick) gets 1–10 with its parts
         self.assertTrue(all(1 <= p["rating"] <= 10 for p in out["pick_suggestions"]))
-        self.assertTrue(all(any(x["k"] == "Erfahrung" for x in p["parts"]) for p in out["pick_suggestions"]), out.get("rating_error"))
+        self.assertTrue(all(any(x["k"].startswith("Erfahrung") for x in p["parts"]) for p in out["pick_suggestions"]), out.get("rating_error"))
 
 
 class MergeTests(unittest.TestCase):

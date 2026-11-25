@@ -154,7 +154,7 @@ def role_picks(gd, config, role, allies, prof, taken, meta_stats=None, bracket=N
                 plays_role = _CACHE[k2][1] == role
             except Exception:  # noqa: BLE001
                 plays_role = False
-        if plays_role:
+        if plays_role:   # Main + 2 backups are offered on their role (with a bonus in the rating)
             cand.setdefault(c["id"], set()).add("pool")
     out = []
     for cid, src in cand.items():
@@ -175,7 +175,8 @@ def role_picks(gd, config, role, allies, prof, taken, meta_stats=None, bracket=N
             why.append(f"Meta {ROLE_DE[role]}: Tier {t.get('tier')} · {t.get('winrate')}% WR")
         if "pool" in src:
             score += 6
-            why.append("in deinem Champion-Pool")
+            pi = next((i for i, r in enumerate(pool) if (gd.champ(r) or {}).get("id") == cid), 9)
+            why.append("dein Main" if pi == 0 else f"dein Ausweichpick {pi}" if pi < 3 else "in deinem Champion-Pool")
         out.append({"champion": gd.champ_name(c), "id": cid, "score": round(score), "why": why or ["neutral gegen diese Comp"],
                     "source": "mine" if "mine" in src else "pool" if "pool" in src else "meta"})
     return sorted(out, key=lambda x: -x["score"])[:8]
@@ -187,7 +188,7 @@ def _ap_share(c):
     return m / max(1, a + m)
 
 
-def rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history):
+def rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history, pool=()):
     """Pick rating 1–10 like iTero: the factors in their order of importance –
     1) experience on the champion (iTero: mastery matters by far the most), 2) win rate of the champion in
     this role + elo, 3) lane counter, 4) the other enemies, 5) damage mix of the team. Expected win
@@ -202,7 +203,10 @@ def rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, h
     exp_pts = -5 if n == 0 else -3.5 if n < 3 else -2 if n < 5 else 0 if n < 10 else 1 if n < 20 else 2
     if n >= 8:
         exp_pts += max(-2, min(2, (100 * w / n - 50) * 0.1))
-    parts.append({"k": "Erfahrung", "d": round(exp_pts, 1),
+    prio = next((i for i, ref in enumerate(pool or []) if (gd.champ(ref) or {}).get("id") == cid), None)
+    if prio is not None and prio < 3:   # your own choice: Main / backup picks (comfort, like iTero's mastery)
+        exp_pts += (2.5, 1.5, 1.5)[prio]
+    parts.append({"k": "Erfahrung" + ("" if prio is None or prio > 2 else " · " + ("Main" if prio == 0 else f"Ausweichpick {prio}")), "d": round(exp_pts, 1),
                   "txt": "noch nie gespielt – Erstpick in Ranked kostet viel" if n == 0 else f"{n} Games, {round(100 * w / n)}% WR"})
     if meta_stats is not None and role:
         try:
@@ -318,7 +322,8 @@ def analyze(gd, session, config, meta_stats=None, bracket=None, history=None):
             out["gameplan"] = {"error": str(e), "steps": []}
     # iTero-like ratings: your current pick, every suggestion, and counters to the lane opponent
     try:
-        R = lambda cid: rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history)
+        R = lambda cid: rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history,
+                                  config.get("champion_pool", []))
         if my_champ:
             out["my_rating"] = R(my_champ["id"])
         if meta_stats is not None and lane_enemy and role:
