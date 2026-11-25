@@ -85,7 +85,6 @@ DRILLS_ROLE = {
         "cw": ("Control Wards", "Immer 1–2 Control Wards auf der Map: Fluss + nächstes Objective. Ziel: {t} pro Spiel."),
         "dpm": ("Lane-Druck", "Harass/Poke, wenn der Gegner last-hittet; in Fights Fähigkeiten auf den gefährlichsten Gegner. Ziel: {t} Schaden/Min."),
         "drag": ("Objectives", "Sicht um Drache/Baron 60–90 s vorher mit dem Jungler aufbauen, gegnerische Wards räumen. Ziel: {t}."),
-        "cc": ("CC einsetzen", "Engage oder Peel: CC auf den Gegner, der deinen Carry angreift – nicht auf den nächsten. Ziel: {t} s CC."),
     },
 }
 
@@ -97,11 +96,13 @@ def drill(metric, role):
 # values that make no sense for a role (junglers and supports don't farm lane minions, laners no jungle camps)
 NOT_FOR_ROLE = {
     "JUNGLE": {"cs10"},
-    "UTILITY": {"cs10", "jcs10", "scuttles", "enemy_jungle", "early_kills", "gpm", "dmg_share"},
+    "UTILITY": {"cs10", "jcs10", "scuttles", "enemy_jungle", "early_kills", "gpm", "dmg_share", "solo_kills"},
     "TOP": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
     "MIDDLE": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
-    "BOTTOM": {"jcs10", "scuttles", "enemy_jungle", "early_kills"},
+    "BOTTOM": {"jcs10", "scuttles", "enemy_jungle", "early_kills", "solo_kills"},
 }
+# depends on the champion's kit, not on how well you play (Jinx has almost no CC, Leona a lot) -> never a coaching goal
+KIT_METRICS = {"cc"}
 LAST_GAMES = 10
 CORE = ["jcs10", "cs10", "kp", "vpm", "deaths", "gpm", "dpm", "early_kills", "drag", "cw", "scuttles", "dead_share"]
 
@@ -158,7 +159,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
     now = now or time.time()
     games = sorted([g for g in games if g.get("stats")], key=lambda g: -(g.get("game_start") or 0))[:LAST_GAMES]
     for g in games:  # only values that fit the role played
-        skip = NOT_FOR_ROLE.get(g.get("role") or "JUNGLE", set())
+        skip = NOT_FOR_ROLE.get(g.get("role") or "JUNGLE", set()) | KIT_METRICS
         g["stats"] = {k: v for k, v in g["stats"].items() if k not in skip}
     if not games or not bench:
         return {"ready": False, "reason": "Analysiere zuerst ein paar Ranked-Games (Analyse-Tab) – "
