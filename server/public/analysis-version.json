@@ -1,6 +1,7 @@
 {
-  "version": "1.15.0",
+  "version": "1.15.1",
   "score": 3,
   "coach": 3,
-  "review": 4
+  "review": 4,
+  "profile_cache_versioned": true
 }

@@ -442,7 +442,7 @@ async function refreshGames() {
   if (refreshing || !S.acct || !S.games) return;
   refreshing = true;
   try {
-    const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${S.acct.puuid}/ids?start=0&count=10`, {cache: "no-store"});
+    const ids = await riot(REGION(platform()), `/lol/match/v5/matches/by-puuid/${S.acct.puuid}/ids?start=0&count=20`, {cache: "no-store"});
     const have = new Set(S.games.map(g => g.m.metadata.matchId));
     const fresh = ids.filter(id => !have.has(id));
     if (fresh.length) {
@@ -682,7 +682,7 @@ function socialCards() {
 // Moosi-Score of a player = average game score (1–10) of his last 10 games (no remakes). Used EVERYWHERE
 // (ranking, friend cards, analysis, profile) so a friend has the same number on PC, phone and web.
 const MS_N = 10;
-const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + x, 0) / s.length * 10) / 10 : null; };
+const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + Math.round(x * 10), 0) / s.length) / 10 : null; };
 // ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
 // weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
 // rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
@@ -1135,8 +1135,8 @@ const LBM = {rank: ["Rang", e => e.rs, e => e.r ? rankTxt(e.r) : '<span class="m
   csm: ["CS/min", e => e.a ? e.a.csm : -1, e => e.a ? e.a.csm : "…"],
   vpm: ["Vision", e => e.a ? e.a.vpm : -1, e => e.a ? e.a.vpm + "/min" : "…"]};
 function leaderboard() {
-  const me = {rid: S.me.riot_id, me: true, r: solo(S.league), a: agg((S.games || []).slice(0, 10)), g: S.games};
-  const list = [me].concat((S.friends || []).map(rid => { const d = S.fdata[rid] || {}; return {rid, r: solo(d.league), a: agg(d.games), g: d.games, err: d.err}; }));
+  const me = {rid: S.me.riot_id, me: true, r: solo(S.league), a: agg((S.games || []).slice(0, 20)), g: S.games};
+  const list = [me].concat((S.friends || []).map(rid => { const d = S.fdata[rid] || {}; return {rid, r: solo(d.league), a: agg((d.games || []).slice(0, 20)), g: d.games, err: d.err}; }));
   list.forEach(e => e.rs = rankScore(e.r));
   const [label, key, show] = LBM[S.lbm];
   list.sort((x, y) => key(y) - key(x));
@@ -1148,7 +1148,7 @@ function vFriends() {
   (fl || []).forEach(rid => queueFriend(rid));
   const L = leaderboard();
   const top = L.list.filter(e => e.rid);
-  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Rangliste · letzte 10 Games · dieselbe Liste wie in der PC-App</p>${onlineStrip()}
+  return `<h1>Deine <span class="g">Freunde</span></h1><p class="sub">Score: bis zu 10 bewertbare aus den letzten 20 Matches · alle Queues</p>${onlineStrip()}
     <div class="card"><div class="seg">${Object.entries(LBM).map(([k, [l]]) => `<button class="${S.lbm === k ? "on" : ""}" onclick="S.lbm='${k}';render()">${l}</button>`).join("")}</div>
       ${top.map((e, i) => { const main = e.a && e.a.champs[0] ? e.a.champs[0].c : null;
         return `<div class="lb ${e.me ? "me" : ""}" ${e.me ? "" : `onclick='S.view={friend:${JSON.stringify(e.rid)}};render()'`}>
@@ -1582,3 +1582,4 @@ if ("serviceWorker" in navigator && !(window.webkit && window.webkit.messageHand
 </script>
 </body>
 </html>
+

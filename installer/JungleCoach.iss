@@ -1,6 +1,6 @@
 ; Inno Setup script – builds Moosi-Setup.exe
 #define AppName "Moosi"
-#define AppVersion "1.15.0"
+#define AppVersion "1.15.1"
 #define AppExe "Moosi.exe"
 
 [Setup]
@@ -49,3 +49,4 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 ; User data (settings, statistics, clips) stays in %APPDATA%\JungleCoach and survives updates/uninstall.
+

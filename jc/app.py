@@ -320,41 +320,55 @@ def sync_on_start(cfg):
 
 def coach_plan(gd, cfg, rev, cache=None):
     from . import coach
+    import hashlib
     cache = COACH if cache is None else cache
-    games = (rev.get("games") or []) + (rev.get("other_games") or [])
-    games.sort(key=lambda g: -(g.get("game_start") or 0))
+    games = sorted((rev.get("games") or []) + (rev.get("other_games") or []),
+                   key=lambda g: -(g.get("game_start") or 0))
     if not games:
-        return {"ready": False, "reason": "Noch keine Games analysiert. Die Analyse läuft automatisch nach jedem "
-                                          "Game – oder jetzt im Analyse-Tab starten."}
+        return {"ready": False, "reason": "Noch keine Games analysiert. Starte die Analyse im Analyse-Tab."}
     ms = meta_stats(gd)
     if not ms:
-        return {"ready": False, "reason": "Die Vergleichsdatenbank wird noch geladen …"}
+        return {"ready": False, "reason": "Die Vergleichsdatenbank wird noch geladen."}
     bracket = current_bracket(cfg)
     counts = {}
     for g in games[:30]:
-        if g.get("role") not in coach.NOT_FOR_ROLE:
+        if g.get("role") not in coach.NOT_FOR_ROLE or not g.get("champion"):
             continue
         key = (g["champion"], g["role"])
         counts[key] = counts.get(key, 0) + 1
-    # always compare with good players of the same ROLE (not the same champion) – more data, fairer
-    by = {k: ms.benchmarks(None, k[1], bracket) for k in counts}
-    by = {k: b for k, b in by.items() if b}
+    if not counts:
+        return {"ready": False, "reason": "Keine Spiele mit verlässlich zugeordneter Rolle vorhanden."}
+    revisions = []
+    for path in (meta.AGG_PATH, meta.DB_PATH):
+        try:
+            st = os.stat(path)
+            revisions.append((path, st.st_mtime_ns, st.st_size))
+        except OSError:
+            pass
+    cache_key = hashlib.sha256(json.dumps(
+        [coach.VERSION, bracket, rev.get("account") or cfg.get("riot_id"), revisions,
+         getattr(ms.db, "total_changes", 0), games], sort_keys=True, default=str).encode()).hexdigest()
+    cached = cache.get("plan")
+    if cached and cached.get("_cache_key") == cache_key and time.time() - cached.get("_cached_at", 0) < 300:
+        return cached
     main = max(counts, key=counts.get)
-    games = [g for g in games if (g["champion"], g.get("role") or "JUNGLE") == main]
-    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(None, main[1], None),
-                         bench_by_champ=by)
-    plan["roles"] = sorted({k[1] for k in counts})
+    games = [g for g in games if (g.get("champion"), g.get("role")) == main]
+    # Keep AggStats dispatch: champion fallback must retain global role benchmarks.
+    benchmark = ms.benchmarks(main[0], main[1], bracket) or ms.benchmarks(None, main[1], bracket)
+    plan = coach.analyze([dict(g) for g in games], benchmark, bench_by_champ={main: benchmark})
+    plan["roles"] = [main[1]]
+    hist = games
     try:
         hist = [v for k, v in load_history(rev.get("account")).items() if not k.startswith("__")] or games
         plan["progress"] = coach.progress(hist, plan.get("focus"))
-    except Exception:  # noqa: BLE001 - progress is a bonus, never break the plan
+    except Exception:
         plan["progress"] = []
-    plan["account"] = rev.get("account")
+    plan["account"] = rev.get("account") or cfg.get("riot_id")
     from .learning import update_task
-    plan["session_task"] = update_task(rev.get("account") or cfg.get("riot_id"), main, plan, games)
+    plan["session_task"] = update_task(plan["account"], main, plan, games) if plan.get("ready") else None
     plan["analysis_version"] = coach.VERSION
     plan["_n"], plan["_t"] = len(games), games[0].get("game_start")
-    plan["_cache_key"] = cache_key
+    plan["_cache_key"], plan["_cached_at"] = cache_key, time.time()
     if cache is COACH and plan.get("ready"):
         cloud_bg(cfg, "PUT", "/api/sync/coach", {"plan": mobile_summary(plan)})
     cache["plan"] = plan
@@ -1009,7 +1023,7 @@ def make_handler(gd, cfg, lcu):
                 except Exception as e:
                     return self._send(500, {"error": str(e)})
             if self.path == "/api/friends":
-                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg)))
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg), self_id=ranked.active_account(cfg.get("riot_id")) or cfg.get("riot_id")))
             if self.path == "/api/my-profile":
                 if not cfg.get("auth_token"):
                     return self._send(200, {"login": False})
@@ -1029,7 +1043,12 @@ def make_handler(gd, cfg, lcu):
             if self.path.startswith("/api/coach"):
                 with LOCK:
                     rev = STATE.get("review") or {}
-                return self._send(200, coach_plan(gd, cfg, rev))
+                try:
+                    return self._send(200, coach_plan(gd, cfg, rev))
+                except Exception as e:
+                    from .paths import log_error
+                    log_error("coach_plan", e)
+                    return self._send(500, {"ready": False, "error": str(e), "reason": "Der Coaching-Plan konnte nicht geladen werden."})
             self._send(404, {"error": "not found"})
 
         def _test_key(self, new_key):
@@ -1093,7 +1112,7 @@ def make_handler(gd, cfg, lcu):
                 cfg["friends_updated"] = int(time.time())
                 save_config(cfg)
                 cloud_bg(cfg, "PUT", "/api/sync/friends", {"friends": cfg.get("friends", [])})
-                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg)))
+                return self._send(200, friends.listing(cfg, gd, riot_cred(cfg), lcu, pub=public_profiles(cfg), self_id=ranked.active_account(cfg.get("riot_id")) or cfg.get("riot_id")))
             if self.path == "/api/recording":  # clips on/off, sound, how many games are kept
                 b = self._body()
                 rc = cfg.setdefault("recording", {})
@@ -1245,3 +1264,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

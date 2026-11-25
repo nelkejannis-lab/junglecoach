@@ -564,22 +564,21 @@ const TIER_ORD = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DI
 const DIV_ORD = {IV: 0, III: 1, II: 2, I: 3};
 const rankVal = r => r ? TIER_ORD.indexOf(r.tier) * 400 + (DIV_ORD[r.division] || 0) * 100 + (r.lp || 0) : -1;
 function friendsRanking(fl) {
-  const me = !profQuery && profData && !profData.error ? {me: true, riot_id: profData.riot_id || state.account || "Du", rank: (profData.ranks || {}).solo || (profData.ranks || {}).flex,
-    recent: (A => A ? {games: A.n, wins: A.wins, kda: A.kda, score: A.score} : {})(playerAnalysis(anRows())), presence: {status: "online"}} : null;
-  if (!profData && !profLoading && !profQuery) loadProfile().then(() => view === "friends" && render());
-  const rows = [...(me ? [me] : []), ...fl.filter(f => !f.loading)];
-  if (rows.length < 2) return "";
+  const ownId = (friendsData && friendsData.me && friendsData.me.riot_id) || state.account || (cfgData || {}).riot_id;
+  const me = (friendsData && friendsData.me) || (ownId ? {me: true, riot_id: ownId, loading: true, presence: {status: "online"}} : null);
+  const rows = [...(me ? [me] : []), ...fl.filter(f => !me || f.riot_id.toLowerCase() !== me.riot_id.toLowerCase())];
+  if (!rows.length) return "";
   const wr = f => f.recent && f.recent.games ? Math.round(100 * f.recent.wins / f.recent.games) : null;
   const key = {rank: f => rankVal(f.rank), score: f => (f.recent || {}).score ?? -1, wr: f => wr(f) ?? -1, kda: f => +((f.recent || {}).kda ?? -1)}[frSort];
   rows.sort((a, b) => key(b) - key(a));
   const S_ = [["rank", "Rang"], ["score", "Moosi-Score"], ["wr", "Winrate"], ["kda", "KDA"]];
-  return `<div class="card wide frank"><div class="row" style="border:0;padding:0 0 10px"><h3 style="margin:0">Rangliste</h3>
+  return `<div class="card wide frank"><div class="row" style="border:0;padding:0 0 10px"><div><h3 style="margin:0">Rangliste</h3><span class="small muted">Score: bis zu 10 bewertbare aus den letzten 20 Matches · alle Queues</span></div>
       <div class="seg" style="margin-left:auto">${S_.map(([k, l]) => `<button class="${frSort === k ? "on" : ""}" onclick="frSort='${k}';render()">${l}</button>`).join("")}</div></div>
     <table class="pa-tab fr-tab"><tr><th>#</th><th>Spieler</th><th>Rang</th><th>Moosi-Score</th><th>WR (20)</th><th>KDA</th></tr>
     ${rows.map((f, i) => { const st = (f.presence || {}).status, w = wr(f), sc = (f.recent || {}).score;
       return `<tr class="${f.me ? "mine" : "click"}" ${f.me ? "" : `onclick='openFriend(${JSON.stringify(f.riot_id)})'`}><td><b>${i === 0 ? "👑" : i + 1}</b></td>
         <td><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> <b>${esc((f.jc && f.jc.name) || String(f.riot_id).split("#")[0])}</b>${f.me ? ' <span class="muted small">(du)</span>' : ""}${st === "ingame" ? ' <span class="green small">im Spiel</span>' : ""}</td>
-        <td>${f.rank ? rankTxt(f.rank) : '<span class="muted">Unranked</span>'}</td>
+        <td>${f.loading ? '<span class="muted">Lädt …</span>' : f.error ? `<span class="red">${esc(f.error)}</span>` : f.rank ? rankTxt(f.rank) : '<span class="muted">Unranked</span>'}</td>
         <td><b style="color:${sc != null ? paCol(sc) : "inherit"}">${sc != null ? sc.toFixed(1) : "–"}</b></td>
         <td class="${w == null ? "" : w >= 50 ? "green" : "red"}">${w ?? "–"}${w == null ? "" : "%"}</td><td>${(f.recent || {}).kda ?? "–"}</td></tr>`; }).join("")}</table></div>`;
 }
@@ -1032,7 +1031,7 @@ function replayCard(g) {
 // Moosi-Score of a player = average game score (1–10) of his last 10 games (no remakes). Used EVERYWHERE
 // (ranking, friend cards, analysis, profile) so a friend has the same number on PC, phone and web.
 const MS_N = 10;
-const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + x, 0) / s.length * 10) / 10 : null; };
+const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + Math.round(x * 10), 0) / s.length) / 10 : null; };
 // ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
 // weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
 // rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
@@ -1266,9 +1265,26 @@ async function finishOnboarding() {
 }
 
 // ------------------------------------------------------------ COACH
-async function loadCoach() { try { coachData = await getJson("/api/coach"); if (view === "coach") render(); } catch (e) {} }
+async function loadCoach() {
+  if (loadCoach.busy) return;
+  loadCoach.busy = true;
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    const response = await fetch("/api/coach", {signal: controller.signal});
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || data.reason || "Coach nicht erreichbar");
+    coachData = data;
+  } catch (e) {
+    coachData = {ready: false, error: e.name === "AbortError" ? "Die Anfrage dauert zu lange. Bitte erneut versuchen." : e.message};
+  } finally {
+    clearTimeout(timer); loadCoach.busy = false;
+    if (view === "coach") render();
+  }
+}
 function renderCoach() {
   const c = coachData;
+  if (c && c.error) return page("Coach", "Der Coaching-Plan konnte nicht geladen werden.",
+    card("", "", `<p class="red">${esc(c.error)}</p><button class="btn" onclick="coachData=null;loadCoach();render()">Erneut versuchen</button>`, true));
   if (!c) return page("Coach", "Lade deinen Coaching-Plan …", card("", "", `<div class="skel" style="height:140px"></div>`, true));
   const rs = state.review_status || {};
   if (!c.ready && rs.running) return page("Coach", "Dein Coach analysiert gerade automatisch deine letzten Ranked-Games – alle Rollen.",
@@ -1804,3 +1820,4 @@ setInterval(() => { if (view === "ranked") loadRanked(); if (view === "meta") lo
 </script>
 </body>
 </html>
+

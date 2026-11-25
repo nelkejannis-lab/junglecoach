@@ -160,6 +160,9 @@ def _load_disk(key):
     try:
         with open(_disk_file(key), encoding="utf-8") as f:
             out = json.load(f)
+        from .gamescore import VERSION
+        if out.get("_score_version") != VERSION:
+            return None
         out["_seen"] = set(out.get("_seen", []))
         if out.get("games") and "pos" not in out["games"][0]:
             return None   # saved by an older version (no analysis fields)
@@ -195,7 +198,11 @@ def _fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=12
     allow_stale: show the last saved profile instantly and refresh it in the background."""
     flt = queue if queue in FILTERS else "all"
     key = (riot_id.lower(), flt)
+    from .gamescore import VERSION
     cached = _mem.get(key)
+    if cached and cached.get("_score_version") != VERSION:
+        _mem.pop(key, None)
+        cached = None
     if cached is None and not more:
         disk = _load_disk(key)
         if disk:
@@ -282,7 +289,7 @@ def _fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=12
                "version": gd.version if gd else None, "_next": nxt, "_seen": set(ids)}
     champs, roles = aggregate(out["games"])
     valid = [g for g in out["games"] if not g["remake"]]
-    out.update(champions=champs, roles=roles, _t=time.time(),
+    out.update(champions=champs, roles=roles, _score_version=VERSION, _t=time.time(),
                recent={"games": len(valid), "wins": sum(g["win"] for g in valid),
                        "kda": round(sum(g["kills"] + g["assists"] for g in valid) / max(1, sum(g["deaths"] for g in valid)), 2),
                        "kp": round(sum(g["kp"] for g in valid) / max(1, len(valid)))})
@@ -417,3 +424,4 @@ def match_detail(api_key, platform, match_id, puuid, gd=None):
         except Exception as e:
             out["analysis_error"] = str(e)
     return out
+

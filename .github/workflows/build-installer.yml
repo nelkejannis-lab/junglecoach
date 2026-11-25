@@ -9,7 +9,7 @@ on:
         required: false
         default: ""
   push:
-    branches: ["codex/analysis-coach-v3", "release/v1.15.0"]
+    branches: ["codex/fix-coach-leaderboard", "release/v1.15.1"]
     tags: ["v*"]
 permissions:
   contents: write
@@ -47,11 +47,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: Moosi-Setup, path: dist/Moosi-Setup.exe }
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.0'
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != '' || github.ref == 'refs/heads/release/v1.15.1'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Moosi-Setup.exe
-          tag_name: ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.0' && 'v1.15.0') || github.ref_name }}
+          tag_name: ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.1' && 'v1.15.1') || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Moosi ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.0' && 'v1.15.0') || github.ref_name }}
+          name: Moosi ${{ inputs.tag || (github.ref == 'refs/heads/release/v1.15.1' && 'v1.15.1') || github.ref_name }}
           body: "Installer herunterladen, ausführen, fertig. SmartScreen-Warnung: Weitere Informationen → Trotzdem ausführen."
+

@@ -42,22 +42,28 @@ def remove(cfg, rid):
 
 def _avg_score(games):
     # Moosi-Score: average game score of the last 10 real games – same rule as moosiScore() in the apps
-    sc = [g["score"] for g in games if g.get("score") is not None and not g.get("remake")][:10]
-    return round(sum(sc) / len(sc), 1) if sc else None
+    sc = [g["score"] for g in sorted(games, key=lambda g: -(g.get("ended") or 0))[:20]
+          if g.get("score") is not None and not g.get("remake")][:10]
+    return int(sum(round(s * 10) for s in sc) / len(sc) + 0.5) / 10 if sc else None
 
 
 def summarize(prof):
     solo = (prof.get("ranks") or {}).get("solo") or (prof.get("ranks") or {}).get("flex")
     champs = prof.get("champions") or []
     roles = prof.get("roles") or []
-    rec = prof.get("recent") or {}
+    valid_games = [g for g in sorted(prof.get("games") or [], key=lambda g: -(g.get("ended") or 0))[:20] if not g.get("remake")]
+    rec = {"games": len(valid_games), "wins": sum(bool(g.get("win")) for g in valid_games),
+           "kda": round(sum(g.get("kills", 0) + g.get("assists", 0) for g in valid_games) /
+                        max(1, sum(g.get("deaths", 0) for g in valid_games)), 2)} if valid_games else {}
+
     return {"riot_id": prof.get("riot_id"), "icon": prof.get("icon"), "level": prof.get("level"),
             "rank": {"tier": solo["tier"], "division": solo["division"], "lp": solo["lp"], "winrate": solo["winrate"]}
             if solo else None,
             "top": [c.get("champion") for c in champs[:3] if c.get("champion")],
             "role": (roles[0].get("role") if roles and isinstance(roles[0], dict) else None),
             "recent": {"games": rec.get("games", 0), "wins": rec.get("wins", 0), "kda": rec.get("kda"),
-                       "score": _avg_score(prof.get("games") or [])},
+                       "score": _avg_score(prof.get("games") or []),
+                       "score_matches": [g.get("match_id") for g in valid_games if g.get("score") is not None][:10]},
             "at": time.time()}
 
 
@@ -98,12 +104,15 @@ def presence(lcu):
     return out, names
 
 
-def listing(cfg, gd, cred, lcu=None, max_age=900, pub=None):
+def listing(cfg, gd, cred, lcu=None, max_age=300, pub=None, self_id=None):
     platform = cfg.get("platform", "euw1")
     pres, client = presence(lcu)
     saved = cfg.get("friends", [])
+    own = norm(self_id or cfg.get("riot_id"))
+    own = own if valid(own) else None
+    roster = list(dict.fromkeys([*saved, *([own] if own else [])]))
     res = []
-    for rid in saved:
+    for rid in roster:
         key = rid.lower()
         s = SUMMARY.get(key)
         if cred and (not s or time.time() - s.get("at", 0) > max_age) and key not in _busy:
@@ -121,7 +130,8 @@ def listing(cfg, gd, cred, lcu=None, max_age=900, pub=None):
     res.sort(key=lambda f: order.get(f["presence"]["status"], 5))
     saved_l = {f.lower() for f in saved}
     suggestions = [c for c in client if c["riot_id"].lower() not in saved_l][:12]
-    return {"friends": res, "client": suggestions}
+    me = next((dict(f, me=True, presence={"status": "online"}) for f in res if own and f["riot_id"].lower() == own.lower()), None)
+    return {"me": me, "friends": [f for f in res if not own or f["riot_id"].lower() != own.lower()], "client": suggestions}
 
 
 def start_coach(cfg, gd, cred, rid, plan_fn):
@@ -150,3 +160,4 @@ def start_coach(cfg, gd, cred, rid, plan_fn):
 def coach_state(rid):
     c = COACH.get(norm(rid).lower()) or {}
     return {k: v for k, v in c.items() if not k.startswith("_")}
+
