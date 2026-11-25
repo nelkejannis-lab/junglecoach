@@ -193,9 +193,13 @@ def fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120
         return _fetch(api_key, platform, riot_id, gd, count, flt, max_age, False, False)
 
 
+REFRESH_UNTIL = 0
+
 def _fetch(api_key, platform, riot_id, gd=None, count=20, queue=None, max_age=120, more=False, allow_stale=True):
     """queue: filter key (all/solo/flex/ranked/normal/aram/arena). more=True appends the next page.
     allow_stale: show the last saved profile instantly and refresh it in the background."""
+    if time.time() < REFRESH_UNTIL:
+        max_age, allow_stale = 0, False
     flt = queue if queue in FILTERS else "all"
     key = (riot_id.lower(), flt)
     from .gamescore import VERSION

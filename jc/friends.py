@@ -91,14 +91,14 @@ def presence(lcu):
     except Exception:  # noqa: BLE001
         fl = None
     for f in fl or []:
-        name, tag = f.get("gameName"), f.get("gameTag")
+        name, tag = f.get("gameName") or f.get("name"), f.get("gameTag") or f.get("tagLine")
         if not name or not tag:
             continue
         rid = f"{name}#{tag}"
-        av = f.get("availability") or "offline"
+        av = str(f.get("availability") or "unknown").lower()
         game = ((f.get("lol") or {}).get("gameStatus") or "")
         status = ("ingame" if game in ("inGame", "championSelect") or av == "dnd" else
-                  "online" if av in ("chat", "mobile") else "away" if av == "away" else "offline")
+                  "online" if av in ("chat", "mobile", "online") else "away" if av == "away" else "offline" if av in ("offline", "invisible") else "unknown")
         out[rid.lower()] = {"status": status, "game": game}
         names.append({"riot_id": rid, "status": status})
     return out, names
@@ -123,6 +123,8 @@ def listing(cfg, gd, cred, lcu=None, max_age=300, pub=None, self_id=None):
         p_ = dict(pres.get(key, {"status": "unknown"}))
         if jc and jc.get("status") and jc["status"].get("state") in ("ingame", "champselect"):
             p_ = {"status": "ingame", "game": jc["status"]["state"], "champ": jc["status"].get("champ")}
+        elif jc and (jc.get("status") or {}).get("state") == "online" and p_.get("status") in ("unknown", "offline"):
+            p_ = {"status": "online", "source": "moosi"}
         res.append({**(s or {"riot_id": rid, "loading": True}), "riot_id": rid, "jc": jc,
                     "presence": p_,
                     "coach": {"status": c.get("status"), "score": (c.get("plan") or {}).get("score")}})

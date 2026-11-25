@@ -289,7 +289,7 @@ async function riotKeyEndpoint(req, env, user) {
 async function ensureData(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_data (user_id INTEGER PRIMARY KEY, friends TEXT, coach TEXT,
     updated_at INTEGER, friends_at INTEGER, profile TEXT, status TEXT, status_at INTEGER)`).run();
-  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER", "riot_key TEXT", "notes TEXT", "notes_at INTEGER"]) {
+  for (const col of ["friends_at INTEGER", "profile TEXT", "status TEXT", "status_at INTEGER", "riot_key TEXT", "notes TEXT", "notes_at INTEGER", "presence TEXT", "presence_at INTEGER"]) {
     try { await env.DB.prepare(`ALTER TABLE user_data ADD COLUMN ${col}`).run(); } catch { /* exists */ }
   }
 }
@@ -312,13 +312,13 @@ function cleanProfile(p) {
     show_status: p.show_status !== false,
   };
 }
-const COL_AT = { friends: "friends_at", coach: "updated_at", profile: "updated_at", notes: "notes_at" };
+const COL_AT = { presence: "presence_at", friends: "friends_at", coach: "updated_at", profile: "updated_at", notes: "notes_at" };
 async function sync(req, env, user, kind) {
   await ensureData(env);
   if (req.method === "GET") {
     const row = await env.DB.prepare(`SELECT ${kind} AS v, ${COL_AT[kind] || "updated_at"} AS at FROM user_data WHERE user_id = ?`).bind(user.id).first();
     const v = row && row.v ? JSON.parse(row.v) : (kind === "friends" ? [] : kind === "profile" ? cleanProfile({}) : null);
-    return json({ [kind]: v, updated_at: row ? row.at : null });
+    return json({ [kind]: kind === "presence" && (!row || Date.now() / 1000 - row.at > 120) ? {} : v, updated_at: row ? row.at : null });
   }
   if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
   const raw = await req.text();
@@ -335,7 +335,9 @@ async function sync(req, env, user, kind) {
     return json({ ok: true });
   }
   let v;
-  if (kind === "friends") {
+  if (kind === "presence") {
+    v = Object.fromEntries(Object.entries(body.presence || {}).filter(([rid, st]) => RIOT_ID.test(rid) && ["online", "ingame", "away", "offline", "unknown"].includes(st)).slice(0, 50).map(([rid, st]) => [rid.toLowerCase(), st]));
+  } else if (kind === "friends") {
     v = [...new Set((Array.isArray(body.friends) ? body.friends : []).map((f) => String(f).trim()).filter((f) => RIOT_ID.test(f)))].slice(0, 50);
   } else if (kind === "profile") {
     v = cleanProfile(body.profile);
@@ -456,6 +458,7 @@ export default {
         if (p === "/api/sync/friends") return await sync(req, env, user, "friends");
         if (p === "/api/sync/coach") return await sync(req, env, user, "coach");
         if (p === "/api/sync/profile") return await sync(req, env, user, "profile");
+        if (p === "/api/sync/presence") return await sync(req, env, user, "presence");
         if (p === "/api/sync/status") return await sync(req, env, user, "status");
         if (p === "/api/sync/accounts") return await accountsApi(req, env, user);
         if (p.startsWith("/api/social/")) return await socialApi(req, env, user, p, url);
@@ -494,3 +497,4 @@ export default {
     }
   },
 };
+

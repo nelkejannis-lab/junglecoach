@@ -540,7 +540,7 @@ def report_status(cfg, phase, champ=None):
     if not cfg.get("auth_token"):
         return
     state = ("ingame" if phase in ("InProgress", "GameStart", "Reconnect") else "champselect" if phase == "ChampSelect"
-             else "offline" if phase in (None, "Offline") else "online")
+             else "online")
     key = (state, champ)
     if key == STATUS["sent"] and time.time() - STATUS["at"] < 90:
         return
@@ -549,6 +549,17 @@ def report_status(cfg, phase, champ=None):
     STATUS["sent"], STATUS["at"] = key, time.time()
     cloud_bg(cfg, "PUT", "/api/sync/status", {"state": state, "champ": champ, "since": STATUS.get("since")})
 
+
+FRIEND_PRESENCE_AT = 0
+
+def sync_friend_presence(cfg, lcu):
+    global FRIEND_PRESENCE_AT
+    if not cfg.get("auth_token") or time.time() - FRIEND_PRESENCE_AT < 30:
+        return
+    FRIEND_PRESENCE_AT = time.time()
+    pres, _ = friends.presence(lcu)
+    saved = {rid.lower() for rid in cfg.get("friends", [])}
+    cloud_bg(cfg, "PUT", "/api/sync/presence", {"presence": {rid: p["status"] for rid, p in pres.items() if rid in saved}})
 
 PUBLIC = {"data": {}, "at": 0}
 
@@ -591,6 +602,7 @@ def poll_loop(gd, cfg, lcu):
                 if phase in ("InProgress", "ChampSelect"):
                     champ = (STATE.get("live") or {}).get("_me_id") or (STATE.get("champ_select") or {}).get("my_champion_id")
                 report_status(cfg, phase, champ)
+                sync_friend_presence(cfg, lcu)
             except Exception:  # noqa: BLE001
                 pass
             cs = live_state = None
@@ -784,6 +796,9 @@ def make_handler(gd, cfg, lcu):
                 pass  # the player cancelled this request (normal while seeking)
 
         def do_GET(self):
+            if self.path == "/api/update":
+                from . import updater
+                return self._send(200, updater.check())
             if self.path == "/i18n_en.js":
                 with open(os.path.join(STATIC, "i18n_en.js"), "rb") as f:
                     return self._send(200, f.read(), "application/javascript")
@@ -1082,6 +1097,21 @@ def make_handler(gd, cfg, lcu):
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
         def do_POST(self):
+            if self.path == "/api/refresh":
+                friends.SUMMARY.clear()
+                COACH.clear()
+                PUBLIC["at"] = 0
+                profile.REFRESH_UNTIL = time.time() + 60
+                profile._mem.clear()
+                return self._send(200, {"ok": True})
+            if self.path == "/api/update/open":
+                from . import updater
+                import webbrowser
+                info = updater.check()
+                if not info.get("available"):
+                    return self._send(409, {"error": "Kein Update verfügbar."})
+                opened = webbrowser.open(info["url"])
+                return self._send(200 if opened else 500, {"ok": opened, "error": None if opened else "Browser konnte nicht geöffnet werden."})
             if self.path in ("/api/logout", "/api/delete-account"):
                 if self.path == "/api/delete-account" and cfg.get("auth_token"):
                     try:

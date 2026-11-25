@@ -1609,12 +1609,46 @@ function poolRefresh(keepFocus) {
   const g2 = box.querySelector(".poolgrid"); if (g2 && !keepFocus) g2.scrollTop = st;
   if (keepFocus) { const i = document.getElementById("poolq"); if (i && document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
 }
+let updateInfo = null, updateBusy = false, updateMessage = "";
+async function checkUpdate() {
+  if (updateBusy) return;
+  updateBusy = true;
+  try { updateInfo = await getJson("/api/update"); } catch(e) { updateInfo = {error: "Update-Prüfung gerade nicht möglich."}; }
+  updateBusy = false; render();
+  if (updateInfo.available && !checkUpdate.notified) {
+    checkUpdate.notified = true;
+    if (confirm("Moosi " + updateInfo.latest + " ist verfügbar. Update jetzt herunterladen?")) openUpdate();
+  }
+}
+async function openUpdate() {
+  try { const r = await fetch("/api/update/open", {method: "POST"}); const d = await r.json(); updateMessage = d.ok ? "Download im Browser geöffnet. Installer ausführen, um Moosi zu aktualisieren." : d.error; }
+  catch(e) { updateMessage = "Download konnte nicht geöffnet werden. Bitte erneut versuchen."; }
+  render();
+}
+function updateCard(always = false) {
+  const u = updateInfo || {};
+  if (!always && !u.available) return "";
+  return '<div class="card wide"><h3>' + (u.available ? 'Moosi ' + esc(u.latest) + ' ist verfügbar' : 'App-Updates') + '</h3><p>' + esc(u.error || (u.available ? 'Eine neue PC-Version ist bereit. Deine Einstellungen bleiben erhalten.' : u.current ? 'Installiert: ' + u.current + ' · Aktuell' : 'Version wird geprüft.')) + '</p>' + (u.available ? '<button class="btn" onclick="openUpdate()">Update herunterladen</button> ' : '') + '<button class="btn" onclick="checkUpdate()">' + (updateBusy ? 'Prüfe …' : 'Nach Updates suchen') + '</button><p class="hint">' + esc(updateMessage) + '</p></div>';
+}
+let refreshBusy = false, refreshMessage = "";
+async function refreshData() {
+  if (refreshBusy) return;
+  refreshBusy = true; refreshMessage = "Daten werden neu angefordert …"; render();
+  try {
+    const r = await fetch("/api/refresh", {method: "POST"}); if (!r.ok) throw Error("Aktualisierung fehlgeschlagen");
+    coachData = null; profData = null; friendsData = null;
+    await Promise.all([loadFriends(), loadProfile(), loadRanked(), loadCoach(), loadMyProfile()]);
+    refreshMessage = "Neu angefordert um " + new Date().toLocaleTimeString() + ". Freundes-Stats werden im Hintergrund nachgeladen.";
+  } catch(e) { refreshMessage = e.message; }
+  finally { refreshBusy = false; render(); }
+}
+function refreshCard() { return '<div class="card wide"><h3>Daten aktualisieren</h3><p>Stats, Profil, Coach und Freundestatus neu laden.</p><button class="btn" onclick="refreshData()" ' + (refreshBusy ? 'disabled' : '') + '>' + (refreshBusy ? '↻ Wird aktualisiert …' : '↻ Jetzt aktualisieren') + '</button><p class="hint">' + esc(refreshMessage) + '</p></div>'; }
 function renderSettings() {
   const c = cfgData;
   if (!c) return page("Einstellungen", "Lade…", "");
   const regions = ["euw1", "eun1", "na1", "kr", "br1", "la1", "la2", "oc1", "tr1", "ru", "jp1"];
   return page("Einstellungen", "Einmal einrichten – alles wird automatisch gespeichert, wenn du auf Sichern tippst.",
-    accountCard() + profileCard() + overlayCard() + recCard() +
+    refreshCard() + updateCard(true) + accountCard() + profileCard() + overlayCard() + recCard() +
     card("Dein Spieler", "Wessen Profil und Games die App zeigt.", `
       <label class="f">Riot ID</label><input class="f" id="s_riot" value="${esc(c.riot_id)}" placeholder="Name#EUW">
       <label class="f">Region</label><select class="f" id="s_platform">${regions.map(r => `<option ${r === c.platform ? "selected" : ""}>${r}</option>`).join("")}</select>
@@ -1744,7 +1778,7 @@ function render() {
   $("#tright").innerHTML = tr(topRight()); renderRail();
   const R = {friends: renderFriends, coach: renderCoach, profile: renderProfile, ranked: renderRanked, select: renderSelect, live: renderLive, analyse: renderAnalyse, meta: renderMeta, settings: renderSettings};
   const gate = needsOnboarding();
-  const html = gate ? renderOnboarding() : R[view]();
+  const html = (view !== "settings" ? updateCard() : "") + (gate ? renderOnboarding() : R[view]());
   const vkey = gate ? "onboarding" : view;
   const main = $("#main");
   const tmp = document.createElement("div"); tmp.innerHTML = html; translateTree(tmp);
@@ -1811,6 +1845,7 @@ function togglePlay() {
   playTimer = setInterval(() => { replayMin++; if (replayMin >= 15) { clearInterval(playTimer); playTimer = null; } render(); }, 700);
   render();
 }
+setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 3600000);
 loadCfg(); loadChampList(); loadFriends(); loadMyProfile(); go("coach"); tick();
 setTimeout(() => { loadMeta(); loadTier(); }, 4000);  // Meta tab is ready before you open it
 setInterval(() => { if (!document.hidden && view !== "meta") loadMeta(); }, 300000);

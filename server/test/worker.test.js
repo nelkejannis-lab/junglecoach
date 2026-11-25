@@ -239,3 +239,18 @@ test("admin: one-time claim, global riot key used for everyone", async () => {
   r = await worker.fetch(new Request("https://jc.dev/api/me", { headers: HA }), env, ctx);
   assert.equal((await r.json()).is_admin, true);
 });
+
+
+test("client presence is private per account and expires", async () => {
+  const secret = (await env.DB.prepare("SELECT value FROM config WHERE key = 'jwt_secret'").first()).value;
+  const headers = async uid => ({authorization: "Bearer " + await sign({uid, exp:Date.now()/1000+600}, secret)});
+  const url = "https://jc.dev/api/sync/presence";
+  let r = await worker.fetch(new Request(url,{method:"PUT",headers:await headers(77),body:JSON.stringify({presence:{"A#EUW":"online",bad:"online","B#EUW":"bad"}})}),env,ctx);
+  assert.equal(r.status,200);
+  const read = async uid => (await worker.fetch(new Request(url,{headers:await headers(uid)}),env,ctx)).json();
+  assert.deepEqual((await read(77)).presence,{"a#euw":"online"});
+  assert.ok(!Object.keys((await read(78)).presence || {}).length);
+  await env.DB.prepare("INSERT INTO user_data (user_id, presence, presence_at) VALUES (?, ?, ?)").bind(77,JSON.stringify({"a#euw":"online"}),Math.floor(Date.now()/1000)-121).run();
+  assert.deepEqual((await read(77)).presence,{});
+  assert.equal((await worker.fetch(new Request(url),env,ctx)).status,401);
+});

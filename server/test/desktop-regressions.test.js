@@ -52,3 +52,21 @@ test("mobile leaderboard uses the same twenty-match candidate window for self an
   assert.deepEqual(seen, [20,20]);
 });
 
+
+test("presence distinguishes unknown, fresh client data and Moosi online", () => {
+  const c = {S: {pub: {}, presence: {"a#euw": "online"}, presenceAt: Date.now()/1000}, Date, liveTxt: () => ""};
+  vm.createContext(c); vm.runInContext(between(mobile, "function friendStatus(", "function onlineStrip("), c);
+  assert.equal(c.friendStatus("A#EUW"), "online");
+  assert.equal(c.friendStatus("B#EUW"), "unknown");
+  c.S.presenceAt -= 121;
+  assert.equal(c.friendStatus("A#EUW"), "unknown");
+  c.S.pub["a#euw"] = {status: {state: "online"}};
+  assert.equal(c.friendStatus("A#EUW"), "online");
+});
+test("update banner hidden without newer release", () => {
+  const c = {esc: String}; vm.createContext(c);
+  vm.runInContext('let updateInfo = null, updateBusy = false, updateMessage = "";' + between(html, "function updateCard(", "let refreshBusy"), c);
+  assert.equal(c.updateCard(), "");
+  vm.runInContext('updateInfo = {available:true,latest:"1.16.0"}', c);
+  assert.match(c.updateCard(), /Update herunterladen/);
+});

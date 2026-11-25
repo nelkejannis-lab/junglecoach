@@ -486,6 +486,7 @@ async function loadChamps() {
 // Jungle Coach profiles of friends (name, picture, text, live status from their PC app)
 async function loadPublic() {
   if (!(S.friends || []).length) return;
+  try { const p = await api("/api/sync/presence"); S.presence = p.presence || {}; S.presenceAt = p.updated_at || 0; } catch (e) { S.presence = {}; }
   try { S.pub = (await api("/api/public/profiles?ids=" + encodeURIComponent(S.friends.join(",")))).profiles || {}; render(); } catch (e) {}
 }
 setInterval(() => { if (!document.hidden && token() && S.me) { loadPublic(); loadSocial(); (S.friends || []).forEach(rid => liveCheck(rid)); } }, 60000);
@@ -810,11 +811,18 @@ function paCard(A, title) {
     <div class="pa-pool">${A.champs.slice(0, 4).map(c => `<div>${cImg(c.c, "")}<b>${c.wr}%</b><span>${c.n} G · ${c.score || "–"}</span></div>`).join("")}</div></div>`;
 }
 // who is online right now – one line on top of the friends tab
+function friendStatus(rid) {
+  if (liveTxt(rid)) return "ingame";
+  const pub = ((S.pub || {})[rid.toLowerCase()] || {}).status;
+  if (pub && pub.state === "online") return "online";
+  if (Date.now() / 1000 - (S.presenceAt || 0) <= 120) return (S.presence || {})[rid.toLowerCase()] || "unknown";
+  return "unknown";
+}
 function onlineStrip() {
   const on = (S.friends || []).map(rid => ({rid, t: liveTxt(rid), pub: (S.pub || {})[rid.toLowerCase()] || {}}))
-    .filter(f => f.t || (f.pub.status && f.pub.status.state === "online"));
+    .filter(f => ["online", "ingame", "away"].includes(friendStatus(f.rid)));
   if (!(S.friends || []).length) return "";
-  return `<div class="card onl"><div class="onl-h"><b>${on.length ? on.length + " online" : "Gerade niemand online"}</b><span class="muted small">${(S.friends || []).length} Freunde</span></div>
+  return `<div class="card onl"><div class="onl-h"><b>${on.length ? on.length + " online" : "Kein Online-Status bestätigt"}</b><span class="muted small">${(S.friends || []).length} Freunde · ${(S.friends || []).filter(rid => friendStatus(rid) === "unknown").length} unbekannt</span></div>
     ${on.length ? `<div class="hscroll onl-l">${on.map(f => `<button class="onl-f" onclick='S.view={friend:${JSON.stringify(f.rid)}};render()'>
       <span class="onl-a">${avatar(f.pub.avatar, "", null)}<i class="${f.t ? "g" : ""}"></i></span><b>${esc(f.pub.name || f.rid.split("#")[0])}</b><span>${f.t ? f.t.replace("🎮 ", "") : "online"}</span></button>`).join("")}</div>` : ""}</div>`;
 }
@@ -1401,6 +1409,19 @@ function keyCard() {
     ${RKmsg ? `<p class="small" style="margin-top:8px">${esc(RKmsg)}</p>` : ""}</div>`;
   return admin + own;
 }
+let refreshBusy = false, refreshMessage = "";
+async function refreshData() {
+  if (refreshBusy) return;
+  refreshBusy = true; refreshMessage = "Daten werden neu angefordert …"; render();
+  try {
+    const [me, friends, coach] = await Promise.all([api("/api/me"), api("/api/sync/friends"), api("/api/sync/coach")]);
+    S.me = me; S.friends = friends.friends || []; S.coach = coach.coach; S.fdata = {};
+    await Promise.all([refreshGames(), loadPublic(), loadSocial()]);
+    refreshMessage = "Neu angefordert um " + new Date().toLocaleTimeString() + ". Freundes-Stats werden beim Öffnen nachgeladen.";
+  } catch(e) { refreshMessage = e.message; }
+  finally { refreshBusy = false; render(); }
+}
+function refreshCard() { return '<div class="card"><h3>Daten aktualisieren</h3><button class="btn" onclick="refreshData()" ' + (refreshBusy ? 'disabled' : '') + '>' + (refreshBusy ? '↻ Wird aktualisiert …' : '↻ Jetzt aktualisieren') + '</button><p class="muted small">' + esc(refreshMessage) + '</p></div>'; }
 function vMore() {
   return `<h1>Mehr</h1>${profEditor()}<div class="card"><div class="row"><span>Angemeldet als</span><b style="margin-left:auto">${esc(S.me.name || "")}</b></div>
     <div class="row"><span>Aktives Konto</span><b style="margin-left:auto">${esc(S.me.riot_id || "–")}</b></div><div class="row"><span>Region</span><b style="margin-left:auto">${PLATFORMS[platform()]}</b></div></div>
@@ -1562,7 +1583,7 @@ function renderInner() {
   tabs.style.display = "flex";
   const tabsHtml = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""} ${k === "friends" && (S.soc.incoming || []).length ? "dotb" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
   if (tabsHtml !== renderInner.tabs) { renderInner.tabs = tabsHtml; tabs.innerHTML = tabsHtml; }
-  const html = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
+  const html = (S.tab === "more" ? refreshCard() : "") + ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
   if (html !== renderInner.last) {   // only touch what changed: no image reloads, no flicker, no replayed animations
     renderInner.last = html;
     const tpl = document.createElement("div");
