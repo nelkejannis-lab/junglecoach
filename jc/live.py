@@ -96,6 +96,15 @@ def analyze(gd, data, timers=None, preset_lookup=None):
     enemies = [p for p in players if p["team"] != my_team]
     name_to_player = {n: p for p in players for n in _names(p)}
 
+    def roster_entry(p):
+        rid = p.get("riotId") or ""
+        if "#" not in rid and p.get("riotIdGameName") and p.get("riotIdTagLine"):
+            rid = f"{p['riotIdGameName']}#{p['riotIdTagLine']}"
+        champ = _champ(gd, p)
+        return {"riot_id": rid if "#" in rid else None,
+                "champion": champ["id"] if champ else None,
+                "role": "JUNGLE" if _is_jungler(p) else (p.get("position") or "").upper()}
+
     # ---- enemy item analysis -> live build
     enemy_champs = [_champ(gd, p) for p in enemies]
     prof = analyzer.team_profile(gd, enemy_champs)
@@ -202,6 +211,7 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             "allies": [gd.champ_name(_champ(gd, p)) for p in allies],
             "gold_diff": _gold_diff(gd, allies, enemies, me),
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
+            "roster": {"allies": [roster_entry(p) for p in allies], "enemies": [roster_entry(p) for p in enemies]},
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,
             "_owned": [i for i in owned if i], "_gold": (data.get("activePlayer") or {}).get("currentGold"),
             "_item_gold": item_gold(gd, me), "_me_id": my_champ["id"] if my_champ else None,

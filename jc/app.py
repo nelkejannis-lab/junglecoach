@@ -848,6 +848,21 @@ def make_handler(gd, cfg, lcu):
                                         "ov": {"mode": oc.get("mode", "always"), "opacity": oc.get("bg_opacity", 0.72),
                                                "size": oc.get("size", 1.0), "move": OVERLAY["move"],
                                                "pick": OVERLAY["pick"]}})
+            if urllib.parse.urlsplit(self.path).path == "/api/live-player":
+                q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                rid = (q.get("riot_id") or [""])[0]
+                with LOCK:
+                    roster = (STATE.get("live") or {}).get("roster", {})
+                if not any(p.get("riot_id") == rid for team in roster.values() for p in team):
+                    return self._send(404, {"error": "Spieler nicht im aktuellen Spiel sichtbar."})
+                cred = riot_cred(cfg)
+                if not cred:
+                    return self._send(400, {"error": NO_CRED})
+                try:
+                    prof = profile.fetch(cred, cfg.get("platform", "euw1"), rid, gd, 10, "all")
+                except Exception:
+                    return self._send(502, {"error": "Spielerdaten gerade nicht verfügbar."})
+                return self._send(200, {"ranks": prof.get("ranks", {}), "games": (prof.get("games") or [])[:10]})
             if self.path.startswith("/api/profile"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 rid = (q.get("riot_id") or [cfg.get("riot_id", "")])[0].strip()

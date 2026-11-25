@@ -241,6 +241,8 @@
   .hero-banner .art::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,#0b101d 0%,rgba(11,16,29,.94) 34%,rgba(11,16,29,.35) 70%,rgba(11,16,29,.15) 100%),
     linear-gradient(0deg,rgba(11,16,29,.9),transparent 45%); }
   .hero-banner .in { position:relative; display:grid; grid-template-columns:auto 1fr auto; gap:26px; align-items:center; padding:30px 34px; min-height:270px; }
+  .roster-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; overflow-wrap:anywhere; }
+  @media (max-width:700px) { .roster-grid { grid-template-columns:1fr; } }
   .hero-banner.coach-hero .in { grid-template-columns:minmax(0,1fr) auto; }
   .coach-match-score { padding:14px 18px; border:1px solid var(--line); border-radius:14px; background:#0b101de8; }
   .coach-match-score strong { display:block; font-size:34px; line-height:1.15; }
@@ -897,12 +899,53 @@ function renderSelect() {
 }
 
 // ------------------------------------------------------------ LIVE
+let livePlayers = new Map(), livePlayerBusy = false;
+async function loadLivePlayers() {
+  if (livePlayerBusy || view !== "live") return;
+  const roster = state.live && state.live.roster;
+  if (!roster) return;
+  const next = [...roster.enemies, ...roster.allies].find(p => p.riot_id && !livePlayers.has(p.riot_id));
+  if (!next) return;
+  livePlayerBusy = true;
+  const session = livePlayers;
+  session.set(next.riot_id, {loading:true});
+  try {
+    const response = await fetch("/api/live-player?riot_id=" + encodeURIComponent(next.riot_id), {signal: AbortSignal.timeout(25000)});
+    const data = await response.json();
+    session.set(next.riot_id, response.ok ? data : {error:true});
+  } catch(e) {
+    session.set(next.riot_id, {error:true});
+  } finally {
+    livePlayerBusy = false;
+    if (view === "live") render();
+    setTimeout(loadLivePlayers, 400);
+  }
+}
+function liveRoster(roster) {
+  if (!roster) return "";
+  const columns = [["Dein Team", roster.allies], ["Gegner", roster.enemies]];
+  return card("Spielerübersicht", "Solo/Duo-Rang und Auffälligkeiten aus bis zu 10 aktuellen Matches", '<div class="roster-grid">' + columns.map(([label, players]) =>
+    '<section><h3>' + label + '</h3>' + players.map(p => {
+      const data = livePlayers.get(p.riot_id);
+      const rank = data && data.ranks && data.ranks.solo;
+      const analysis = data && data.games ? playerAnalysis(data.games) : null;
+      const rankLabel = rank ? [rank.tier, rank.division, rank.lp + " LP"].join(" · ") : data && data.ranks ? "Solo/Duo: ohne Rang" : "Rang nicht verfügbar";
+      const notes = !p.riot_id ? "Riot-ID nicht sichtbar" : !data || data.loading ? "Stats werden geladen …" :
+        data.error ? "Stats nicht verfügbar" : !analysis ? "Zu wenige bewertbare Matches" :
+        analysis.weaknesses.length ? analysis.weaknesses.map(x => x.label + " " + x.v.toFixed(1)).join(" · ") + " (" + analysis.n + " Matches)" : "Keine klare Schwäche in " + analysis.n + " Matches";
+      return '<div class="fcard" style="margin-bottom:8px"><div style="display:flex;gap:8px;align-items:center">' +
+        (p.champion ? cImg(p.champion, 32, 8) : "") + '<div><b>' + esc(p.riot_id || p.champion || "Spieler") + '</b>' +
+        '<div class="small muted">' + esc([ROLE_DE[p.role], rankLabel].filter(Boolean).join(" · ")) + '</div></div></div>' +
+        '<p class="small muted" style="margin:8px 0 0">' + esc(notes) + '</p></div>';
+    }).join("") + '</section>').join("") + '</div>', true);
+}
 function renderLive() {
   const l = state.live;
+  if (!l && state.phase === "GameStart") return page("Spiel lädt", "Die Übersicht erscheint, sobald die Spielerliste verfügbar ist.", card("", "", '<div class="skel" style="height:160px"></div>', true));
   if (!l) return page("Live", "Hilfe während des Spiels. Tipp: Das Overlay zeigt das Wichtigste direkt im Spiel (Ctrl+Shift+J).",
     card("", "", empty("🎮", "Kein laufendes Spiel", "Sobald du im Spiel bist, erscheinen hier Build-Anpassungen, Gegner-Jungler-Infos und Objective-Timer."), true));
   const ej = l.enemy_jungler || {};
-  let h = card("", "", `<div class="muted small">Spielzeit</div><div class="huge">${esc(l.game_time)}</div><div class="big" style="font-size:20px">${esc(l.me)}</div>
+  let h = liveRoster(l.roster) + card("", "", `<div class="muted small">Spielzeit</div><div class="huge">${esc(l.game_time)}</div><div class="big" style="font-size:20px">${esc(l.me)}</div>
     <div class="stats"><div class="stat"><b class="${l.cs_per_min >= 6 ? "green" : "orange"}">${l.cs_per_min}</b><span>CS / Min</span></div>
     ${l.objectives.map(o => `<div class="stat"><b>${esc(o.respawn_in)}</b><span>${esc(o.name)}</span></div>`).join("")}</div>
     <p class="small muted">${esc(l.cs_hint)}</p>`);
@@ -1143,6 +1186,24 @@ const paCol = v => v >= 7 ? "#34d399" : v >= 5.5 ? "#22d3ee" : v >= 4 ? "#fbbf24
 
 let anTab = "games", anPage = 0;
 const anRows = () => (!profQuery && profData && !profData.error && profData.games) || [];
+function analysisRadar(skills) {
+  if (skills.length < 3) return "";
+  const point = (i, radius) => {
+    const angle = i * Math.PI * 2 / skills.length - Math.PI / 2;
+    return [155 + Math.cos(angle) * radius, 111 + Math.sin(angle) * radius];
+  };
+  const polygon = (radii, attrs) => '<polygon points="' + skills.map((_, i) => point(i, radii[i]).join(",")).join(" ") + '" ' + attrs + '/>';
+  const labels = skills.map((skill, i) => {
+    const [x, y] = point(i, 94), [ax, ay] = point(i, 72);
+    return '<line x1="155" y1="111" x2="' + ax + '" y2="' + ay + '" stroke="currentColor" opacity=".25"/>' +
+      '<text x="' + x + '" y="' + (y + 4) + '" text-anchor="middle" fill="currentColor" font-size="10">' + esc(skill.label) + '</text>';
+  }).join("");
+  return '<figure style="margin:0 0 12px;text-align:center"><svg role="img" aria-label="Fähigkeiten im Vergleich zum Richtwert 5,5" viewBox="0 0 310 222" style="width:100%;max-width:340px;color:var(--txt)">' +
+    polygon(skills.map(() => 72), 'fill="none" stroke="currentColor" opacity=".3"') + labels +
+    polygon(skills.map(() => 72 * .55), 'fill="none" stroke="#b4a4dc" stroke-dasharray="4 4"') +
+    polygon(skills.map(skill => 72 * skill.v / 10), 'fill="#22c4c8" fill-opacity=".22" stroke="#22c4c8" stroke-width="2"') +
+    '</svg><figcaption class="muted small">Türkis: Spieler · gestrichelt: Richtwert 5,5</figcaption></figure>';
+}
 function playerHero(A, opts = {}) {
   const sk = A.skills.map(x => `<div class="sk" title="${esc(x.what)}"><div class="skl"><b>${esc(x.label)}</b></div>
       <div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b class="skv" style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("");
@@ -1152,7 +1213,7 @@ function playerHero(A, opts = {}) {
       <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Moosi-Score · Ø letzte 10 Games</div>
         <div class="pa-mini"><div><b>${A.wr}%</b><span>Winrate · ${A.wins}S ${A.n - A.wins}N</span></div><div><b>${A.kda}</b><span>KDA · ${A.kda_avg}</span></div>${tr ? `<div>${tr}</div>` : ""}</div>
         <div class="chips" style="justify-content:center;margin-top:10px">${A.roles.slice(0, 3).map(r => `<span class="chip">${PA_ROLE[r.r] || r.r} ${r.pct}%</span>`).join("")}</div></div>
-      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${sk}</div>
+      <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · Hauptrolle <b>${PA_ROLE[A.role] || A.role}</b> · 1–10 im Vergleich zu guten ${PA_ROLE[A.role] || ""}-Spielern (5,5 = gut)</p>${analysisRadar(A.skills)}${sk}</div>
       <div class="pa-sw">
         <div class="pa-box good"><div class="pa-h">Stärken</div>${A.strengths.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span></div>`).join("") || '<div class="muted small">Noch keine klare Stärke – alles im Mittelfeld.</div>'}</div>
         <div class="pa-box bad"><div class="pa-h">Daran arbeiten</div>${A.weaknesses.map(x => `<div><b>${esc(x.label)}</b> <span style="color:${paCol(x.v)}">${x.v.toFixed(1)}</span><p class="small muted" style="margin:3px 0 8px">${esc(x.tip)}</p></div>`).join("") || '<div class="muted small">Keine großen Schwächen. Stark!</div>'}</div>
@@ -1810,10 +1871,12 @@ async function tick() {
   if (rsNow !== tick._rs) { const was = tick._rs; tick._rs = rsNow; if (was && !(state.review_status || {}).running) { coachData = null; loadCoach(); loadReviewData(); } }
   const ph = state.live ? "InGame" : state.phase;          // auto-switch on phase change only
   if (ph !== lastPhase) {
-    if (ph === "ChampSelect") go("select"); else if (ph === "InGame") go("live");
+    if (ph === "ChampSelect") go("select"); else if (ph === "GameStart" || ph === "InGame") go("live");
+    if (ph !== "InGame" && ph !== "GameStart") livePlayers = new Map();
     else if ((ph === "EndOfGame" || ph === "PreEndOfGame") && lastPhase === "InGame") { go("coach"); }
     lastPhase = ph;
   }
+  if (view === "live") loadLivePlayers();
   if (view !== "settings") render();
 }
 const getJson = async u => (await fetch(u)).json();
