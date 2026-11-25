@@ -678,6 +678,10 @@ function socialCards() {
   return h;
 }
 
+// Moosi-Score of a player = average game score (1–10) of his last 10 games (no remakes). Used EVERYWHERE
+// (ranking, friend cards, analysis, profile) so a friend has the same number on PC, phone and web.
+const MS_N = 10;
+const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + x, 0) / s.length * 10) / 10 : null; };
 // ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
 // weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
 // rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
@@ -726,13 +730,13 @@ function playerAnalysis(rows) {
   const recent = scores.slice(0, 5), before = scores.slice(5, 15);
   return {
     n: G.length, wins: G.filter(g => g.win).length, wr: Math.round(100 * G.filter(g => g.win).length / G.length),
-    score: mean == null ? null : Math.round(mean * 10) / 10, kda: ((k + a) / Math.max(1, d)).toFixed(2),
+    score: moosiScore(G.map(g => g.score)), kda: ((k + a) / Math.max(1, d)).toFixed(2),
     kda_avg: `${(k / G.length).toFixed(1)} / ${(d / G.length).toFixed(1)} / ${(a / G.length).toFixed(1)}`,
     skills, strengths: sorted.filter(s => s.v >= 6).slice(0, 2), weaknesses: sorted.slice().reverse().filter(s => s.v < 5.5).slice(0, 2),
     champs: Object.values(champs).map(c => ({...c, wr: Math.round(100 * c.w / c.n), kda: ((c.k + c.a) / Math.max(1, c.d)).toFixed(2), score: c.s.length ? (avg(c.s)).toFixed(1) : null}))
       .sort((x, y) => y.n - x.n || y.wr - x.wr).slice(0, 6),
     roles: Object.entries(roles).sort((x, y) => y[1] - x[1]).map(([r, n]) => ({r, pct: Math.round(100 * n / G.length)})),
-    form: G.slice(0, 10).map(g => ({win: g.win, score: g.score, c: g.champion})),
+    form: G.slice(0, MS_N).map(g => ({win: g.win, score: g.score, c: g.champion})),
     trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
   };
 }
@@ -752,7 +756,7 @@ function paRows(games) {
 }
 function paCard(A, title) {
   if (!A) return "";
-  return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Ø Score</span></div>
+  return `<div class="card pa ani"><div class="pa-head"><div class="pa-ring" style="--v:${(A.score || 0) * 10};--c:${paCol(A.score || 0)}"><b>${A.score != null ? A.score.toFixed(1) : "–"}</b><span>Moosi-Score</span></div>
       <div style="flex:1;min-width:0"><h3 style="margin:0">${esc(title || "Spieler-Analyse")}</h3><div class="muted small">Letzte ${A.n} Games · 5,5 = gut für die Rolle</div>
         <div class="pa-kpi"><span><b>${A.wr}%</b> WR</span><span><b>${A.kda}</b> KDA</span>${A.trend != null ? `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"}${Math.abs(A.trend).toFixed(1)}</span>` : ""}</div></div></div>
     ${A.skills.map(x => `<div class="sk"><span>${esc(x.label)}</span><div class="skt"><i style="width:${x.v * 10}%;background:${paCol(x.v)}"></i></div><b style="color:${paCol(x.v)}">${x.v.toFixed(1)}</b></div>`).join("")}
@@ -940,7 +944,7 @@ function recapCard() {
     <div class="dots" style="margin-top:12px">${gs.slice().reverse().map(g => `<i class="${g.p.win ? "w" : ""}"></i>`).join("")}</div></div>`;
 }
 function vHome() {
-  const c = S.coach, r = solo(S.league), gs = S.games || [];
+  const c = S.coach, r = solo(S.league), gs = S.games || [], A = agg(gs);
   const wins = gs.filter(g => g.p.win).length, counts = {};
   gs.forEach(g => counts[g.p.championName] = (counts[g.p.championName] || 0) + 1);
   const main = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
@@ -956,7 +960,7 @@ function vHome() {
     : c ? esc(c.player_type ? c.player_type.text : "") : "Öffne die PC-App einmal mit deinem Konto – dann zeige ich dir hier deine Coaching-Aufgabe."}</div></div>`;
   if (gs.length) h += `<div class="card"><h3>Letzte ${gs.length} Games</h3><div class="stats"><div class="stat"><b class="${wins / gs.length >= .5 ? "green" : "red"}">${Math.round(100 * wins / gs.length)}%</b><span>Winrate</span></div>
       <div class="stat"><b>${(gs.reduce((a, g) => a + g.p.kills + g.p.assists, 0) / Math.max(1, gs.reduce((a, g) => a + g.p.deaths, 0))).toFixed(2)}</b><span>KDA</span></div>
-      <div class="stat"><b>${c && c.score != null ? Math.max(1, c.score / 10).toFixed(1) : "–"}</b><span>Coach-Score · von 10</span></div></div>
+      <div class="stat"><b>${A && A.score ? A.score.toFixed(1) : "–"}</b><span>Moosi-Score · letzte 10</span></div></div>
       <div class="dots" style="margin-top:12px">${gs.slice().reverse().map(g => `<i class="${g.p.win ? "w" : ""}"></i>`).join("")}</div></div>`;
   if (c && (c.focus || []).length) h += `<div class="card"><h3>Deine Schwerpunkte</h3>${c.focus.slice(0, 3).map((f, i) => `<div class="focus"><div class="k">Schwerpunkt ${i + 1}</div><b>${esc(f.title)}</b><div class="small muted">🎯 ${esc(f.drill)}</div>${f.last10 ? `<div class="small" style="margin-top:4px">Im Ziel: <b style="display:inline">${esc(f.last10)}</b></div>` : ""}</div>`).join("")}
       ${c.confidence ? `<p class="muted small" style="margin:4px 0 0">⚖️ ${esc(c.confidence)}</p>` : ""}</div>`;
@@ -990,16 +994,17 @@ function agg(games) {
     vis += p.visionScore || 0; dmg += p.totalDamageDealtToChampions || 0; mins += mi; wins += p.win ? 1 : 0;
     const ch = champs[p.championName] = champs[p.championName] || {c: p.championName, n: 0, w: 0, k: 0, d: 0, a: 0};
     ch.n++; ch.w += p.win ? 1 : 0; ch.k += p.kills; ch.d += p.deaths; ch.a += p.assists;
-    const gsv = (gameScores(m)[p.puuid] || {}).score || 0;
+    const gsv = (gameScores(m)[p.puuid] || {}).score ?? null;
     return {g, score: gsv};
   });
-  scored.sort((x, y) => y.score - x.score);
+  const ms = moosiScore(scored.map(x => x.score));   // newest first, before sorting
+  scored.sort((x, y) => (y.score || 0) - (x.score || 0));
   return {n: gs.length, wins, wr: Math.round(100 * wins / gs.length), kda: +((k + a) / Math.max(1, d)).toFixed(2),
     kp: Math.round(100 * kp / gs.length), csm: +(cs / mins).toFixed(1), gpm: Math.round(gold / mins), vpm: +(vis / mins).toFixed(2),
     dpm: Math.round(dmg / mins), deaths: +(d / gs.length).toFixed(1), avgk: +(k / gs.length).toFixed(1), avga: +(a / gs.length).toFixed(1),
     champs: Object.values(champs).sort((x, y) => y.n - x.n), best: scored[0].g, worst: scored[scored.length - 1].g,
     form: gs.slice(0, 10).map(g => g.p.win),
-    score: +(scored.reduce((t, x) => t + x.score, 0) / scored.length).toFixed(1),
+    score: ms ?? 0,
     mvps: gs.filter(g => (gameScores(g.m.info)[g.p.puuid] || {}).badge).length};
 }
 async function share(text) {

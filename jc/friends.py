@@ -41,7 +41,8 @@ def remove(cfg, rid):
 
 
 def _avg_score(games):
-    sc = [g["score"] for g in games[:20] if g.get("score") is not None and not g.get("remake")]
+    # Moosi-Score: average game score of the last 10 real games – same rule as moosiScore() in the apps
+    sc = [g["score"] for g in games if g.get("score") is not None and not g.get("remake")][:10]
     return round(sum(sc) / len(sc), 1) if sc else None
 
 

@@ -536,7 +536,7 @@ function renderFriends() {
           ${f.jc && (f.jc.favs || []).length ? `<div style="display:flex;gap:4px;margin-top:6px">${f.jc.favs.map(c => cImg(c, 22, 6)).join("")}<span class="muted small" style="align-self:center;margin-left:4px">Lieblinge</span></div>` : ""}
           <div class="small" style="margin-top:2px">${f.loading ? '<span class="muted">Lade Stats …</span>' : f.error ? `<span class="red">${esc(f.error)}</span>` : rankTxt(f.rank)}</div>
           <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-top:12px"><div class="stat"><b class="${wr >= 50 ? "green" : wr == null ? "" : "red"}">${wr ?? "–"}%</b><span>WR (20)</span></div>
-            <div class="stat"><b>${f.recent && f.recent.kda != null ? f.recent.kda : "–"}</b><span>KDA</span></div><div class="stat"><b>${(f.coach || {}).score ?? "–"}</b><span>Coach</span></div></div>
+            <div class="stat"><b>${f.recent && f.recent.kda != null ? f.recent.kda : "–"}</b><span>KDA</span></div><div class="stat"><b style="color:${(f.recent || {}).score != null ? paCol(f.recent.score) : "inherit"}">${(f.recent || {}).score != null ? f.recent.score.toFixed(1) : "–"}</b><span>Moosi-Score</span></div></div>
           <div style="display:flex;gap:4px;margin-top:12px">${(f.top || []).map(c => cImg(c, 30, 9)).join("")}<span class="muted small" style="margin-left:auto;align-self:center">${esc(f.role || "")}</span></div></div></div>`; }).join("")}</div></div>`
     : card("", "", empty(moosi("happy", 90), "Noch keine Freunde", "Füge Freunde mit ihrer Riot ID hinzu – oder direkt aus deiner Client-Freundesliste oben."), true);
   return `<h1 class="title">Deine <span class="g">Freunde</span></h1><p class="subtitle">Stats, Rang und Online-Status – und Moosi analysiert jeden Freund genauso wie dich.</p><div class="grid">${friendsRanking(fl)}${cards}${add}</div>`;
@@ -555,10 +555,10 @@ function friendsRanking(fl) {
   const wr = f => f.recent && f.recent.games ? Math.round(100 * f.recent.wins / f.recent.games) : null;
   const key = {rank: f => rankVal(f.rank), score: f => (f.recent || {}).score ?? -1, wr: f => wr(f) ?? -1, kda: f => +((f.recent || {}).kda ?? -1)}[frSort];
   rows.sort((a, b) => key(b) - key(a));
-  const S_ = [["rank", "Rang"], ["score", "Ø Score"], ["wr", "Winrate"], ["kda", "KDA"]];
+  const S_ = [["rank", "Rang"], ["score", "Moosi-Score"], ["wr", "Winrate"], ["kda", "KDA"]];
   return `<div class="card wide frank"><div class="row" style="border:0;padding:0 0 10px"><h3 style="margin:0">Rangliste</h3>
       <div class="seg" style="margin-left:auto">${S_.map(([k, l]) => `<button class="${frSort === k ? "on" : ""}" onclick="frSort='${k}';render()">${l}</button>`).join("")}</div></div>
-    <table class="pa-tab fr-tab"><tr><th>#</th><th>Spieler</th><th>Rang</th><th>Ø Score</th><th>WR (20)</th><th>KDA</th></tr>
+    <table class="pa-tab fr-tab"><tr><th>#</th><th>Spieler</th><th>Rang</th><th>Moosi-Score</th><th>WR (20)</th><th>KDA</th></tr>
     ${rows.map((f, i) => { const st = (f.presence || {}).status, w = wr(f), sc = (f.recent || {}).score;
       return `<tr class="${f.me ? "mine" : "click"}" ${f.me ? "" : `onclick='openFriend(${JSON.stringify(f.riot_id)})'`}><td><b>${i === 0 ? "👑" : i + 1}</b></td>
         <td><span class="dot ${st === "online" || st === "ingame" ? "on" : ""}"></span> <b>${esc((f.jc && f.jc.name) || String(f.riot_id).split("#")[0])}</b>${f.me ? ' <span class="muted small">(du)</span>' : ""}${st === "ingame" ? ' <span class="green small">im Spiel</span>' : ""}</td>
@@ -1005,6 +1005,10 @@ function replayCard(g) {
     <div class="small muted">${cur ? "Gegner-Jungler: " + esc(cur.area) : ""}</div></div>
     <div><b>Gegner-Jungler pro Minute</b>${list(R.enemy_jg.filter(p => p.min >= 1), p => `<li class="small ${p.min === m ? "sel" : ""}">${p.min}' · ${esc(p.area)}</li>`)}</div></div>`, true);
 }
+// Moosi-Score of a player = average game score (1–10) of his last 10 games (no remakes). Used EVERYWHERE
+// (ranking, friend cards, analysis, profile) so a friend has the same number on PC, phone and web.
+const MS_N = 10;
+const moosiScore = scores => { const s = scores.filter(x => x != null).slice(0, MS_N); return s.length ? Math.round(s.reduce((t, x) => t + x, 0) / s.length * 10) / 10 : null; };
 // ---- player analysis (like op.gg / Mobalytics): 7 skills 1–10 vs. a good player of the same role, strengths,
 // weaknesses, champion pool, form. Same code in the PC app (jc/static/index.html) and the mobile app – keep both in sync.
 // rows: {win, champion, name, pos, kills, deaths, assists, kp(0-100), cs_min, gpm, vpm, dmg_share, obj_share, score, remake}
@@ -1053,13 +1057,13 @@ function playerAnalysis(rows) {
   const recent = scores.slice(0, 5), before = scores.slice(5, 15);
   return {
     n: G.length, wins: G.filter(g => g.win).length, wr: Math.round(100 * G.filter(g => g.win).length / G.length),
-    score: mean == null ? null : Math.round(mean * 10) / 10, kda: ((k + a) / Math.max(1, d)).toFixed(2),
+    score: moosiScore(G.map(g => g.score)), kda: ((k + a) / Math.max(1, d)).toFixed(2),
     kda_avg: `${(k / G.length).toFixed(1)} / ${(d / G.length).toFixed(1)} / ${(a / G.length).toFixed(1)}`,
     skills, strengths: sorted.filter(s => s.v >= 6).slice(0, 2), weaknesses: sorted.slice().reverse().filter(s => s.v < 5.5).slice(0, 2),
     champs: Object.values(champs).map(c => ({...c, wr: Math.round(100 * c.w / c.n), kda: ((c.k + c.a) / Math.max(1, c.d)).toFixed(2), score: c.s.length ? (avg(c.s)).toFixed(1) : null}))
       .sort((x, y) => y.n - x.n || y.wr - x.wr).slice(0, 6),
     roles: Object.entries(roles).sort((x, y) => y[1] - x[1]).map(([r, n]) => ({r, pct: Math.round(100 * n / G.length)})),
-    form: G.slice(0, 10).map(g => ({win: g.win, score: g.score, c: g.champion})),
+    form: G.slice(0, MS_N).map(g => ({win: g.win, score: g.score, c: g.champion})),
     trend: recent.length >= 3 && before.length >= 3 ? Math.round((avg(recent) - avg(before)) * 10) / 10 : null,
   };
 }
@@ -1074,7 +1078,7 @@ function playerHero(A, opts = {}) {
   const tr = A.trend == null ? "" : `<span class="${A.trend >= 0 ? "green" : "red"}">${A.trend >= 0 ? "▲" : "▼"} ${Math.abs(A.trend).toFixed(1)} letzte 5</span>`;
   return `<div class="card wide pa">
     <div class="pa-top">
-      <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Ø Game-Score von 10</div>
+      <div class="pa-score">${ring((A.score || 0) * 10, "", 132)}<div class="small muted" style="margin-top:4px">Moosi-Score · Ø letzte 10 Games</div>
         <div class="pa-mini"><div><b>${A.wr}%</b><span>Winrate · ${A.wins}S ${A.n - A.wins}N</span></div><div><b>${A.kda}</b><span>KDA · ${A.kda_avg}</span></div>${tr ? `<div>${tr}</div>` : ""}</div>
         <div class="chips" style="justify-content:center;margin-top:10px">${A.roles.slice(0, 3).map(r => `<span class="chip">${PA_ROLE[r.r] || r.r} ${r.pct}%</span>`).join("")}</div></div>
       <div class="pa-skills"><h3 style="margin:0 0 4px">${esc(opts.title || "Spieler-Analyse")}</h3><p class="hint" style="margin:0 0 12px">Letzte ${A.n} Games · 1–10 im Vergleich zu guten Spielern deiner Rolle (5,5 = gut)</p>${sk}</div>
