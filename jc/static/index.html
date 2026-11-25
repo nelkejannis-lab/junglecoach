@@ -374,7 +374,9 @@ let lastJson = "", lastPhase = "", selGame = 0, replayMin = 15, playTimer = null
 let labForm = {champ: "", role: "", enemies: "", msg: ""}, labData = null, rankedAccount = "";
 let onb = {role: "", mains: [], q: "", msg: ""}, champList = [];
 let reviewData = null;
-async function loadReviewData() { try { const r = await getJson("/api/review-data"); reviewData = r && r.games ? r : null; if (view === "analyse") render(); } catch (e) {} }
+const gStart = g => g.game_start || (g.deep || {}).game_start || 0;
+const sortReview = r => { if (r && r.games) r.games.sort((a, b) => gStart(b) - gStart(a)); return r; };   // latest game on top
+async function loadReviewData() { try { const r = await getJson("/api/review-data"); reviewData = r && r.games ? sortReview(r) : null; if (view === "analyse") render(); } catch (e) {} }
 let coachData = null, tierRole = "JUNGLE", tierData = {}, champPage = null, champLoading = "", tierQuery = "";
 async function runLab() {
   labForm = {champ: $("#lab-champ").value.trim(), role: $("#lab-role").value, enemies: $("#lab-enemies").value, msg: "Rechne …"};
@@ -1099,7 +1101,7 @@ function gamesPanel(r) {
   const list = r.games.slice(from, from + per).map((g, j) => { const i = from + j, sc = g.deep ? g.deep.categories.reduce((t, c) => t + c.score, 0) / g.deep.categories.length / 10 : null;
     return `<div class="gl ${i === selGame ? "sel" : ""} ${g.win ? "w" : "l"}" onclick="selGame=${i};replayMin=15;selClip=null;render()">
       ${cImg(g.champion, 34, 9)}<div style="flex:1;min-width:0"><b>${esc(g.champion)}</b> <span class="muted small">vs ${esc(g.enemy_jungler)}</span>
-      <div class="small muted">${g.win ? '<span class="green">Sieg</span>' : '<span class="red">Niederlage</span>'} · ${esc(g.kda)}${g.clips ? " · 🎬 Clips" : ""}</div></div>
+      <div class="small muted">${g.win ? '<span class="green">Sieg</span>' : '<span class="red">Niederlage</span>'} · ${esc(g.kda)} · ${gStart(g) ? ago(gStart(g)) : ""}${g.clips ? " · 🎬" : ""}</div></div>
       ${sc != null ? `<span class="spill" style="color:${paCol(sc)};border-color:${paCol(sc)}55">${Math.max(1, sc).toFixed(1)}</span>` : ""}</div>`; }).join("");
   const g = r.games[selGame];
   return `<div class="card wide an-split"><div class="an-list">${list}
@@ -1698,7 +1700,7 @@ function alertMsg(t) { state.error = t; render(); }
 async function loadReview() {
   msg.review = "Lade Games… (ca. 1 Minute)"; render();
   const r = await getJson("/api/review"); msg.review = r.error || "";
-  if (!r.error) { reviewData = r; selGame = 0; loadRanked(); coachData = null; loadCoach(); }
+  if (!r.error) { reviewData = sortReview(r); selGame = 0; anPage = 0; loadRanked(); coachData = null; loadCoach(); }
   render();
 }
 async function saveCfg() {

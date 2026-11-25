@@ -250,6 +250,9 @@ def run(api_key, platform, riot_id, count=30, queue=420, progress=None, prev=Non
             r["stats"] = stats
             r["role"] = "JUNGLE"
             games.append(r)
+    newest = lambda g: -(g.get("game_start") or (g.get("deep") or {}).get("game_start") or 0)
+    games.sort(key=newest)   # latest game on top
+    others.sort(key=newest)
     return {"games": games, "other_games": others, "summary": summarize(games)}
 
 
