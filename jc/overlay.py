@@ -118,6 +118,12 @@ def _set_clickthrough(hwnd, on):
     u.SetWindowLongW(hwnd, GWL_EXSTYLE, st)
 
 
+def _topmost(hwnd):
+    """Keep the window above the game WITHOUT Tk's -topmost (Tk rewrites the extended style and the layered
+    window then shows white)."""
+    ctypes.windll.user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOSIZE|NOMOVE|NOACTIVATE
+
+
 class MSG(ctypes.Structure):
     _fields_ = [("hwnd", ctypes.c_void_p), ("message", ctypes.c_uint), ("wParam", ctypes.c_size_t),
                 ("lParam", ctypes.c_ssize_t), ("time", ctypes.c_uint), ("pt", ctypes.c_long * 2)]
@@ -658,7 +664,7 @@ def run(url, cfg):
           "pimg": None, "prects": [], "pkey": None, "tab": False}
 
     # ---- Tab picker window (item icons of the build, click = next item)
-    pick_win = tk.Toplevel(root)
+    pick_win = tk.Toplevel(root, bg="black")
     pick_win.overrideredirect(True)
     pick_win.attributes("-topmost", True)
     plabel = None if win else tk.Label(pick_win, bd=0, bg=BG)
@@ -746,8 +752,12 @@ def run(url, cfg):
         if pwant and not st["pshown"]:
             st["pshown"] = True
             pick_win.deiconify()
+            if win:   # Tk rewrites the window style on deiconify -> layered style again, else it shows white
+                _set_clickthrough(phwnd, False)
+                _topmost(phwnd)
+            else:
+                pick_win.attributes("-topmost", True)
             place_picker()
-            pick_win.attributes("-topmost", True)
         elif not pwant and st["pshown"]:
             pick_win.withdraw()
             st["pshown"] = False
@@ -755,10 +765,12 @@ def run(url, cfg):
         if want and st["img"] is not None and not st["shown"]:
             root.deiconify()
             st["shown"] = True
-            if win:
+            if win:   # after Tk's own style change on deiconify, so the window stays layered
                 _set_clickthrough(hwnd, not st["move"])
+                _topmost(hwnd)
+            else:
+                root.attributes("-topmost", True)
             show(st["img"])
-            root.attributes("-topmost", True)
         elif not want and st["shown"]:
             root.withdraw()
             st["shown"] = False
@@ -861,8 +873,11 @@ def run(url, cfg):
                 else:
                     root.geometry(f"{im.size[0]}x{im.size[1]}+{pos['x']}+{pos['y']}")
                 st["last"] = key
-            if st["shown"]:
-                root.attributes("-topmost", True)  # re-assert above the game
+            if st["shown"]:   # re-assert above the game
+                if win:
+                    _topmost(hwnd)
+                else:
+                    root.attributes("-topmost", True)
         apply_visibility()
 
     def refresh_loop():
