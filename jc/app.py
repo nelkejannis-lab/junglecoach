@@ -338,10 +338,11 @@ def coach_plan(gd, cfg, rev, cache=None):
     for g in games:
         key = (g["champion"], g.get("role") or "JUNGLE")
         counts[key] = counts.get(key, 0) + 1
-    by = {k: ms.benchmarks(k[0], k[1], bracket) for k in counts}
+    # always compare with good players of the same ROLE (not the same champion) – more data, fairer
+    by = {k: ms.benchmarks(None, k[1], bracket) for k in counts}
     by = {k: b for k, b in by.items() if b}
     main = max(counts, key=counts.get)
-    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(main[0], main[1], None),
+    plan = coach.analyze([dict(g) for g in games], by.get(main) or ms.benchmarks(None, main[1], None),
                          bench_by_champ=by)
     plan["roles"] = sorted({k[1] for k in counts})
     try:
@@ -635,7 +636,7 @@ def poll_loop(gd, cfg, lcu):
                             GPM_BENCH[key] = None
                             try:
                                 ms = meta_stats(gd)
-                                b = ms.benchmarks(key[0], role, current_bracket(cfg)) if ms and key[0] else None
+                                b = ms.benchmarks(None, role, current_bracket(cfg)) if ms and key[0] else None
                                 g = (b or {}).get("dist", {}).get("gpm")
                                 if g:
                                     GPM_BENCH[key] = {"p25": meta.quantile(g, 0.25), "p50": meta.quantile(g, 0.5)}
@@ -1186,7 +1187,7 @@ def start(cfg=None):
     i18n.setup(cfg)
     gd = GameData(cfg.get("display_language") or i18n.ddragon_locale())
     print(f"Patch {gd.version} geladen.")
-    deep.BENCH = lambda champ, role: (lambda ms: ms.benchmarks(champ, role, current_bracket(cfg)) if ms else None)(meta_stats(gd))
+    deep.BENCH = lambda champ, role: (lambda ms: ms.benchmarks(None, role, current_bracket(cfg)) if ms else None)(meta_stats(gd))
     lcu = LCU(cfg.get("league_path"))
     if os.path.exists(REVIEW_CACHE):
         try:

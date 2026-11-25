@@ -339,6 +339,42 @@ class Crawler:
             db.close()
 
 
+CRAWL_TIERS = ["SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"]
+
+
+def bucket(tier):
+    """Elo buckets the crawler fills evenly: Silver, Gold, Plat, Emerald, Diamond, Master+ (Iron/Bronze: none)."""
+    t = (tier or "").upper()
+    if t in APEX:
+        return "MASTER+"
+    return t if t in CRAWL_TIERS else None
+
+
+def bucket_counts(db):
+    """Matches per elo bucket (a match counts for the tier of the player it was found through)."""
+    out = {b: 0 for b in ("SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER+")}
+    for tier, n in db.execute("SELECT tier, COUNT(DISTINCT match_id) FROM games GROUP BY tier"):
+        b = bucket(tier)
+        if b:
+            out[b] += n
+    return out
+
+
+def prune_balanced(db, max_matches=100_000, keep_patches=2, enough_current=600_000):
+    """Silver and up only, every elo bucket gets the same share (newest games win), old patches go
+    once the current one has enough rows."""
+    prune(db, keep_patches=keep_patches, max_rows=10 ** 9, enough_current=enough_current)
+    db.execute(f"DELETE FROM games WHERE tier IS NULL OR tier NOT IN ({','.join('?' * len(CRAWL_TIERS))})", CRAWL_TIERS)
+    per = max_matches // 6
+    for b, tiers in (("SILVER", ["SILVER"]), ("GOLD", ["GOLD"]), ("PLATINUM", ["PLATINUM"]), ("EMERALD", ["EMERALD"]),
+                     ("DIAMOND", ["DIAMOND"]), ("MASTER+", APEX)):
+        q = ",".join("?" * len(tiers))
+        db.execute(f"""DELETE FROM games WHERE tier IN ({q}) AND match_id IN (
+            SELECT match_id FROM games WHERE tier IN ({q}) GROUP BY match_id ORDER BY MAX(created) DESC LIMIT -1 OFFSET ?)""",
+                   (*tiers, *tiers, per))
+    db.commit()
+
+
 def prune(db, keep_patches=2, max_rows=1_000_000, enough_current=150_000):
     """Keep only current data: the newest patch, plus the previous one while the new patch
     has fewer than enough_current rows (start of a patch). At most max_rows rows."""
@@ -860,12 +896,23 @@ class MetaStats:
     def benchmarks(self, champ, role="JUNGLE", bracket=None, min_games=30):
         """Distribution of every detail value for this champion + role (+ elo), widening the scope
         (elo -> all elos -> role over all champions) until there is enough data."""
+        ck = (champ, role, bracket, min_games)
+        cache = self.__dict__.setdefault("_bench_cache", {})
+        hit = cache.get(ck)
+        if hit and time.time() - hit[0] < 1800:   # role-wide lookups read many rows: keep 30 min
+            return hit[1]
+        res = self._benchmarks(champ, role, bracket, min_games)
+        cache[ck] = (time.time(), res)
+        return res
+
+    def _benchmarks(self, champ, role="JUNGLE", bracket=None, min_games=30):
         tiers = BRACKETS.get(bracket) if bracket else None
         tries = []
-        if tiers:
+        if champ is not None and tiers:   # champ=None: compare with the whole role (what coaching uses)
             tries.append(("champ=? AND role=? AND tier IN (%s)" % ",".join("?" * len(tiers)), [champ, role, *tiers],
                           f"{champ} {role.title()} in deinem Elo"))
-        tries.append(("champ=? AND role=?", [champ, role], f"{champ} {role.title()}, alle Elos"))
+        if champ is not None:
+            tries.append(("champ=? AND role=?", [champ, role], f"{champ} {role.title()}, alle Elos"))
         if tiers:
             tries.append(("role=? AND tier IN (%s)" % ",".join("?" * len(tiers)), [role, *tiers],
                           f"alle {role.title()}-Spieler in deinem Elo"))
