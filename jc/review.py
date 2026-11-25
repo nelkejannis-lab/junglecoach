@@ -210,7 +210,7 @@ def run(api_key, platform, riot_id, count=30, queue=420, progress=None, prev=Non
     ids = api.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", {"queue": queue, "count": count})
     known = {}
     for g in (prev or {}).get("games", []):
-        if g.get("match_id") and g.get("stats") and (g.get("deep") or {}).get("v", 1) >= 2:  # older analyses are redone once
+        if g.get("match_id") and g.get("stats") and (g.get("deep") or {}).get("v", 1) >= 4:  # older analyses are redone once
             known[g["match_id"]] = ("jg", g)
     for g in (prev or {}).get("other_games", []):
         if g.get("match_id"):

@@ -1,5 +1,6 @@
 """Server statistics: the crawler exports agg + per-champion shards, the app reads them like the full database."""
 import gzip
+from pathlib import Path
 import os
 import shutil
 import sys
@@ -39,7 +40,7 @@ class AggStatsTests(unittest.TestCase):
             shutil.copyfileobj(a, b)
         old = (meta.AGG_PATH, meta.SHARD_PATH, meta.SHARD_URL)
         meta.AGG_PATH, meta.SHARD_PATH = agg, os.path.join(t, "shards.sqlite")
-        meta.SHARD_URL = "file://" + os.path.join(out, "shard-{}.sqlite.gz")
+        meta.SHARD_URL = Path(out).resolve().as_uri() + "/shard-{}.sqlite.gz"
         try:
             ms = meta.AggStats(object())
             d = ms.draft_parts("Gwen", "JUNGLE", "Viego", ["Viego", "Ahri"], "mid")

@@ -93,7 +93,7 @@ class DeathTests(unittest.TestCase):
 
     def test_trade(self):
         c = self._setup([{"type": "BUILDING_KILL", "teamId": 200, "buildingType": "TOWER_BUILDING", "timestamp": 320000}])
-        self.assertEqual(c["cause"], "trade")
+        self.assertEqual(c["cause"], "outnumbered")  # nearby objective is context, not a proven cause
         self.assertIn("Turm", c["trade"])
 
 
@@ -220,7 +220,7 @@ class GameScoreTests(unittest.TestCase):
         return {"puuid": puuid, "teamId": team, "win": win, "kills": k, "deaths": d, "assists": a,
                 "totalDamageDealtToChampions": dmg, "goldEarned": gold, "totalMinionsKilled": cs, "neutralMinionsKilled": 0,
                 "visionScore": vis, "teamPosition": role, "totalDamageTaken": taken, "damageSelfMitigated": 0,
-                "damageDealtToObjectives": obj}
+                "damageDealtToObjectives": obj, "totalHealsOnTeammates": 0, "totalDamageShieldedOnTeammates": 0}
 
     def test_ranking_and_badges(self):
         from jc.gamescore import scores
@@ -268,7 +268,7 @@ class DeathCostTests(unittest.TestCase):
         c = deep.death_cost(events[0], 1200, frames, 1, events, 100, 400)
         self.assertEqual(c["bounty"], 750)
         self.assertIn("Baron", c["lost"])
-        self.assertGreater(c["cost"], 750 + 1500)
+        self.assertEqual(c["cost"], 750)  # no speculative objective/farm gold added
         allc = deep.death_causes_all(m, tl)
         self.assertEqual(sum(allc[1].values()), 2)
         self.assertEqual(sum(allc[6].values()), 0)

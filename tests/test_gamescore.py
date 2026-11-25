@@ -50,6 +50,14 @@ class GameScoreTests(unittest.TestCase):
             y.update({k: x[k] for k in ("kills", "totalDamageDealtToChampions", "goldEarned", "damageDealtToObjectives")})
         self.assertEqual(gamescore.scores(m1)["me"]["score"], gamescore.scores(m2)["me"]["score"])
 
+    def test_missing_is_unavailable_not_zero(self):
+        m = match(7)
+        del m["participants"][0]["visionScore"]
+        result = gamescore.scores(m)["100-TOP"]
+        self.assertNotIn("vis", result["cats"])
+        self.assertIn("Vision", result["unavailable"])
+        self.assertLess(result["coverage"], 1)
+
     def test_other_modes_not_scored(self):
         self.assertEqual(gamescore.scores(match(4, queue=450)), {})
 
@@ -61,9 +69,12 @@ class GameScoreTests(unittest.TestCase):
         a = html.index("const GS_Q = ")
         b = html.index("\n}\n", html.index("function gameScores(info)")) + 3
         cases = [match(s) for s in range(8)]
+        missing = match(8)
+        del missing["participants"][0]["visionScore"]
+        cases.append(missing)
         js = html[a:b] + f"\nconst C = {json.dumps(cases)};\nconsole.log(JSON.stringify(C.map(m => {{ const o = gameScores(m); "
         js += "return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.score])); })));"
-        out = json.loads(subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout)
+        out = json.loads(subprocess.run([node, "-"], input=js, capture_output=True, text=True, encoding="utf-8", check=True).stdout)
         for m, j in zip(cases, out):
             self.assertEqual({k: v["score"] for k, v in gamescore.scores(m).items()}, j)
 

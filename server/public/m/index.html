@@ -952,7 +952,7 @@ function matchSheet() {
   const k = n => n >= 1000 ? (n / 1000).toFixed(1).replace(".", ",") + "k" : n;
   const kp = Math.round(100 * (me.kills + me.assists) / Math.max(1, teamK(me.teamId)));
   const dmgShare = Math.round(100 * me.totalDamageDealtToChampions / Math.max(1, P.filter(p => p.teamId === me.teamId).reduce((a, p) => a + p.totalDamageDealtToChampions, 0)));
-  const GS = gameScores(info), my = GS[me.puuid] || {score: 0, rank: "–"};
+  const GS = gameScores(info), my = GS[me.puuid] || {score: null, rank: "–"};
   const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
   const badge = v => v && v.badge ? `<span class="gsb mvp">${v.badge}</span>` : "";
   const ring = (v, win) => { const C = 2 * Math.PI * 30; return `<div class="ring"><svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" class="tr"/>
@@ -979,7 +979,7 @@ function matchSheet() {
         <div class="kda2">${me.kills}<i>/</i><span class="red">${me.deaths}</span><i>/</i>${me.assists}</div>
         <div class="muted small">${me.championName} · ${POS[me.teamPosition] || "–"} · Lvl ${me.champLevel ?? "–"} · ${QUEUE[info.queueId] || "Spiel"} · ${Math.round(min)} min · ${new Date(info.gameEndTimestamp || info.gameCreation).toLocaleDateString("de-DE")}</div>
         <div class="items big">${[0, 1, 2, 3, 4, 5, 6].map(i => iImg(me["item" + i])).join("")}</div></div></div>
-      <div class="mhr">${ring(my.score, me.win)}<div class="small" style="text-align:center;margin-top:4px">Platz <b>${my.rank}</b> von 10 ${badge(my)}</div></div>
+      <div class="mhr">${my.score == null ? "Nicht bewertbar" : ring(my.score, me.win)}<div class="small" style="text-align:center;margin-top:4px">Platz <b>${my.rank}</b> von ${Object.keys(GS).length} ${badge(my)}<br>Modellwert · feste Rollenreferenz${my.coverage != null ? "<br>Datenabdeckung " + Math.round(my.coverage * 100) + "%" : ""}</div></div>
     </div>
     <div class="stats six">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
       ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>

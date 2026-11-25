@@ -2,7 +2,7 @@
 
 Built so the SAME performance always gets the SAME number:
 * no win bonus (the result is shown separately), no stretching around the lobby average – every player is
-  compared with a fixed reference of a good Silver–Platinum player of HIS role (5.5 = that reference);
+  compared with a fixed, provisional role reference (not an empirically validated Elo benchmark) (5.5 = that reference);
 * five independent categories, every stat counted once: resources (CS, gold share), fighting (damage share,
   kill participation – supports: kill participation + heals/shields), objectives (damage to structures/monsters),
   vision, survival (deaths per 10 min – the only place deaths count);
