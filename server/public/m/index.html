@@ -353,11 +353,12 @@ function login(p) {
 function logout() { LS.set("jc_snap", null); LS.set("jc_token", null); MEM_TOKEN = null; if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jcToken) window.webkit.messageHandlers.jcToken.postMessage(""); S = {...S, me: null, acct: null, league: null, games: null, coach: null, friends: null}; render(); }
 
 // ---- data
-const DD = () => `https://ddragon.leagueoflegends.com/cdn/${S.ver}`;
+const DD = () => `https://ddragon.leagueoflegends.com/cdn/${S.ddBad && S.verFb ? S.verFb : S.ver}`;
 // Data Dragon sometimes lists a new patch before its images are online -> fall back to the previous patch, then hide
 window.imgFb = el => {
   const fb = S.verFb, cur = el.getAttribute("src") || "";
-  if (fb && !el.dataset.fb && cur.includes(`/cdn/${S.ver}/`)) { el.dataset.fb = 1; el.src = cur.replace(`/cdn/${S.ver}/`, `/cdn/${fb}/`); return; }
+  // new patch images not online yet: from now on every image uses the previous patch (no reload loop on re-render)
+  if (fb && !el.dataset.fb && cur.includes(`/cdn/${S.ver}/`)) { S.ddBad = true; el.dataset.fb = 1; el.src = cur.replace(`/cdn/${S.ver}/`, `/cdn/${fb}/`); return; }
   el.style.visibility = "hidden";
 };
 const cImg = (c, cls = "c") => `<img class="${cls}" src="${DD()}/img/champion/${encodeURIComponent(c)}.png" loading="lazy" onerror="imgFb(this)">`;
@@ -1500,13 +1501,48 @@ function render() {
     render.toTop = false;
   }
 }
+// DOM diff: keeps every node that did not change (images stay loaded, scroll and animations untouched)
+const KEEP_CLS = ["ani", "opening", "closing", "pgL", "pgR", "on-open"];
+function morph(a, b) {
+  const an = [...a.childNodes], bn = [...b.childNodes];
+  bn.forEach((n, i) => {
+    const o = an[i];
+    if (!o) { a.appendChild(n); return; }
+    if (o.nodeType !== n.nodeType || o.nodeName !== n.nodeName || (n.nodeType === 1 && /^(SCRIPT|SVG|svg|IMG|VIDEO|SELECT)$/.test(n.nodeName) && o.outerHTML !== n.outerHTML && n.nodeName !== "IMG")) { a.replaceChild(n, o); return; }
+    if (n.nodeType === 3 || n.nodeType === 8) { if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue; return; }
+    if (o.outerHTML === n.outerHTML) return;
+    // an image that already switched to its fallback (or is hidden) keeps its working state – re-setting the
+    // original src would reload it on every render (the flicker)
+    if (n.nodeName === "IMG" && (o.dataset.fb || o.style.visibility === "hidden") &&
+        (o.getAttribute("src") || "").split("/img/")[1] === (n.getAttribute("src") || "").split("/img/")[1]) return;
+    for (const at of [...n.attributes]) {
+      if (at.name === "class") { const keep = KEEP_CLS.filter(c => o.classList.contains(c)); const v = [n.getAttribute("class"), ...keep].join(" ").trim(); if (o.getAttribute("class") !== v) o.setAttribute("class", v); }
+      else if (o.getAttribute(at.name) !== at.value) o.setAttribute(at.name, at.value);
+    }
+    for (const at of [...o.attributes]) if (!n.hasAttribute(at.name) && at.name !== "class") o.removeAttribute(at.name);
+    if (n.nodeName === "IMG") return;
+    if (n.nodeName === "INPUT" || n.nodeName === "TEXTAREA") return;   // value is handled by render()
+    morph(o, n);
+  });
+  for (let i = an.length - 1; i >= bn.length; i--) a.removeChild(an[i]);
+}
 function renderInner() {
   const app = $("#app"), tabs = $("#tabs");
-  if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); return; }
-  if (!S.me) { tabs.style.display = "none"; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
+  if (!token()) { tabs.style.display = "none"; app.innerHTML = vLogin(); renderInner.last = null; return; }
+  if (!S.me) { tabs.style.display = "none"; renderInner.last = null; app.innerHTML = `<div style="height:60vh;display:grid;place-items:center">${moosi("sleepy", 110)}</div>${S.err ? `<p class="red" style="text-align:center">${esc(S.err)}</p>` : ""}`; return; }
   tabs.style.display = "flex";
-  tabs.innerHTML = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""} ${k === "friends" && (S.soc.incoming || []).length ? "dotb" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
-  app.innerHTML = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
+  const tabsHtml = [["home", "Home"], ["games", "Games"], ["stats", "Stats"], ["friends", "Freunde"], ["more", "Mehr"]].map(([k, l]) => `<button class="${S.tab === k ? "on" : ""} ${k === "friends" && (S.soc.incoming || []).length ? "dotb" : ""}" onclick="if(S.tab!=='${k}')hap('medium');S.tab='${k}';S.view=null;render.toTop=true;render();scrollTo(0,0);if('${k}'==='games'||'${k}'==='home')refreshGames()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TAB_IC[k]}</svg>${l}</button>`).join("");
+  if (tabsHtml !== renderInner.tabs) { renderInner.tabs = tabsHtml; tabs.innerHTML = tabsHtml; }
+  const html = ({home: vHome, games: vGames, stats: vStats, friends: vFriends, more: vMore}[S.tab])() + (S.sheet ? matchSheet() : "") + (S.player ? playerSheet() : "");
+  if (html !== renderInner.last) {   // only touch what changed: no image reloads, no flicker, no replayed animations
+    renderInner.last = html;
+    const tpl = document.createElement("div");
+    tpl.innerHTML = html;
+    const page = S.tab + "|" + (S.view && S.view.friend || "");
+    // same page: patch only what changed. New page: build it fresh (that's when the enter animations play)
+    if (app.childElementCount && page === renderInner.page) morph(app, tpl); else app.innerHTML = html;
+    renderInner.page = page;
+  }
   afterRender(app);
   if (document.activeElement && document.activeElement.id === "radd") return;   // don't wipe what is being typed
   renderRail();
