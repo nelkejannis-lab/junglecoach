@@ -87,6 +87,11 @@ def connect(path=None):
                   role TEXT, stats TEXT, build TEXT, PRIMARY KEY(match_id, champ))"""
     db.execute(schema.format(t="games"))
     db.execute("CREATE TABLE IF NOT EXISTS seen(match_id TEXT PRIMARY KEY)")
+    try:   # fast champ-select lookups (champion + role, lane opponent + role)
+        db.execute("CREATE INDEX IF NOT EXISTS games_champ_role ON games(champ, role, patch)")
+        db.execute("CREATE INDEX IF NOT EXISTS games_enemy_role ON games(enemy, role)")
+    except sqlite3.OperationalError:
+        pass
     # players found on a focus champion (e.g. Gwen / Graves mains): every crawl starts with them
     db.execute("""CREATE TABLE IF NOT EXISTS focus_players(puuid TEXT, region TEXT, tier TEXT, champ TEXT,
                   last_seen INT, PRIMARY KEY(puuid, region))""")
@@ -187,7 +192,7 @@ def purchases(timeline):
     return out
 
 
-def store_match(db, match, tier=None, focus=None, all_players=True, timeline=None):
+def store_match(db, match, tier=None, focus=None, all_players=True, timeline=None, skip_puuid=None):
     """Stores all 10 players of a ranked match (champion, role, items, runes, lane opponent),
     so statistics exist for every champion and role. focus only steers the crawler (snowball).
     all_players=False keeps the old behaviour (only the two junglers)."""
@@ -199,7 +204,9 @@ def store_match(db, match, tier=None, focus=None, all_players=True, timeline=Non
         return 0
     parts = info["participants"]
     if all_players:
-        chosen = parts
+        # the player we found this match through is NOT random (ladder climbers, one-tricks win more often):
+        # leave his row out, the other 9 are an unbiased sample -> realistic win rates
+        chosen = [p for p in parts if not skip_puuid or p.get("puuid") != skip_puuid]
     else:
         chosen = [p for p in parts if p.get("teamPosition") == "JUNGLE"]
         if len(chosen) != 2:
@@ -319,7 +326,7 @@ class Crawler:
                             tl = api.get(f"/lol/match/v5/matches/{mid}/timeline")
                         except Exception:  # noqa: BLE001
                             tl = None
-                    if store_match(db, m, tier, focus or None, timeline=tl):
+                    if store_match(db, m, tier, focus or None, timeline=tl, skip_puuid=puuid):
                         st["matches"] += 1
                         if focus and any(p["championName"] in focus for p in m["info"]["participants"]):  # snowball: players on a focus champion probably play it again
                             for p in m["info"]["participants"]:
@@ -537,6 +544,67 @@ class MetaStats:
             return None
         key, (w, n) = max(pages.items(), key=lambda kv: (kv[1][1], kv[1][0]))
         return dict(json.loads(key), games=n, winrate=round(100 * w / n, 1))
+
+    def draft_parts(self, champ_id, role, lane_enemy=None, enemy_ids=(), bracket=None):
+        """Data part of the pick rating (iTero-like): win rate of the champion in this role and elo, lane
+        counter and the other known enemies – all shrunk (base 300 games toward 50 %, lane 40, others 60),
+        so small samples can't produce crazy numbers. Values are percentage points vs. 50 %."""
+        key = ("draft", champ_id, role, lane_enemy, tuple(sorted(enemy_ids)), bracket)
+        cache = self.__dict__.setdefault("_draft_cache", {})
+        if key in cache and time.time() - cache[key][0] < 600:
+            return cache[key][1]
+        patch = self.current_patch()
+        tiers = BRACKETS.get(bracket) if bracket else None
+        out = {"games": 0, "wr": None, "lane": None, "lane_games": 0, "team": None, "team_vs": []}
+        for where, args, scope in ((f"champ=? AND role=? AND patch=? AND tier IN ({','.join('?' * len(tiers or []))})",
+                                    [champ_id, role, patch, *(tiers or [])], "dein Elo") if tiers else (None, None, None),
+                                   ("champ=? AND role=? AND patch=?", [champ_id, role, patch], "alle Elos"),
+                                   ("champ=? AND role=?", [champ_id, role], "alle Patches")):
+            if not where:
+                continue
+            w, n = self.db.execute(f"SELECT SUM(win), COUNT(*) FROM games WHERE {where}", args).fetchone()
+            if n and n >= 40:
+                break
+        if not n or n < 20:
+            cache[key] = (time.time(), out)
+            return out
+        base = _shrunk(w, n, 0.5, 300)
+        out.update(games=n, scope=scope, wr=round(100 * base - 50, 1))
+        if lane_enemy:
+            lw, ln = self.db.execute(f"SELECT SUM(win), COUNT(*) FROM games WHERE {where} AND enemy=?", args + [lane_enemy]).fetchone()
+            if ln:
+                out["lane"] = round(max(-8, min(8, 100 * (_shrunk(lw, ln, base, 40) - base))), 1)
+                out["lane_games"] = ln
+        tot = 0.0
+        for e in enemy_ids:
+            if not e or e == lane_enemy:
+                continue
+            ew, en = self.db.execute(f"SELECT SUM(win), COUNT(*) FROM games WHERE {where} AND enemies LIKE ?", args + [f'%"{e}"%']).fetchone()
+            if en and en >= 10:
+                d = max(-3, min(3, 100 * (_shrunk(ew, en, base, 60) - base)))
+                tot += d
+                out["team_vs"].append({"enemy": e, "delta": round(d, 1), "games": en})
+        out["team"] = round(max(-6, min(6, tot)), 1) if out["team_vs"] else None
+        cache[key] = (time.time(), out)
+        return out
+
+    def lane_counters(self, enemy_id, role, bracket=None, k=6, min_games=25):
+        """Best picks of this role against that lane opponent (shrunk win rates)."""
+        key = ("counters", enemy_id, role, bracket)
+        cache = self.__dict__.setdefault("_draft_cache", {})
+        if key in cache and time.time() - cache[key][0] < 1800:
+            return cache[key][1]
+        tiers = BRACKETS.get(bracket) if bracket else None
+        tq = f" AND tier IN ({','.join('?' * len(tiers))})" if tiers else ""
+        res = []
+        for where, args in ((f"enemy=? AND role=?{tq}", [enemy_id, role, *(tiers or [])]), ("enemy=? AND role=?", [enemy_id, role])):
+            rows = self.db.execute(f"SELECT champ, SUM(win), COUNT(*) FROM games WHERE {where} GROUP BY champ", args).fetchall()
+            res = [{"champion": c, "games": n, "winrate": round(100 * _shrunk(w, n, 0.5, 40), 1)} for c, w, n in rows if n >= min_games]
+            if len(res) >= 3:
+                break
+        res = sorted(res, key=lambda x: -x["winrate"])[:k]
+        cache[key] = (time.time(), res)
+        return res
 
     def matchup(self, champ_id, enemy_id, bracket=None):
         """What works best for champ vs this enemy jungler. Small samples, so every option is
@@ -953,10 +1021,11 @@ class MetaStats:
             f"{' OR tier IS NULL' if not bracket else ''}) GROUP BY champ", (patch, role, *tiers)).fetchall()
         total = sum(r[2] for r in rows) or 1
         matches = max(total / 2, 1)  # two players per role and match
-        out = [{"champion": c, "games": n, "winrate": round(100 * w / n, 1),
-                "adj_winrate": round(100 * _shrunk(w, n, 0.5), 1), "pickrate": round(100 * n / matches, 1)}
+        # shown win rate is shrunk toward 50 % (200-game prior): small samples can't show 60 %+ anymore
+        out = [{"champion": c, "games": n, "winrate": round(100 * _shrunk(w, n, 0.5, 200), 1), "raw_winrate": round(100 * w / n, 1),
+                "adj_winrate": round(100 * _shrunk(w, n, 0.5, 200), 1), "pickrate": round(100 * n / matches, 1)}
                for c, w, n in rows if n >= min_games]
-        conf = {c: round(100 * _shrunk(w, n, 0.5, k=60), 2) for c, w, n in rows}  # tiers need more evidence
+        conf = {c: round(100 * _shrunk(w, n, 0.5, k=200), 2) for c, w, n in rows}  # tiers need more evidence
         out.sort(key=lambda x: -(conf[x["champion"]] + min(x["pickrate"], 20) * 0.05))
         for i, t in enumerate(out):  # op.gg-like tiers by rank
             q = i / max(len(out), 1)

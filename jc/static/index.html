@@ -330,6 +330,15 @@
   .fr-tab td { padding:9px 8px; } .fr-tab tr.click:hover td { background:rgba(255,255,255,.03); cursor:pointer; } .fr-tab tr.mine td { background:rgba(34,211,238,.08); }
   .fr-tab { table-layout:fixed; } .fr-tab th:nth-child(1) { width:44px; } .fr-tab th:nth-child(2) { width:30%; } .fr-tab th:nth-child(3) { width:28%; } .fr-tab td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .fr-tab td:first-child { display:table-cell; width:36px; }
+  .myr { display:flex; gap:18px; align-items:flex-start; }
+  .rbadge { flex:none; display:flex; align-items:baseline; gap:2px; border:1px solid; border-radius:12px; padding:6px 10px; } .rbadge b { font-size:20px; } .rbadge span { font-size:11px; color:var(--sec); }
+  .rbadge.big { padding:10px 14px; } .rbadge.big b { font-size:34px; }
+  .rp { display:grid; grid-template-columns: 150px 1fr 48px; gap:10px; padding:5px 0; border-top:1px solid var(--line); font-size:13px; align-items:center; } .rp b { text-align:right; }
+  details.pick { border-radius:14px; background:var(--card2); border:1px solid var(--sep); } details.pick.best { background:rgba(45,212,191,.10); border-color:rgba(45,212,191,.35); }
+  details.pick summary { display:flex; gap:12px; align-items:center; padding:10px; cursor:pointer; list-style:none; } details.pick summary::-webkit-details-marker { display:none; }
+  .pick-parts { padding:0 14px 12px 66px; }
+  .src-meta { color:var(--purple); border-color:rgba(192,132,252,.3); background:rgba(192,132,252,.1); } .src-pool { color:var(--gold); border-color:rgba(245,196,81,.3); background:rgba(245,196,81,.1); }
+  .src-counter { color:#f87171; border-color:rgba(248,113,113,.3); background:rgba(248,113,113,.1); }
 </style>
 </head>
 <body>
@@ -345,7 +354,7 @@
     <button data-v="profile"><span class="ic" data-i="profile"></span><span class="lbl">Profil</span></button>
     <button data-v="ranked"><span class="ic" data-i="ranked"></span><span class="lbl">Ranked</span></button>
     <button data-v="analyse"><span class="ic" data-i="analyse"></span><span class="lbl">Analyse & Clips</span></button>
-    <button data-v="meta"><span class="ic" data-i="meta"></span><span class="lbl">Meta & Builds</span></button>
+
     <div class="nsec">Sozial</div>
     <button data-v="friends"><span class="ic" data-i="friends"></span><span class="lbl">Freunde</span><span class="pill" id="fr-pill" style="display:none"></span></button>
     <button data-v="settings"><span class="ic" data-i="settings"></span><span class="lbl">Einstellungen</span></button>
@@ -850,13 +859,19 @@ function renderSelect() {
        <div class="meter" style="height:8px;display:flex"><i style="width:${p.ad_share}%;background:var(--orange)"></i><i style="width:${p.ap_share}%;background:var(--acc)"></i></div>` : ""}
      <div style="margin-top:12px">${list(cs.notes, n => `<li class="small">${esc(n)}</li>`)}</div>`);
   const roleTxt = ROLE_DE[cs.assigned_role] || "";
-  h += card(roleTxt ? `Pick-Empfehlung · ${roleTxt}` : "Pick-Empfehlung",
-    roleTxt ? `Du hast ${roleTxt} bekommen – deine Champions auf dieser Rolle, dein Pool und die stärksten Meta-Picks, bewertet gegen diese Comp${cs.lane_enemy ? " und " + esc(cs.lane_enemy) : ""}.`
-      : "Aus deinem Champion-Pool, bewertet gegen diese Comp" + (cs.enemy_jungler ? " und den Gegner-Jungler." : "."),
-    cs.pick_suggestions.length ? `<div style="display:grid;gap:8px">${cs.pick_suggestions.slice(0, 6).map((s, i) => `<div style="display:flex;gap:12px;align-items:center;padding:10px;border-radius:14px;background:${i === 0 ? "rgba(45,212,191,.10)" : "var(--card2)"};border:1px solid ${i === 0 ? "rgba(45,212,191,.35)" : "var(--sep)"}">
-      ${cImg(s.id, 44, 12)}<div style="flex:1;min-width:0"><div class="row" style="border:0;padding:0"><b>${i === 0 ? "★ " : ""}${esc(s.champion)}</b>
-      ${s.source ? `<span class="rolechip" style="${s.source === "meta" ? "color:var(--purple);border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.1)" : s.source === "pool" ? "color:var(--gold);border-color:rgba(245,196,81,.3);background:rgba(245,196,81,.1)" : ""}">${{mine: "Dein Champ", pool: "Pool", meta: "Meta"}[s.source]}</span>` : ""}</div>
-      <div class="muted small">${esc(s.why.join(" · "))}</div></div></div>`).join("")}</div>` : '<p class="muted small">Noch keine passenden Champions – spiel ein paar Games auf dieser Rolle oder füge Champions zu deinem Pool hinzu.</p>');
+  const partsHtml = parts => (parts || []).map(x => `<div class="rp"><span>${esc(x.k)}</span><span class="muted small">${esc(x.txt || "")}</span><b class="${x.d > 0.2 ? "green" : x.d < -0.2 ? "red" : "muted"}">${x.d > 0 ? "+" : ""}${x.d.toFixed(1)}</b></div>`).join("");
+  const rBadge = (v, big) => `<div class="rbadge ${big ? "big" : ""}" style="color:${paCol(v)};border-color:${paCol(v)}55"><b>${v.toFixed(1)}</b><span>/10</span></div>`;
+  if (cs.my_rating && cs.my_champion) h += `<div class="card wide myr">${cImg(cs.my_champion_id, 64, 16)}<div style="flex:1;min-width:0">
+      <div class="muted small">Deine Wahl</div><h3 style="margin:2px 0 4px">${esc(cs.my_champion)}${cs.lane_enemy ? ` <span class="muted" style="font-weight:600">vs ${esc(cs.lane_enemy)}</span>` : ""}</h3>
+      <div class="small muted">≈ ${cs.my_rating.exp_wr}% Siegchance · 5,5 = durchschnittlicher Pick</div>${partsHtml(cs.my_rating.parts)}</div>${rBadge(cs.my_rating.rating, true)}</div>`;
+  h += card(roleTxt ? `Pick-Vorschläge · ${roleTxt}` : "Pick-Vorschläge",
+    `Bewertet wie bei iTero: Erfahrung auf dem Champ zuerst, dann Champion-Stärke in deinem Elo, Counter${cs.lane_enemy ? " gegen " + esc(cs.lane_enemy) : ""}, restliche Gegner und Schadensmix.`,
+    cs.pick_suggestions.length ? `<div style="display:grid;gap:8px">${cs.pick_suggestions.slice(0, 8).map((s, i) => `<details class="pick ${i === 0 ? "best" : ""}"><summary>
+      ${cImg(s.id, 44, 12)}<div style="flex:1;min-width:0"><div style="display:flex;gap:8px;align-items:center"><b>${esc(s.champion)}</b>
+      <span class="rolechip src-${s.source}">${{mine: "Dein Champ", pool: "Pool", meta: "Meta", counter: "Counter"}[s.source] || ""}</span></div>
+      <div class="muted small">${esc((s.why || [])[0] || "")}</div></div>${s.rating != null ? rBadge(s.rating) : ""}</summary>
+      <div class="pick-parts">${partsHtml(s.parts)}${s.exp_wr ? `<div class="small muted" style="margin-top:6px">≈ ${s.exp_wr}% Siegchance</div>` : ""}</div></details>`).join("")}</div>`
+      : '<p class="muted small">Noch keine passenden Champions – spiel ein paar Games auf dieser Rolle oder füge Champions zu deinem Pool hinzu.</p>', true);
   if (cs.runes) {
     const r = cs.runes, data = r.source === "data";
     h += card("Runen · " + cs.my_champion, data ? "Aus echten Games berechnet." : "Regelbasiert – sammle Meta-Daten für datenbasierte Runen.",

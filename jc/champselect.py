@@ -181,6 +181,52 @@ def role_picks(gd, config, role, allies, prof, taken, meta_stats=None, bracket=N
     return sorted(out, key=lambda x: -x["score"])[:8]
 
 
+def _ap_share(c):
+    i = (c or {}).get("info", {})
+    a, m = i.get("attack", 5), i.get("magic", 5)
+    return m / max(1, a + m)
+
+
+def rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history):
+    """Pick rating 1–10 like iTero: the factors in their order of importance –
+    1) experience on the champion (iTero: mastery matters by far the most), 2) win rate of the champion in
+    this role + elo, 3) lane counter, 4) the other enemies, 5) damage mix of the team. Expected win
+    chance = 50 % + parts; 5.5 = average pick."""
+    parts = []
+    n = w = 0
+    for g in history or []:
+        c = gd.champ(g.get("champion")) if g.get("champion") else None
+        if c and c["id"] == cid:
+            n += 1
+            w += 1 if g.get("win") else 0
+    exp_pts = -5 if n == 0 else -3.5 if n < 3 else -2 if n < 5 else 0 if n < 10 else 1 if n < 20 else 2
+    if n >= 8:
+        exp_pts += max(-2, min(2, (100 * w / n - 50) * 0.1))
+    parts.append({"k": "Erfahrung", "d": round(exp_pts, 1),
+                  "txt": "noch nie gespielt – Erstpick in Ranked kostet viel" if n == 0 else f"{n} Games, {round(100 * w / n)}% WR"})
+    if meta_stats is not None and role:
+        try:
+            dp = meta_stats.draft_parts(cid, role, lane_enemy["id"] if lane_enemy else None,
+                                        [e["id"] for e in enemies if e], bracket)
+        except Exception:  # noqa: BLE001
+            dp = {}
+        if dp.get("wr") is not None:
+            parts.append({"k": "Champion-Stärke", "d": max(-4, min(4, dp["wr"])), "txt": f"{round(50 + dp['wr'], 1)}% WR als {ROLE_DE.get(role, role)} ({dp['games']} Games, {dp.get('scope', '')})"})
+        if dp.get("lane") is not None and lane_enemy:
+            parts.append({"k": f"vs {gd.champ_name(lane_enemy)}", "d": dp["lane"], "txt": f"Lane-Matchup ({dp['lane_games']} Games)"})
+        if dp.get("team") is not None:
+            parts.append({"k": "vs restliche Gegner", "d": dp["team"], "txt": ", ".join(f"{x['enemy']} {x['delta']:+}" for x in dp["team_vs"])})
+    team = [c for c in allies if c] + [gd.champ(cid)]
+    if len(team) >= 3:
+        ap = sum(_ap_share(c) for c in team) / len(team)
+        if ap > 0.72 or ap < 0.28:
+            parts.append({"k": "Schadensmix", "d": -2, "txt": "Team fast nur " + ("magischer" if ap > 0.72 else "physischer") + " Schaden – leicht zu itemisieren"})
+        elif 0.4 <= ap <= 0.6:
+            parts.append({"k": "Schadensmix", "d": 0.5, "txt": "guter Mix aus AD und AP"})
+    exp = 50 + sum(p["d"] for p in parts)
+    return {"rating": round(max(1, min(10, 5.5 + (exp - 50) * 0.45)), 1), "exp_wr": round(exp, 1), "parts": parts, "games": n}
+
+
 def analyze(gd, session, config, meta_stats=None, bracket=None, history=None):
     if not session:
         return None
@@ -270,17 +316,26 @@ def analyze(gd, session, config, meta_stats=None, bracket=None, history=None):
                                                    tuple(enemy_roles), meta_stats, bracket)
         except Exception as e:  # noqa: BLE001
             out["gameplan"] = {"error": str(e), "steps": []}
-    # meta-aware pick suggestions: matchup winrate vs the enemy jungler
-    if meta_stats and lane_enemy:
+    # iTero-like ratings: your current pick, every suggestion, and counters to the lane opponent
+    try:
+        R = lambda cid: rate_pick(gd, cid, role, allies, enemies, lane_enemy, meta_stats, bracket, history)
+        if my_champ:
+            out["my_rating"] = R(my_champ["id"])
+        if meta_stats is not None and lane_enemy and role:
+            have = {p["id"] for p in out["pick_suggestions"]}
+            for c in meta_stats.lane_counters(lane_enemy["id"], role, bracket):
+                cc = gd.champ(c["champion"])
+                if cc and cc["id"] not in taken and cc["id"] not in have:
+                    out["pick_suggestions"].append({"champion": gd.champ_name(cc), "id": cc["id"], "score": 0,
+                                                    "why": [f"Counter gegen {gd.champ_name(lane_enemy)}: {c['winrate']}% WR ({c['games']} Games)"],
+                                                    "source": "counter"})
         for p in out["pick_suggestions"]:
-            try:
-                mu = meta_stats.matchup(p["id"], lane_enemy["id"], bracket)
-            except Exception:
-                continue
-            if mu.get("enough"):
-                p["score"] += round((mu["winrate"] - 50) * 1.5)
-                p["why"].append(f"vs {gd.champ_name(lane_enemy)}: {mu['winrate']}% WR ({mu['games']} Games)")
-        out["pick_suggestions"].sort(key=lambda x: -x["score"])
+            r = R(p["id"])
+            p.update(rating=r["rating"], exp_wr=r["exp_wr"], parts=r["parts"])
+        out["pick_suggestions"].sort(key=lambda x: -x.get("rating", 0))
+        out["pick_suggestions"] = out["pick_suggestions"][:8]
+    except Exception as e:  # noqa: BLE001 - never break champ select because of stats
+        out["rating_error"] = str(e)
     out["enemy_jungler_id"] = enemy_jg["id"] if enemy_jg else None
     if meta_stats is not None:
         meta_stats.role = None
