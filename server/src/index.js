@@ -336,7 +336,7 @@ async function sync(req, env, user, kind) {
   }
   let v;
   if (kind === "presence") {
-    v = Object.fromEntries(Object.entries(body.presence || {}).filter(([rid, st]) => RIOT_ID.test(rid) && ["online", "ingame", "away", "offline", "unknown"].includes(st)).slice(0, 50).map(([rid, st]) => [rid.toLowerCase(), st]));
+    v = Object.fromEntries(Object.entries(body.presence || {}).filter(([rid, st]) => RIOT_ID.test(rid) && ["online", "ingame", "away", "mobile", "offline", "unknown"].includes(st)).slice(0, 50).map(([rid, st]) => [rid.toLowerCase(), st]));
   } else if (kind === "friends") {
     v = [...new Set((Array.isArray(body.friends) ? body.friends : []).map((f) => String(f).trim()).filter((f) => RIOT_ID.test(f)))].slice(0, 50);
   } else if (kind === "profile") {
@@ -426,7 +426,7 @@ export default {
     const url = new URL(req.url);
     const p = url.pathname;
       if (p === "/api/radar-tiers") {
-        const r = await fetch("https://github.com/nelkejannis-lab/junglecoach/releases/download/v1.15.8/radar-tiers.json",{cf:{cacheTtl:300}});
+        const r = await fetch("https://github.com/nelkejannis-lab/junglecoach/releases/download/v1.15.9/radar-tiers.json",{cf:{cacheTtl:300}});
         return new Response(r.ok?r.body:"{}", {status:r.ok?200:503,headers:{"content-type":"application/json","access-control-allow-origin":"*","cache-control":r.ok?"public,max-age=3600":"no-store"}});
       }
     try {

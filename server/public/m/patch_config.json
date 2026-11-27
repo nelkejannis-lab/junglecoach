@@ -1,0 +1,7 @@
+{
+  "data_dragon_patch": "16.23",
+  "initial_spawn_seconds": {"DRAGON": 300, "HORDE": 480, "RIFTHERALD": 900, "BARON_NASHOR": 1200},
+  "camp_spawn_seconds": {"wolves": 55, "blue": 55, "red": 55, "raptors": 55, "krugs": 67, "gromp": 67, "scuttle": 175},
+  "respawn_seconds": {"Dragon": 300, "Baron": 360, "Elder": 360},
+  "setup_notice_seconds": 55
+}

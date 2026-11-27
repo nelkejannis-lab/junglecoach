@@ -356,7 +356,14 @@
   .prio-c .x { width:28px; height:28px; border:0; border-radius:8px; background:rgba(255,255,255,.06); color:var(--sec); cursor:pointer; } .acc { color:var(--acc); }
   .gpts { width:58px; flex:none; text-align:center; } .gpts b { display:block; font-size:20px; line-height:1.1; } .gpts span { font-size:10.5px; color:var(--sec); }
 </style>
-</head>
+<script src="/coaching-score.js"></script><script src="/coaching-view.js"></script><style>
+.coaching-panel{margin:14px 0}.coaching-panel h3{margin:0 0 8px}.coaching-total{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.coaching-total>b{font-size:2rem}.coaching-total small{font-size:.8rem}.coaching-factor{display:grid;grid-template-columns:1fr auto;gap:4px;margin:.65rem 0}
+.coaching-factor meter{width:100%;height:.55rem;grid-column:1/-1;accent-color:#58bba6}.coaching-panel summary{cursor:pointer}
+.coaching-trend{display:flex;align-items:flex-end;gap:4px;height:64px;position:relative;margin:8px 0 12px}
+.coaching-trend i{display:block;flex:1;max-width:40px;background:#64c0aa;border-radius:4px 4px 0 0}
+.coaching-trend i.loss{background:#cb9299}.coaching-trend em{position:absolute;left:0;right:0;border-top:1px dashed currentColor;opacity:.6}
+</style></head>
 <body>
 <div class="shell">
 <aside>
@@ -494,7 +501,7 @@ function playingTxt(f) {
   const champ = p.champ ? (champList.find(c => c.id === p.champ) || {name: p.champ}).name : "";
   return `<span style="color:var(--acc);font-weight:700">🎮 ${p.game === "champselect" ? "Champ Select" : "spielt"}${champ ? " " + esc(champ) : ""}</span>`;
 }
-const PRES = {ingame: "Im Spiel", online: "Online", away: "Abwesend", offline: "Offline", unknown: "–"};
+const PRES = {ingame: "Im Spiel", online: "Online", away: "Abwesend", mobile: "Riot Mobile", offline: "Offline", unknown: "–"};
 const rankTxt = r => r ? `<span class="tierc ${r.tier}">${r.tier[0] + r.tier.slice(1).toLowerCase()} ${["MASTER", "GRANDMASTER", "CHALLENGER"].includes(r.tier) ? "" : r.division}</span> · ${r.lp} LP` : '<span class="muted">Unranked</span>';
 const profIcon = (id, s = 40) => id ? `<img src="https://ddragon.leagueoflegends.com/cdn/${VER()}/img/profileicon/${id}.png" width="${s}" height="${s}" style="border-radius:12px;flex:none" onerror="this.style.visibility='hidden'">` : `<div class="avatar" style="width:${s}px;height:${s}px">${svgIcon("profile", s / 2)}</div>`;
 const splash = id => `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${encodeURIComponent(id)}_0.jpg`;
@@ -663,7 +670,7 @@ function renderProfile() {
   if (!profData) return page("Profil", sub, search);
   const p = profData, rc = p.recent;
   const filters = [["all", "Alle"], ["solo", "Solo/Duo"], ["flex", "Flex"], ["ranked", "Ranked gesamt"], ["normal", "Normal"], ["aram", "ARAM"], ["arena", "Arena"]];
-  let h = search;
+  let h = search + coachingBlock((p.games || []).map(g => ({id:g.match_id,role:g.pos,queue:g.queue_id})),p.puuid,Boolean(own && (!profQuery || profQuery.toLowerCase() === own.toLowerCase())));
   if (profErr) h += card("", "", `<span class="red small">${esc(profErr)}</span>`, true);
   h += card("", "", `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
       <div style="position:relative">${img(`${DD()}/img/profileicon/${p.icon}.png`, 84, true)}
@@ -733,13 +740,24 @@ async function loadAllGames() {
     if (!(profData && profData.load_all && profData.load_all.running)) clearInterval(allTimer);
   }, 4000);
 }
+function getCoachingInput(id) {
+  return getJson("/api/coaching-match?" + new URLSearchParams({id}));
+}
+let openCoachingRequest = 0;
 async function openMatch(id) {
+  const request = ++openCoachingRequest;
   matchLoading = true; matchData = null; render();
   const q = new URLSearchParams({id, puuid: (profData || {}).puuid || ""});
-  try { matchData = await getJson("/api/match?" + q); } catch (e) { matchData = {error: "Nicht erreichbar"}; }
+  let data;
+  try { data = await getJson("/api/match?" + q); } catch (e) { data = {error: "Nicht erreichbar"}; }
+  if (request !== openCoachingRequest) return;
+  matchData = data;
   matchLoading = false; render();
+  if (data.error || !q.get("puuid")) return;
+  try { data.coaching = await coachingMatch(id,q.get("puuid")); } catch { data.coaching = false; }
+  if (request === openCoachingRequest) render();
 }
-function closeMatch() { matchData = null; matchLoading = false; render(); }
+function closeMatch() { openCoachingRequest++; matchData = null; matchLoading = false; render(); }
 document.addEventListener("keydown", e => { if (e.key === "Escape" && (matchData || matchLoading)) closeMatch(); });
 const spellImg = s => s ? img(`${DD()}/img/spell/${s}.png`, 18) : "";
 const runeImg = (ic, sz) => ic ? img(`https://ddragon.leagueoflegends.com/cdn/img/${ic}`, sz, true) : "";
@@ -766,7 +784,7 @@ function matchModal() {
         <td>${r.cs}<div class="muted" style="font-size:11px">${r.cs_min}/Min</div></td><td>${(r.gold / 1000).toFixed(1)}k</td><td>${r.vision}</td>
         <td style="white-space:nowrap">${r.items.map(itemImg).join(" ")}</td></tr>`).join("")}</table></div></div>`;
   };
-  let inner = `<h2 class="title" style="font-size:26px">${esc(d.queue)} · ${d.duration} Min</h2><p class="subtitle" style="margin-bottom:0">${new Date(d.ended * 1000).toLocaleString("de-DE")}</p>` + d.teams.map(teamHtml).join("");
+  let inner = `<h2 class="title" style="font-size:26px">${esc(d.queue)} · ${d.duration} Min</h2><p class="subtitle" style="margin-bottom:0">${new Date(d.ended * 1000).toLocaleString("de-DE")}</p>` + coachingPanel(d.coaching) + d.teams.map(teamHtml).join("");
   if (d.analysis) {
     const g = Object.assign({}, d.analysis, {clips: null});
     inner += `<div class="grid" style="margin-top:20px">${deepCard(g)}</div>`;

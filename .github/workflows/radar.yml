@@ -1,7 +1,7 @@
 name: Export radar benchmarks
 on:
   push:
-    branches: ["release/v1.15.8"]
+    branches: ["release/v1.15.9"]
 permissions:
   contents: write
 jobs:
@@ -17,6 +17,6 @@ jobs:
           python scripts/radar_reference.py
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.15.8
+          tag_name: v1.15.9
           target_commitish: ${{ github.sha }}
           files: radar-tiers.json

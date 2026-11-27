@@ -346,6 +346,12 @@ def _timeline(api, mid):
     return t
 
 
+def coaching_input(credential, platform, match_id):
+    api = RiotAPI(credential, platform)
+    match = _match(api, match_id)
+    return {"info": match["info"], "timeline": _timeline(api, match_id)}
+
+
 def _rune_icon(gd, perk_id):
     if not gd:
         return None

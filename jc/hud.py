@@ -3,9 +3,9 @@
 Only information you also see in game (scoreboard, kill feed, your gold) – no hidden info.
 """
 from . import i18n
+from .shop import recipe_plan
 
-FIRST_DRAGON = 300  # first dragon spawn (s) – stable for many seasons
-
+from .timing import OBJECTIVES
 
 def T(de, en):
     return en if i18n.LANG["code"] == "en" else de
@@ -116,16 +116,24 @@ def next_goals(live, timers, t, hide=(), focus=None, n=3):
     return out[:n]
 
 
-def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None, hide=()):
+def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, role=None, pick=None, hide=(), cue_gate=None):
     """live: result of live.analyze (without hud). Returns {now, rows, item, timers, focus}."""
     t = live.get("_t", 0)
     prompts = []  # (priority, text, color)
 
+    objective_key = None
     # ---- objectives: timers incl. first dragon
     timers = [{"name": o["name"], "in": o["respawn_in"]} for o in live.get("objectives") or []]
-    if not any(o["name"] in ("Dragon", "Elder") for o in timers) and t < FIRST_DRAGON:
-        m, s = divmod(int(FIRST_DRAGON - t), 60)
-        timers.append({"name": "Dragon", "in": f"{m}:{s:02d}"})
+    initial = {"DRAGON": "Dragon", "HORDE": "Voidgrubs", "RIFTHERALD": "Herald", "BARON_NASHOR": "Baron"}
+    if live.get("_standard_rift"):
+        tracked = {timer["name"] for timer in timers}
+        if "Elder" in tracked:
+            tracked.add("Dragon")
+        for objective, start in OBJECTIVES["initial_spawn_seconds"].items():
+            name = initial[objective]
+            if name not in tracked and 0 < start-t <= 150:
+                m, s = divmod(int(start-t), 60)
+                timers.append({"name": name, "in": f"{m}:{s:02d}"})
     names = {"Dragon": T("Drache", "Dragon"), "Baron": "Baron", "Elder": T("Elder-Drache", "Elder dragon")}
     for o in timers:
         o["label"] = names.get(o["name"], o["name"])
@@ -135,10 +143,11 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
             o["in"] = T("jetzt", "now")
         if "timers" in hide:   # Riot-safe mode: no objective timers, also not inside hints
             continue
-        if left <= 60:
+        if OBJECTIVES["setup_notice_seconds"] <= left <= OBJECTIVES["setup_notice_seconds"] + 10 and not objective_key:
+            objective_key = ("setup", o["name"], round((t+left)/5))
             prompts.append((1, T(f"{o['label']} in {o['in']} – Wave pushen lassen, Sicht setzen, mit vollem Leben hin",
                                   f"{o['label']} in {o['in']} – have lanes push, set vision, arrive with full health"), "warn"))
-        elif left <= 90:
+        elif 0 < left <= 90:
             prompts.append((3, T(f"{o['label']} in {o['in']} – jetzt zurück und Items kaufen",
                                   f"{o['label']} in {o['in']} – back and buy now"), "info"))
 
@@ -161,9 +170,20 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
     if sel:
         item = {"id": sel["id"], "name": sel["name"], "cost": sel["cost"], "why": sel.get("why", ""),
                 "picked": bool(pick and sel["id"] == pick)}
+    plan = recipe_plan(gd.items, item["id"], owned or [], int(gold), live.get("_shop_slots")) \
+        if item and gd and gold is not None else None
+    if plan:
+        item["cost"] = plan["cost"]
+        item["components"] = [gd.item_name(part) for part in plan["parts"] if part != item["id"]]
+        item["component_spend"] = plan["spend"] if item["components"] else 0
     if item and item.get("cost") and gold is not None:
         item["missing"] = max(0, item["cost"] - int(gold))
-        if gold >= item["cost"]:
+        if item["missing"] == 0 and plan and not plan["ready"]:
+            item["missing"] = None
+        if plan and 0 < item["cost"] - int(gold) <= 200:
+            prompts.append((4, T(f"Noch {item['missing']} G bis {item['name']}: sichere Ressource prüfen.",
+                                  f"{item['missing']} G to {item['name']}: check for safe income."), "info"))
+        if plan and plan["ready"]:
             prompts.append((2, T(f"Genug Gold für {item['name']} – zurück, wenn kein Objective ansteht",
                                   f"Enough gold for {item['name']} – back if no objective is up"), "good"))
 
@@ -186,25 +206,37 @@ def build(live, gd, gold, owned, focus=None, plan_step=None, gpm_bench=None, rol
 
     # ---- recent mistake -> what to learn from it
     ms = [m for m in (live.get("mistakes") or []) if m.get("kind", "mistake") == "mistake"]
-    if ms and t - ms[-1].get("t", 0) <= 30:
+    if live.get("_recent_deaths", 0) >= 2:
+        prompts.append((2, T("Kurz sammeln: Welche Ressource erreichst du sicher?", "Reset: which resource can you reach safely?"), "info"))
+    elif cue_gate is None and ms and t - ms[-1].get("t", 0) <= 30:
         prompts.append((1, T(f"Fehler: {ms[-1]['title']} – {ms[-1]['why']}", f"Mistake: {ms[-1]['title']} – {ms[-1]['why']}"), "bad"))
 
     # ---- farm
     cs = live.get("cs_per_min", 0)
-    if t > 360 and cs < 5.5:
+    if role == "JUNGLE" and t > 360 and cs < 5.5:
         prompts.append((4, T(f"Farm {cs} CS/min – nach jedem Gank 2 Camps nachholen",
                               f"Farm {cs} CS/min – take 2 camps after every gank"), "warn"))
     if plan_step and t < 240:
         prompts.append((3, plan_step, "info"))
 
+    if live.get("_dead"):
+        prompts.clear()
+        prompts.append((0, T("Respawn abwarten und Einkauf planen.", "Wait for respawn and plan your purchase."), "calm"))
     prompts.sort(key=lambda p: p[0])
     nxt = next_focus(live, timers, t, hide)
     now = {"text": prompts[0][1], "tone": prompts[0][2]} if prompts else \
         {"text": T("Alles im Griff – Camps, Lanes mit Prio, nächstes Objective vorbereiten",
                    "All good – camps, lanes with priority, prepare the next objective"), "tone": "calm"}
-    return {"now": now, "next": nxt, "goals": next_goals(live, timers, t, hide, nxt), "more": [{"text": p[1], "tone": p[2]} for p in prompts[1:3]],
+    if cue_gate is not None:
+        candidate = None
+        if prompts:
+            priority, message, tone = prompts[0]
+            key = objective_key if priority == 1 and objective_key else ("general", priority, tone)
+            candidate = (priority, key, message, tone)
+        now = cue_gate.update(t, candidate, live.get("_health"), live.get("_max_health"), live.get("_dead"))
+    return {"now": now, "next": nxt, "goals": next_goals(live, timers, t, hide, nxt), "more": [],
             "item": item, "timers": timers, "gold": int(gold) if gold is not None else None,
-            "focus": focus, "cs": cs, "cs_ok": cs >= 6 or t < 180, "time": live.get("game_time"),
+            "focus": focus, "cs": cs, "cs_ok": role != "JUNGLE" or cs >= 6 or t < 180, "time": live.get("game_time"),
             "enemy_jg": {"champion": ej.get("champion"), "level": ej.get("level"),
                          "seen": (f"{POS.get(seen[0]['where'], seen[0]['where'])} {seen[0]['time']}" if seen else None)}
             if ej else None,

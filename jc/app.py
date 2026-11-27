@@ -579,6 +579,9 @@ def public_profiles(cfg):
 
 
 def poll_loop(gd, cfg, lcu):
+    from .cue import CueGate
+
+    cue_gate = CueGate()
     last_phase = None
     last_runes_key = None
     last_import = None
@@ -596,6 +599,8 @@ def poll_loop(gd, cfg, lcu):
                         except Exception:  # noqa: BLE001
                             continue
                 threading.Thread(target=_after_game, daemon=True).start()
+            if last_phase == "InProgress" and phase != "InProgress":
+                cue_gate = CueGate()
             last_phase = phase
             try:
                 champ = None
@@ -665,7 +670,7 @@ def poll_loop(gd, cfg, lcu):
                         f = (plan.get("focus") or [None])[0]
                         focus = {"title": f["title"], "target": f["target"]} if f else None
                         step = ((last_cs.get("gameplan") or {}).get("steps") or [None])[0]
-                        role = cfg.get("main_role") or "JUNGLE"
+                        role = live_state.get("_role") or cfg.get("main_role") or "JUNGLE"
                         key = (live_state.get("_me_id"), role)
                         if key not in GPM_BENCH:
                             GPM_BENCH[key] = None
@@ -679,7 +684,7 @@ def poll_loop(gd, cfg, lcu):
                                 pass
                         live_state["hud"] = hud.build(live_state, gd, live_state.get("_gold"), live_state.get("_owned") or [],
                                                       focus, step, GPM_BENCH.get(key), role, OVERLAY.get("pick"),
-                                                      set((cfg.get("overlay") or {}).get("hide") or []))
+                                                      set((cfg.get("overlay") or {}).get("hide") or []), cue_gate=cue_gate)
                     except Exception as e:  # noqa: BLE001
                         live_state["hud"] = {"error": str(e)}
             # ---- automatic recording + mistake clips
@@ -799,8 +804,11 @@ def make_handler(gd, cfg, lcu):
             if self.path == "/api/update":
                 from . import updater
                 return self._send(200, updater.check())
-            if self.path == "/i18n_en.js":
-                with open(os.path.join(STATIC, "i18n_en.js"), "rb") as f:
+            if self.path == "/patch_config.json":
+                from .timing import OBJECTIVES
+                return self._send(200, OBJECTIVES)
+            if self.path in ("/i18n_en.js", "/coaching-score.js", "/coaching-view.js"):
+                with open(os.path.join(STATIC, self.path[1:]), "rb") as f:
                     return self._send(200, f.read(), "application/javascript")
             if self.path in ("/", "/index.html"):
                 with open(os.path.join(STATIC, "index.html"), "rb") as f:
@@ -935,6 +943,18 @@ def make_handler(gd, cfg, lcu):
                     return self._send(200, {"logged_in": False, "server": True, "error": f"Sitzung ungültig ({e.code})"})
                 except Exception:
                     return self._send(200, {"logged_in": True, "server": True, "offline": True})
+            if urllib.parse.urlparse(self.path).path == "/api/coaching-match":
+                import re
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mid = (q.get("id") or [""])[0]
+                cred = riot_cred(cfg)
+                if not cred or not re.fullmatch(r"[A-Z0-9]+_\d+", mid):
+                    return self._send(400, {"error": "Ungültige Match-Anfrage"})
+                try:
+                    coaching_input = profile.coaching_input(cred, cfg.get("platform", "euw1"), mid)
+                except Exception:
+                    return self._send(502, {"error": "Match-Timeline gerade nicht erreichbar"})
+                return self._send(200, coaching_input)
             if self.path.startswith("/api/match"):
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 try:

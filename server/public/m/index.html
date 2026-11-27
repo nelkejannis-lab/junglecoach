@@ -282,7 +282,14 @@
   .focus { padding:12px 14px; border-radius:16px; background:linear-gradient(160deg,rgba(45,212,191,.10),rgba(129,140,248,.05)); border:1px solid rgba(45,212,191,.22); margin-bottom:10px; }
   .focus .k { font-size:10.5px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--acc); } .focus b { display:block; font-size:16px; margin:2px 0 4px; }
 </style>
-</head>
+<script src="/m/coaching-score.js"></script><script src="/m/coaching-view.js"></script><style>
+.coaching-panel{margin:14px 0}.coaching-panel h3{margin:0 0 8px}.coaching-total{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.coaching-total>b{font-size:2rem}.coaching-total small{font-size:.8rem}.coaching-factor{display:grid;grid-template-columns:1fr auto;gap:4px;margin:.65rem 0}
+.coaching-factor meter{width:100%;height:.55rem;grid-column:1/-1;accent-color:#58bba6}.coaching-panel summary{cursor:pointer}
+.coaching-trend{display:flex;align-items:flex-end;gap:4px;height:64px;position:relative;margin:8px 0 12px}
+.coaching-trend i{display:block;flex:1;max-width:40px;background:#64c0aa;border-radius:4px 4px 0 0}
+.coaching-trend i.loss{background:#cb9299}.coaching-trend em{position:absolute;left:0;right:0;border-top:1px dashed currentColor;opacity:.6}
+</style></head>
 <body>
 <div id="app"></div>
 <nav class="tabs" id="tabs" style="display:none"></nav>
@@ -872,6 +879,7 @@ function paCard(A, title, radarTier=(S.league||[]).find(x=>x.queueType==="RANKED
 // who is online right now – one line on top of the friends tab
 function friendStatus(rid) {
   if (liveTxt(rid)) return "ingame";
+  if (Date.now() / 1000 - (S.presenceAt || 0) <= 120 && (S.presence || {})[rid.toLowerCase()] === "mobile") return "mobile";
   const pub = ((S.pub || {})[rid.toLowerCase()] || {}).status;
   if (pub && pub.state === "online") return "online";
   if (Date.now() / 1000 - (S.presenceAt || 0) <= 120) return (S.presence || {})[rid.toLowerCase()] || "unknown";
@@ -965,7 +973,19 @@ const sImg = id => SPELL[id] ? `<img src="${DD()}/img/spell/${SPELL[id]}.png" de
 const POS = {TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "ADC", UTILITY: "Support"};
 const POS_ORDER = {TOP: 0, JUNGLE: 1, MIDDLE: 2, BOTTOM: 3, UTILITY: 4};
 const QUEUE = {420: "Solo/Duo", 440: "Flex", 400: "Normal", 430: "Normal", 450: "ARAM", 490: "Quickplay", 1700: "Arena", 1900: "URF"};
-function openMatch(id, puuid) { S.sheet = {id, puuid}; render(); history.pushState({sheet: 1}, ""); }
+async function getCoachingInput(id) {
+  const m = await match(id);
+  const timeline = await riot(REGION(platform()), `/lol/match/v5/matches/${id}/timeline`);
+  return {info:m.info,timeline};
+}
+async function openMatch(id, puuid) {
+  const sheet = {id, puuid};
+  S.sheet = sheet;
+  render();
+  history.pushState({sheet:1}, "");
+  try { sheet.coaching = await coachingMatch(id, puuid); } catch { sheet.coaching = false; }
+  if (S.sheet === sheet) render();
+}
 function closeSheet(fromBack) {
   if (!S.sheet) return;
   const sh = document.querySelector(".sheet");
@@ -1050,6 +1070,7 @@ function matchSheet() {
     </div>
     <div class="stats six">${stat(cs(me), `CS · ${(cs(me) / min).toFixed(1)}/min`)}${stat(k(me.goldEarned), `Gold · ${Math.round(me.goldEarned / min)}/min`)}${stat(me.visionScore, `Vision · ${me.detectorWardsPlaced ?? 0} CW`)}
       ${stat(kp + "%", "Kill-Beteil.")}${stat(dmgShare + "%", "Schaden-Anteil")}${stat(((me.kills + me.assists) / Math.max(1, me.deaths)).toFixed(1), "KDA")}</div>
+    ${coachingPanel(S.sheet.coaching)}
     <div class="teams2">${team(mine)}${team(mine === 100 ? 200 : 100)}</div>
     <p class="muted small" style="margin:12px 2px">Platz und Score 1–10 aus Kill-Beteiligung, KDA, Schaden-, Gold- und Tank-Anteil, CS, Vision und Objectives – je Rolle gewichtet. Kein offizieller Riot-Wert. Spieler antippen für Rang und letzte Games.</p>
     <button class="btn sec" onclick="share('${me.win ? "Sieg" : "Niederlage"} mit ${me.championName}: ${me.kills}/${me.deaths}/${me.assists}, ${cs(me)} CS in ${Math.round(min)} min – Moosi')">Game teilen</button></div></div>`;
@@ -1170,7 +1191,7 @@ function vStats() {
   const tile = (v, l, cls = "") => `<div class="stat"><b class="${cls}">${v}</b><span>${l}</span></div>`;
   const bestP = A.best.p, worstP = A.worst.p;
   const c = S.coach;
-  return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>${paCard(playerAnalysis(paRows(S.games)))}
+  return `<h1>Deine <span class="g">Stats</span></h1><p class="sub">Letzte ${A.n} Games · alle Queues</p>${coachingBlock((S.games || []).map(({m,p}) => ({id:m.metadata.matchId,role:p.teamPosition,queue:m.info.queueId})),S.acct?.puuid,true)}${paCard(playerAnalysis(paRows(S.games)))}
     <div class="card"><div class="stats">${tile(A.wr + "%", "Winrate", A.wr >= 50 ? "green" : "red")}${tile(A.score.toFixed(1), "Ø Game-Score", A.score >= 6 ? "green" : A.score < 4.5 ? "red" : "")}${tile(A.kda, "KDA")}${tile(A.kp + "%", "Kill-Beteil.")}
       ${tile(A.csm, "CS / Min")}${tile(A.gpm, "Gold / Min")}${tile(A.vpm, "Vision / Min")}</div>
       <div class="dots" style="margin-top:12px">${A.form.slice().reverse().map(w => `<i class="${w ? "w" : ""}"></i>`).join("")}<span class="muted small" style="margin-left:6px">${A.wins} Siege · Ø ${A.avgk}/${A.deaths}/${A.avga}</span></div></div>

@@ -216,7 +216,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
             cons["wobbly"] = {"metric": m, "label": METRICS[m][0], "spread": round(sd_m)}
         cons["verdict"] = ("Sehr konstant – dein Niveau hängt kaum von der Tagesform ab." if cons["score"] >= 75 else
                            "Mittel – gute und schlechte Games liegen weit auseinander." if cons["score"] >= 55 else
-                           "Unkonstant – deine schwachen Games kosten dich die meisten LP.")
+                           "Deine Modellwerte schwanken. Vergleiche eine gute und eine schwierige Startphase.")
 
     # ---- tilt / sessions
     sess = sessions(games)
@@ -317,7 +317,7 @@ def analyze(games, bench, now=None, bench_by_champ=None):
         m = cons["wobbly"]["metric"]
         focus.append({"metric": m, "title": f"Konstanz: {METRICS[m][0]}",
                       "why": f"Dieser Wert schwankt bei dir am stärksten (±{cons['wobbly']['spread']} Perzentil-Punkte).",
-                      "drill": "Jedes Game gleich starten: gleiche Route, gleicher erster Back, feste Checkliste.",
+                      "drill": "Vor der ersten Bewegung dieselben Fragen stellen: Camps, Lane-Zustand und sichere Alternative.",
                       "target": "gleichmäßiger", "last10": "", "week": None})
 
     # ---- player type (fun + useful)

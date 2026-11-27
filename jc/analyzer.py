@@ -250,9 +250,9 @@ def _profile_weights(cls, dmg):
 def _boots(gd, pool, enemy_profile, cls, dmg, my_id):
     boots = {iid: it for iid, it in pool.items() if _has_tag(it, "Boots")}
     if len(enemy_profile["cc"]) >= 3 or enemy_profile["ap_share"] >= 65:
-        want, why = "Mercury", "viel CC/AP beim Gegner"
+        want, why = "Mercury", f"{enemy_profile['ap_share']} % geschätzter Magiedruck oder mehrere CC-Quellen"
     elif enemy_profile["ad_share"] >= 65 or enemy_profile.get("auto_attackers", 0) >= 2:
-        want, why = "Steelcaps", "AD-lastige Gegner"
+        want, why = "Steelcaps", f"{enemy_profile['ad_share']} % geschätzter physischer Druck und gegnerische Auto-Attacks"
     elif my_id in ATTACK_SPEED:
         want, why = "Berserker", "Attack-Speed-Champion"
     elif dmg == "AP":
@@ -314,7 +314,7 @@ def recommend_build(gd, my_champ, enemy_profile, owned=None, enemy_live=None, pr
     wounds = lambda it: "Grievous Wounds" in _desc(it) or "Wounds" in _desc(it)
     off_ok = (lambda it: _has_tag(it, "SpellDamage")) if dmg == "AP" else \
         (lambda it: _has_tag(it, "Damage") or _has_tag(it, "Health"))
-    if len(enemy_profile["healers"]) >= 2:
+    if len(enemy_profile["healers"]) >= 2 and (enemy_live is None or any(i in pool and not _has_tag(pool[i], "Boots") for i in owned)):
         add(lambda it: wounds(it) and (off_ok(it) or cls == "Tank"), "Anti-Heal gegen " + ", ".join(enemy_profile["healers"]))
     armor_st = (enemy_live or {}).get("armor_stackers", 0)
     mr_st = (enemy_live or {}).get("mr_stackers", 0)

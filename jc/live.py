@@ -10,6 +10,7 @@ import urllib.request
 
 from . import analyzer
 from .recorder import detect_mistakes
+from .timing import OBJECTIVES
 
 _CTX = ssl.create_default_context()
 _CTX.check_hostname = False
@@ -18,7 +19,7 @@ _CTX.verify_mode = ssl.CERT_NONE  # localhost self-signed cert only
 URL = "https://127.0.0.1:2999/liveclientdata/allgamedata"
 
 # Respawn timers after a kill (seconds). Check after big patches -> config.json "timers".
-DEFAULT_TIMERS = {"Dragon": 300, "Baron": 360, "Elder": 360}
+DEFAULT_TIMERS = OBJECTIVES["respawn_seconds"]
 
 
 def fetch():
@@ -108,6 +109,19 @@ def analyze(gd, data, timers=None, preset_lookup=None):
     # ---- enemy item analysis -> live build
     enemy_champs = [_champ(gd, p) for p in enemies]
     prof = analyzer.team_profile(gd, enemy_champs)
+    known = [(p, champion) for p, champion in zip(enemies, enemy_champs) if champion]
+    if known:
+        average_inventory = sum(item_gold(gd, p) for p, _ in known) / len(known)
+        weighted_profiles = []
+        for p, champion in known:
+            inventory_factor = min(2.0, max(0.4, item_gold(gd, p) / average_inventory)) if average_inventory else 1.0
+            level_factor = min(1.5, max(0.6, 1 + (p.get("level", 1) - me.get("level", 1)) * 0.08))
+            weight = 0.65 * inventory_factor + 0.35 * level_factor
+            weighted_profiles.append((weight, analyzer.team_profile(gd, [champion])))
+        base = sum(weight for weight, _ in weighted_profiles)
+        for key in ("ap_share", "ad_share"):
+            prof[key] = round(sum(weight * profile[key] for weight, profile in weighted_profiles) / base)
+        prof["live_weighted"] = True
     armor_st = mr_st = 0
     fed = []
     for p in enemies:
@@ -116,8 +130,8 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             stats = gd.items.get(it.get("itemID"), {}).get("stats", {})
             armor += stats.get("FlatArmorMod", 0)
             mr += stats.get("FlatSpellBlockMod", 0)
-        armor_st += armor >= 60
-        mr_st += mr >= 60
+        armor_st += armor > 80
+        mr_st += mr > 80
         sc = p.get("scores", {})
         c = _champ(gd, p)
         if c and sc.get("kills", 0) - sc.get("deaths", 0) >= 4:
@@ -213,6 +227,17 @@ def analyze(gd, data, timers=None, preset_lookup=None):
             "mistakes": [{**m, "time": _fmt(m["t"])} for m in mistakes],
             "roster": {"allies": [roster_entry(p) for p in allies], "enemies": [roster_entry(p) for p in enemies]},
             "_team_id": 100 if my_team == "ORDER" else 200, "_t": t,
+            "_dead": me.get("isDead", False),
+            "_role": "JUNGLE" if _is_jungler(me) else (me.get("position") or "").upper(),
+            "_health": (data.get("activePlayer") or {}).get("championStats", {}).get("currentHealth"),
+            "_max_health": (data.get("activePlayer") or {}).get("championStats", {}).get("maxHealth"),
+            "_standard_rift": (data.get("gameData") or {}).get("mapNumber") == 11 and
+                              (data.get("gameData") or {}).get("gameMode") == "CLASSIC" and
+                              ".".join(str(getattr(gd, "version", "")).split(".")[:2]) == OBJECTIVES["data_dragon_patch"],
+            "_shop_slots": sum(0 <= it.get("slot", -1) < 6 for it in me.get("items", [])),
+            "_recent_deaths": sum(ev.get("EventName") == "ChampionKill" and ev.get("VictimName") in _names(me)
+                                  and 0 <= t - ev.get("EventTime", 0) <= 180
+                                  for ev in data.get("events", {}).get("Events", [])),
             "_owned": [i for i in owned if i], "_gold": (data.get("activePlayer") or {}).get("currentGold"),
             "_item_gold": item_gold(gd, me), "_me_id": my_champ["id"] if my_champ else None,
             "_enemy_targets": [(c["id"], gd.champ_name(c), _is_jungler(p))

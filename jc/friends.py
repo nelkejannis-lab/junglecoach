@@ -99,7 +99,7 @@ def presence(lcu):
         av = str(f.get("availability") or "unknown").lower()
         game = ((f.get("lol") or {}).get("gameStatus") or "")
         status = ("ingame" if game in ("inGame", "championSelect") or av == "dnd" else
-                  "online" if av in ("chat", "mobile", "online") else "away" if av == "away" else "offline" if av in ("offline", "invisible") else "unknown")
+                  "mobile" if av == "mobile" else "online" if av in ("chat", "online") else "away" if av == "away" else "offline" if av in ("offline", "invisible") else "unknown")
         out[rid.lower()] = {"status": status, "game": game}
         names.append({"riot_id": rid, "status": status})
     return out, names
@@ -129,7 +129,7 @@ def listing(cfg, gd, cred, lcu=None, max_age=300, pub=None, self_id=None):
         res.append({**(s or {"riot_id": rid, "loading": True}), "riot_id": rid, "jc": jc,
                     "presence": p_,
                     "coach": {"status": c.get("status"), "score": (c.get("plan") or {}).get("score")}})
-    order = {"ingame": 0, "online": 1, "away": 2, "offline": 3, "unknown": 4}
+    order = {"ingame": 0, "online": 1, "away": 2, "mobile": 3, "offline": 4, "unknown": 5}
     res.sort(key=lambda f: order.get(f["presence"]["status"], 5))
     saved_l = {f.lower() for f in saved}
     suggestions = [c for c in client if c["riot_id"].lower() not in saved_l][:12]

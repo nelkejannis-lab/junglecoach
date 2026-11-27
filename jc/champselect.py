@@ -86,11 +86,7 @@ def apply_meta(gd, out, my_champ, enemy_jg, meta_stats, bracket, enemy_ids=None)
                         "why": f"vs {ename}: {it['adj_winrate']}% WR ({it['games']} Games)"}
                 break
     if swap:
-        if len(core) == 3:  # first two items are the champion's backbone, adapt the third
-            situ.insert(0, dict(core[2], why="Standard-3. Item: " + core[2]["why"]))
-            core[2] = swap
-        else:
-            core.append(swap)
+        situ.insert(0, swap)
         seen.add(swap["id"])
     if cm.get("enough"):
         for g in cm.get("hidden_items", [])[:1]:
@@ -270,7 +266,8 @@ def analyze(gd, session, config, meta_stats=None, bracket=None, history=None):
     for m, c in zip([m for m in their if m.get("championId")], enemies):
         if my_pos and (m.get("assignedPosition") or "").lower() == my_pos:
             lane_enemy = c
-    lane_enemy = lane_enemy or enemy_jg
+    if my_pos == "jungle" and lane_enemy is None:
+        lane_enemy = enemy_jg
     role = {"top": "TOP", "jungle": "JUNGLE", "middle": "MIDDLE", "bottom": "BOTTOM", "utility": "UTILITY"}.get(my_pos)
     if meta_stats is not None:
         meta_stats.role = role

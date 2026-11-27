@@ -48,6 +48,9 @@ def layout(state):
         if it.get("missing") is not None:
             extra = f"   {t['buy']}" if it["missing"] == 0 else f"   {it['missing']} g {t['missing']}"
         out.append(("row", f"{t['item']}|{it['name']}{extra}", GREEN if it.get("missing") == 0 else TXT))
+    if it and it.get("components"):
+        parts = " + ".join(it["components"])
+        out.append(("row", f"{'Rezept' if lang == 'de' else 'Recipe'}|{parts} ({it['component_spend']} g)", CYAN))
     timers = h.get("timers") or []
     if timers:
         out.append(("row", f"{t['timer']}|" + "   ".join(f"{o['label']} {o['in']}" for o in timers),
@@ -82,7 +85,8 @@ def model(state):
         "cs_ok": h.get("cs_ok", True), "gold": h.get("gold"),
         "now": {"text": now["text"], "col": TONE.get(now.get("tone"), CYAN)} if now else None,
         "more": [m["text"] for m in (h.get("more") or [])][:1],
-        "item": {"id": it.get("id"), "name": it["name"], "missing": it.get("missing"), "cost": it.get("cost")} if it else None,
+        "item": {"id": it.get("id"), "name": it["name"], "missing": it.get("missing"), "cost": it.get("cost"),
+                 "components": it.get("components", []), "component_spend": it.get("component_spend")} if it else None,
         "timers": [] if "timers" in hide else [(o["label"], o["in"], bool(o.get("soon"))) for o in (h.get("timers") or [])][:3],
         "ej": (f"{ej['champion']} · Lvl {ej.get('level')} · " +
                (f"{ej['seen']}" if ej.get("seen") else t["unseen"])) if ej.get("champion") else None,
@@ -353,7 +357,7 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
         d.text((tx, y + lh(F["cap"])), itm["name"], font=F["bodyb"], fill=W1)
         right = m["t"]["buy"] if ready else (m["t"]["left"].format(itm["missing"]) if itm.get("missing") is not None else "")
         d.text((Wp - pad, y), right, font=F["capb"] if ready else F["cap"], fill=_rgb(A_GREEN) if ready else SEC, anchor="ra")
-        if itm.get("cost"):
+        if itm.get("cost") and itm.get("missing") is not None:
             frac = max(0.0, min(1.0, 1 - (itm.get("missing") or 0) / itm["cost"]))
             by = y + isz - 5 * k
             u.rounded_rectangle([tx, by, Wp - pad, by + 5 * k], 3 * k, fill=fill2)
@@ -361,6 +365,11 @@ def render_image(m, W=300, fonts=None, item_icon=None, bg_opacity=0.72, move=Fal
                 u.rounded_rectangle([tx, by, tx + max(6 * k, (Wp - pad - tx) * frac), by + 5 * k], 3 * k,
                                     fill=_rgb(A_GREEN if ready else A_BLUE))
         y += isz + 12 * k
+        if itm["components"]:
+            purchase = " + ".join(itm["components"]) + f" ({itm['component_spend']} g)"
+            for line in _wrap(d, purchase, F["cap"], Wp - 2 * pad):
+                d.text((pad, y), line, font=F["cap"], fill=SEC)
+                y += lh(F["cap"])
 
     # ---- objective timers: capsules, the next one tinted orange
     goals = m.get("goals")
